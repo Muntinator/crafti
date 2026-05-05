@@ -43,6 +43,8 @@ SettingsTask::SettingsTask()
     settings.push_back({"Near plane", nullptr, 512+1, 160, 128, 16});
     settings.push_back({"World", world_static_values, 2, 1, 0, 1});
     settings.push_back({"Show FPS", fastmode_values, 2, 0, 0, 1});
+    settings.push_back({"Block indicator", fastmode_values, 2, 0, 0, 1});
+    settings.push_back({"Coord indicator", fastmode_values, 2, 0, 0, 1});
 
     background = newTexture(background_width, background_height, 0, false);
 }

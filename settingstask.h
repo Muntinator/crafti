@@ -26,6 +26,8 @@ public:
         NEARPLANE_Z,
         TICKS_ENABLED,
         SHOW_FPS,
+        BLOCK_INDICATOR,
+        COORD_INDICATOR,
     };
 
     SettingsTask();

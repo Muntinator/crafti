@@ -946,132 +946,135 @@ void WorldTask::render()
     glBindTexture(terrain_current);
 
     // Draw selection / breaking indication.
-    TextureAtlasEntry tex;
-    const bool show_breaking_overlay = mining_progress > 0 && mining_duration > 0 &&
-                                       selection_pos.x == mining_pos.x && selection_pos.y == mining_pos.y && selection_pos.z == mining_pos.z;
-    if(show_breaking_overlay)
+    if(settings_task.getValue(SettingsTask::BLOCK_INDICATOR))
     {
-        glBindTexture(terrain_current);
-        static constexpr unsigned int breaking_frames = 10; // (0,15) to (9,15)
-        unsigned int breaking_frame = (static_cast<unsigned int>(mining_progress) * breaking_frames) / static_cast<unsigned int>(mining_duration);
-        if(breaking_frame >= breaking_frames)
-            breaking_frame = breaking_frames - 1;
-
-        tex = terrain_atlas[breaking_frame][15].current;
-    }
-    else
-    {
-        glBindTexture(&blockselection);
-
-        //Do a quick animation
-        const unsigned int blockselection_frame_width = blockselection.width / blockselection_frames;
-        tex = textureArea(0, 0, blockselection_frame_width, blockselection.height);
-        tex.left += blockselection_frame_width * blockselection_frame;
-        tex.right += blockselection_frame_width * blockselection_frame;
-
-        //Only increment the frame nr each 5 frames
-        if(++blockselection_frame_fraction == 5)
+        TextureAtlasEntry tex;
+        const bool show_breaking_overlay = mining_progress > 0 && mining_duration > 0 &&
+                                           selection_pos.x == mining_pos.x && selection_pos.y == mining_pos.y && selection_pos.z == mining_pos.z;
+        if(show_breaking_overlay)
         {
-            blockselection_frame_fraction = 0;
+            glBindTexture(terrain_current);
+            static constexpr unsigned int breaking_frames = 10; // (0,15) to (9,15)
+            unsigned int breaking_frame = (static_cast<unsigned int>(mining_progress) * breaking_frames) / static_cast<unsigned int>(mining_duration);
+            if(breaking_frame >= breaking_frames)
+                breaking_frame = breaking_frames - 1;
 
-            if(++blockselection_frame == blockselection_frames)
-                blockselection_frame = 0;
+            tex = terrain_atlas[breaking_frame][15].current;
         }
+        else
+        {
+            glBindTexture(&blockselection);
+
+            //Do a quick animation
+            const unsigned int blockselection_frame_width = blockselection.width / blockselection_frames;
+            tex = textureArea(0, 0, blockselection_frame_width, blockselection.height);
+            tex.left += blockselection_frame_width * blockselection_frame;
+            tex.right += blockselection_frame_width * blockselection_frame;
+
+            //Only increment the frame nr each 5 frames
+            if(++blockselection_frame_fraction == 5)
+            {
+                blockselection_frame_fraction = 0;
+
+                if(++blockselection_frame == blockselection_frames)
+                    blockselection_frame = 0;
+            }
+        }
+
+        const GLFix indicator_x = selection_pos.x * BLOCK_SIZE, indicator_y = selection_pos.y * BLOCK_SIZE, indicator_z = selection_pos.z * BLOCK_SIZE;
+        const GLFix selection_offset = 3; //Needed to prevent Z-fighting
+
+        glPushMatrix();
+        glTranslatef(indicator_x, indicator_y, indicator_z);
+
+        glBegin(GL_QUADS);
+        if(show_breaking_overlay)
+        {
+            const GLFix block_size_fix = GLFix(BLOCK_SIZE);
+            const GLFix minus_offset = GLFix(0) - selection_offset;
+            const GLFix plus_offset = block_size_fix + selection_offset;
+
+            // Front
+            nglAddVertex({0, 0, minus_offset, tex.left, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+            nglAddVertex({0, block_size_fix, minus_offset, tex.left, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+            nglAddVertex({block_size_fix, block_size_fix, minus_offset, tex.right, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+            nglAddVertex({block_size_fix, 0, minus_offset, tex.right, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+
+            // Back
+            nglAddVertex({block_size_fix, 0, plus_offset, tex.left, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+            nglAddVertex({block_size_fix, block_size_fix, plus_offset, tex.left, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+            nglAddVertex({0, block_size_fix, plus_offset, tex.right, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+            nglAddVertex({0, 0, plus_offset, tex.right, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+
+            // Right
+            nglAddVertex({plus_offset, 0, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+            nglAddVertex({plus_offset, block_size_fix, 0, tex.right, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+            nglAddVertex({plus_offset, block_size_fix, block_size_fix, tex.left, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+            nglAddVertex({plus_offset, 0, block_size_fix, tex.left, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+
+            // Left
+            nglAddVertex({minus_offset, 0, block_size_fix, tex.left, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+            nglAddVertex({minus_offset, block_size_fix, block_size_fix, tex.left, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+            nglAddVertex({minus_offset, block_size_fix, 0, tex.right, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+            nglAddVertex({minus_offset, 0, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+
+            // Top
+            nglAddVertex({0, plus_offset, 0, tex.left, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+            nglAddVertex({0, plus_offset, block_size_fix, tex.left, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+            nglAddVertex({block_size_fix, plus_offset, block_size_fix, tex.right, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+            nglAddVertex({block_size_fix, plus_offset, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+
+            // Bottom
+            nglAddVertex({block_size_fix, minus_offset, 0, tex.left, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+            nglAddVertex({block_size_fix, minus_offset, block_size_fix, tex.left, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+            nglAddVertex({0, minus_offset, block_size_fix, tex.right, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+            nglAddVertex({0, minus_offset, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+        }
+        else switch(selection_side)
+        {
+        case AABB::FRONT:
+            nglAddVertex({0, 0, selection_pos_abs.z - indicator_z - selection_offset, tex.left, tex.bottom, TEXTURE_TRANSPARENT});
+            nglAddVertex({0, BLOCK_SIZE, selection_pos_abs.z - indicator_z - selection_offset, tex.left, tex.top, TEXTURE_TRANSPARENT});
+            nglAddVertex({BLOCK_SIZE, BLOCK_SIZE, selection_pos_abs.z - indicator_z - selection_offset, tex.right, tex.top, TEXTURE_TRANSPARENT});
+            nglAddVertex({BLOCK_SIZE, 0, selection_pos_abs.z - indicator_z - selection_offset, tex.right, tex.bottom, TEXTURE_TRANSPARENT});
+            break;
+        case AABB::BACK:
+            nglAddVertex({BLOCK_SIZE, 0, selection_pos_abs.z - indicator_z + selection_offset, tex.left, tex.bottom, TEXTURE_TRANSPARENT});
+            nglAddVertex({BLOCK_SIZE, BLOCK_SIZE, selection_pos_abs.z - indicator_z + selection_offset, tex.left, tex.top, TEXTURE_TRANSPARENT});
+            nglAddVertex({0, BLOCK_SIZE, selection_pos_abs.z - indicator_z + selection_offset, tex.right, tex.top, TEXTURE_TRANSPARENT});
+            nglAddVertex({0, 0, selection_pos_abs.z - indicator_z + selection_offset, tex.right, tex.bottom, TEXTURE_TRANSPARENT});
+            break;
+        case AABB::RIGHT:
+            nglAddVertex({selection_pos_abs.x - indicator_x + selection_offset, 0, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT});
+            nglAddVertex({selection_pos_abs.x - indicator_x + selection_offset, BLOCK_SIZE, 0, tex.right, tex.top, TEXTURE_TRANSPARENT});
+            nglAddVertex({selection_pos_abs.x - indicator_x + selection_offset, BLOCK_SIZE, BLOCK_SIZE, tex.left, tex.top, TEXTURE_TRANSPARENT});
+            nglAddVertex({selection_pos_abs.x - indicator_x + selection_offset, 0, BLOCK_SIZE, tex.left, tex.bottom, TEXTURE_TRANSPARENT});
+            break;
+        case AABB::LEFT:
+            nglAddVertex({selection_pos_abs.x - indicator_x - selection_offset, 0, BLOCK_SIZE, tex.left, tex.bottom, TEXTURE_TRANSPARENT});
+            nglAddVertex({selection_pos_abs.x - indicator_x - selection_offset, BLOCK_SIZE, BLOCK_SIZE, tex.left, tex.top, TEXTURE_TRANSPARENT});
+            nglAddVertex({selection_pos_abs.x - indicator_x - selection_offset, BLOCK_SIZE, 0, tex.right, tex.top, TEXTURE_TRANSPARENT});
+            nglAddVertex({selection_pos_abs.x - indicator_x - selection_offset, 0, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT});
+            break;
+        case AABB::TOP:
+            nglAddVertex({0, selection_pos_abs.y - indicator_y + selection_offset, 0, tex.left, tex.bottom, TEXTURE_TRANSPARENT});
+            nglAddVertex({0, selection_pos_abs.y - indicator_y + selection_offset, BLOCK_SIZE, tex.left, tex.top, TEXTURE_TRANSPARENT});
+            nglAddVertex({BLOCK_SIZE, selection_pos_abs.y - indicator_y + selection_offset, BLOCK_SIZE, tex.right, tex.top, TEXTURE_TRANSPARENT});
+            nglAddVertex({BLOCK_SIZE, selection_pos_abs.y - indicator_y + selection_offset, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT});
+            break;
+        case AABB::BOTTOM:
+            nglAddVertex({BLOCK_SIZE, selection_pos_abs.y - indicator_y - selection_offset, 0, tex.left, tex.bottom, TEXTURE_TRANSPARENT});
+            nglAddVertex({BLOCK_SIZE, selection_pos_abs.y - indicator_y - selection_offset, BLOCK_SIZE, tex.left, tex.top, TEXTURE_TRANSPARENT});
+            nglAddVertex({0, selection_pos_abs.y - indicator_y - selection_offset, BLOCK_SIZE, tex.right, tex.top, TEXTURE_TRANSPARENT});
+            nglAddVertex({0, selection_pos_abs.y - indicator_y - selection_offset, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT});
+            break;
+        case AABB::NONE:
+            break;
+        }
+        glEnd();
+
+        glPopMatrix();
     }
-
-    const GLFix indicator_x = selection_pos.x * BLOCK_SIZE, indicator_y = selection_pos.y * BLOCK_SIZE, indicator_z = selection_pos.z * BLOCK_SIZE;
-    const GLFix selection_offset = 3; //Needed to prevent Z-fighting
-
-    glPushMatrix();
-    glTranslatef(indicator_x, indicator_y, indicator_z);
-
-    glBegin(GL_QUADS);
-    if(show_breaking_overlay)
-    {
-        const GLFix block_size_fix = GLFix(BLOCK_SIZE);
-        const GLFix minus_offset = GLFix(0) - selection_offset;
-        const GLFix plus_offset = block_size_fix + selection_offset;
-
-        // Front
-        nglAddVertex({0, 0, minus_offset, tex.left, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-        nglAddVertex({0, block_size_fix, minus_offset, tex.left, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-        nglAddVertex({block_size_fix, block_size_fix, minus_offset, tex.right, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-        nglAddVertex({block_size_fix, 0, minus_offset, tex.right, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-
-        // Back
-        nglAddVertex({block_size_fix, 0, plus_offset, tex.left, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-        nglAddVertex({block_size_fix, block_size_fix, plus_offset, tex.left, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-        nglAddVertex({0, block_size_fix, plus_offset, tex.right, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-        nglAddVertex({0, 0, plus_offset, tex.right, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-
-        // Right
-        nglAddVertex({plus_offset, 0, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-        nglAddVertex({plus_offset, block_size_fix, 0, tex.right, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-        nglAddVertex({plus_offset, block_size_fix, block_size_fix, tex.left, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-        nglAddVertex({plus_offset, 0, block_size_fix, tex.left, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-
-        // Left
-        nglAddVertex({minus_offset, 0, block_size_fix, tex.left, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-        nglAddVertex({minus_offset, block_size_fix, block_size_fix, tex.left, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-        nglAddVertex({minus_offset, block_size_fix, 0, tex.right, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-        nglAddVertex({minus_offset, 0, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-
-        // Top
-        nglAddVertex({0, plus_offset, 0, tex.left, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-        nglAddVertex({0, plus_offset, block_size_fix, tex.left, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-        nglAddVertex({block_size_fix, plus_offset, block_size_fix, tex.right, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-        nglAddVertex({block_size_fix, plus_offset, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-
-        // Bottom
-        nglAddVertex({block_size_fix, minus_offset, 0, tex.left, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-        nglAddVertex({block_size_fix, minus_offset, block_size_fix, tex.left, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-        nglAddVertex({0, minus_offset, block_size_fix, tex.right, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-        nglAddVertex({0, minus_offset, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
-    }
-    else switch(selection_side)
-    {
-    case AABB::FRONT:
-        nglAddVertex({0, 0, selection_pos_abs.z - indicator_z - selection_offset, tex.left, tex.bottom, TEXTURE_TRANSPARENT});
-        nglAddVertex({0, BLOCK_SIZE, selection_pos_abs.z - indicator_z - selection_offset, tex.left, tex.top, TEXTURE_TRANSPARENT});
-        nglAddVertex({BLOCK_SIZE, BLOCK_SIZE, selection_pos_abs.z - indicator_z - selection_offset, tex.right, tex.top, TEXTURE_TRANSPARENT});
-        nglAddVertex({BLOCK_SIZE, 0, selection_pos_abs.z - indicator_z - selection_offset, tex.right, tex.bottom, TEXTURE_TRANSPARENT});
-        break;
-    case AABB::BACK:
-        nglAddVertex({BLOCK_SIZE, 0, selection_pos_abs.z - indicator_z + selection_offset, tex.left, tex.bottom, TEXTURE_TRANSPARENT});
-        nglAddVertex({BLOCK_SIZE, BLOCK_SIZE, selection_pos_abs.z - indicator_z + selection_offset, tex.left, tex.top, TEXTURE_TRANSPARENT});
-        nglAddVertex({0, BLOCK_SIZE, selection_pos_abs.z - indicator_z + selection_offset, tex.right, tex.top, TEXTURE_TRANSPARENT});
-        nglAddVertex({0, 0, selection_pos_abs.z - indicator_z + selection_offset, tex.right, tex.bottom, TEXTURE_TRANSPARENT});
-        break;
-    case AABB::RIGHT:
-        nglAddVertex({selection_pos_abs.x - indicator_x + selection_offset, 0, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT});
-        nglAddVertex({selection_pos_abs.x - indicator_x + selection_offset, BLOCK_SIZE, 0, tex.right, tex.top, TEXTURE_TRANSPARENT});
-        nglAddVertex({selection_pos_abs.x - indicator_x + selection_offset, BLOCK_SIZE, BLOCK_SIZE, tex.left, tex.top, TEXTURE_TRANSPARENT});
-        nglAddVertex({selection_pos_abs.x - indicator_x + selection_offset, 0, BLOCK_SIZE, tex.left, tex.bottom, TEXTURE_TRANSPARENT});
-        break;
-    case AABB::LEFT:
-        nglAddVertex({selection_pos_abs.x - indicator_x - selection_offset, 0, BLOCK_SIZE, tex.left, tex.bottom, TEXTURE_TRANSPARENT});
-        nglAddVertex({selection_pos_abs.x - indicator_x - selection_offset, BLOCK_SIZE, BLOCK_SIZE, tex.left, tex.top, TEXTURE_TRANSPARENT});
-        nglAddVertex({selection_pos_abs.x - indicator_x - selection_offset, BLOCK_SIZE, 0, tex.right, tex.top, TEXTURE_TRANSPARENT});
-        nglAddVertex({selection_pos_abs.x - indicator_x - selection_offset, 0, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT});
-        break;
-    case AABB::TOP:
-        nglAddVertex({0, selection_pos_abs.y - indicator_y + selection_offset, 0, tex.left, tex.bottom, TEXTURE_TRANSPARENT});
-        nglAddVertex({0, selection_pos_abs.y - indicator_y + selection_offset, BLOCK_SIZE, tex.left, tex.top, TEXTURE_TRANSPARENT});
-        nglAddVertex({BLOCK_SIZE, selection_pos_abs.y - indicator_y + selection_offset, BLOCK_SIZE, tex.right, tex.top, TEXTURE_TRANSPARENT});
-        nglAddVertex({BLOCK_SIZE, selection_pos_abs.y - indicator_y + selection_offset, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT});
-        break;
-    case AABB::BOTTOM:
-        nglAddVertex({BLOCK_SIZE, selection_pos_abs.y - indicator_y - selection_offset, 0, tex.left, tex.bottom, TEXTURE_TRANSPARENT});
-        nglAddVertex({BLOCK_SIZE, selection_pos_abs.y - indicator_y - selection_offset, BLOCK_SIZE, tex.left, tex.top, TEXTURE_TRANSPARENT});
-        nglAddVertex({0, selection_pos_abs.y - indicator_y - selection_offset, BLOCK_SIZE, tex.right, tex.top, TEXTURE_TRANSPARENT});
-        nglAddVertex({0, selection_pos_abs.y - indicator_y - selection_offset, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT});
-        break;
-    case AABB::NONE:
-        break;
-    }
-    glEnd();
-
-    glPopMatrix();
 
     glPopMatrix();
 
@@ -1206,7 +1209,7 @@ void WorldTask::render()
         drawString(expr_msg, 0xFFFF, *screen, expr_x, 5);
     }
 
-    if(selection_side != AABB::NONE)
+    if(selection_side != AABB::NONE && settings_task.getValue(SettingsTask::COORD_INDICATOR))
     {
         char pos_msg[64];
         const int bx = selection_pos.x.toInteger<int>();
