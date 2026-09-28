@@ -106,6 +106,27 @@ namespace BiomeGen
     int treeDensityPercent(int biome);
 
     /**
+     * The raw temperature field of a column, 0..1023 (low is cold). The weather
+     * asks this to decide whether precipitation falls as rain or as snow, and
+     * whether snow on the ground freezes or melts, so a shower matches the biome
+     * it happens over instead of falling the same way everywhere.
+     *
+     * A pure function of (seed, x, z) like the rest of this module, so it costs
+     * one noise evaluation and needs no chunk to be loaded.
+     */
+    int temperatureAt(uint32_t world_seed, int world_x, int world_z);
+
+    /** Cold enough for snow: at or below the threshold `landBiome` calls cold. */
+    bool isColdAt(uint32_t world_seed, int world_x, int world_z);
+
+    /**
+     * The temperature field value at or below which the world is cold, out of
+     * 1023. Exposed because it is a game rule, not an implementation detail:
+     * snow and ice would hang off it if either existed.
+     */
+    constexpr int ColdTemperature = 281;
+
+    /**
      * True when the block at this position is carved out as a cave. Two
      * independent 3D fields have to be near their centre at the same time, which
      * is what turns the intersection into a winding tunnel instead of a blob.

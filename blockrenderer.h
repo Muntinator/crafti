@@ -23,6 +23,16 @@ public:
 
     virtual void drawPreview(const BLOCK_WDATA block, TEXTURE &dest, const int x, const int y) = 0;
 
+    /**
+     * The shade a face of a block is drawn with, from the direction it points.
+     * It is baked into the vertex when the chunk is meshed, so it costs nothing
+     * per frame, and the special renderers that draw their own geometry (the bed,
+     * which is a slab) use it too so that their faces are lit like everyone
+     * else's. `base_color` carries the caller's texture flags in its high byte and
+     * 0 in the shade byte; a caller that brings its own shade keeps it.
+     */
+    static COLOR computeLighting(BLOCK_SIDE side, COLOR base_color);
+
     static void renderNormalBlockSide(int local_x, int local_y, int local_z, const BLOCK_SIDE side, const TextureAtlasEntry &tex, Chunk &c, const COLOR color = 0);
     static void renderNormalBlockSideQuad(int local_x, int local_y, int local_z, const BLOCK_SIDE side, const TextureAtlasEntry &tex, Chunk &c, const COLOR color = 0);
     static void renderNormalBlockSideForceColor(int local_x, int local_y, int local_z, const BLOCK_SIDE side, const COLOR color, Chunk &c);

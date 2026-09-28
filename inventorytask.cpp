@@ -8,9 +8,11 @@
 #include <cstdio>
 
 #include "blockrenderer.h"
+#include "cheststore.h"
 #include "font.h"
 #include "inventory.h"
 #include "itemicons.h"
+#include "itemrules.h"
 #include "world.h"
 #include "worldtask.h"
 
@@ -90,6 +92,9 @@ int inventoryOriginY()
 {
     return (SCREEN_HEIGHT - (inventory_layout_top + inventory_layout_bottom) * inv_draw_scale) / 2 + inventory_center_offset_y;
 }
+
+// The armour widgets are drawn just outside the inventory window, so they need
+// its position as well (they live in inventorychest.cpp with the chest panel).
 
 TEXTURE *craftingTableTexture()
 {
@@ -178,6 +183,9 @@ enum class RecipeMat : uint8_t {
     RedstoneDustItem,
     RedstoneTorchBlock,
     WheatCrop,
+    // Any of the sixteen wool colours, the same way every plank block counts as
+    // planks: a bed is not a different bed because its blanket is blue.
+    WoolBlock,
 };
 
 enum class RecipeOutputKind : uint8_t {
@@ -239,6 +247,8 @@ bool blockMatchesRecipeMat(BLOCK_WDATA block, unsigned int count, RecipeMat mat)
         return b == BLOCK_REDSTONE_TORCH;
     case RecipeMat::WheatCrop:
         return b == BLOCK_WHEAT;
+    case RecipeMat::WoolBlock:
+        return b >= BLOCK_WOOL_BLACK && b <= BLOCK_WOOL_ORANGE;
     case RecipeMat::Empty:
     default:
         return false;
@@ -316,6 +326,14 @@ static const RecipeDef recipes[] = {
       RecipeMat::Planks, RecipeMat::Planks, RecipeMat::Empty,
       RecipeMat::Planks, RecipeMat::Planks, RecipeMat::Empty},
      RecipeOutputKind::Block, BLOCK_DOOR, 3},
+
+    // 3 wool over 3 planks -> bed, as in Minecraft. The bed is two blocks wide
+    // once placed, but it is crafted and carried as one.
+    {3, 2,
+     {RecipeMat::WoolBlock, RecipeMat::WoolBlock, RecipeMat::WoolBlock,
+      RecipeMat::Planks, RecipeMat::Planks, RecipeMat::Planks,
+      RecipeMat::Empty, RecipeMat::Empty, RecipeMat::Empty},
+     RecipeOutputKind::Block, BLOCK_BED, 1},
 
     // bowl
     {3, 2,
@@ -653,10 +671,25 @@ void tickFurnaceTile(World &world, int x, int y, int z, FurnaceTileData &d)
 
 } // namespace
 
+// The armour widgets are drawn just outside the inventory window, so they need
+// its position as well (they live in inventorychest.cpp with the chest panel).
+// These two are outside the anonymous namespace above on purpose: a member
+// definition has to be in a namespace that encloses the class.
+int InventoryTask::inventoryWindowX()
+{
+    return inventoryOriginX();
+}
+
+int InventoryTask::inventoryWindowY()
+{
+    return inventoryOriginY();
+}
+
 void InventoryTask::openPlayerInventory()
 {
     crafting_table_mode = false;
     furnace_mode = false;
+    chest_mode = false;
     activate();
 }
 
@@ -664,6 +697,7 @@ void InventoryTask::openCraftingTable()
 {
     crafting_table_mode = true;
     furnace_mode = false;
+    chest_mode = false;
     activate();
 }
 
@@ -671,6 +705,7 @@ void InventoryTask::openFurnace(int block_x, int block_y, int block_z)
 {
     crafting_table_mode = false;
     furnace_mode = true;
+    chest_mode = false;
     furnace_bx = block_x;
     furnace_by = block_y;
     furnace_bz = block_z;
@@ -748,6 +783,8 @@ void InventoryTask::reset()
 {
     held_block = BLOCK_AIR;
     held_count = 0;
+    held_damage = 0;
+    chest_mode = false;
     crafting_output = BLOCK_AIR;
     crafting_output_count = 0;
     for(int i = 0; i < CRAFTING_INPUT_COUNT; ++i)
@@ -764,7 +801,14 @@ void InventoryTask::activate()
         saveBackground();
 
 #ifdef _TINSPIRE
-    if(furnace_mode)
+    if(chest_mode)
+    {
+        int sx, sy, sw, sh;
+        chestSlotBounds(0, sx, sy, sw, sh);
+        cursor_x = sx + sw / 2;
+        cursor_y = sy + sh / 2;
+    }
+    else if(furnace_mode)
     {
         int sx, sy, sw, sh;
         furnacePlayerSlotBounds(0, sx, sy, sw, sh);
@@ -942,6 +986,20 @@ void InventoryTask::furnacePlayerSlotBounds(int player_slot, int &x, int &y, int
 
 int InventoryTask::slotFromMouse(int mouse_x, int mouse_y) const
 {
+    // The chest container has a layout of its own (a variable number of rows),
+    // and its own slot number range, so it maps the mouse itself.
+    if(chest_mode)
+        return chestSlotFromMouse(mouse_x, mouse_y);
+
+    // The armour widgets sit outside the window, so they are checked first. They
+    // are only on screen outside the furnace screen (see render()).
+    if(!furnace_mode)
+    {
+        const int armor_slot = armorSlotFromMouse(mouse_x, mouse_y);
+        if(armor_slot != INVALID_SLOT)
+            return armor_slot;
+    }
+
     const int inv_x = inventoryOriginX();
     const int inv_y = inventoryOriginY();
 
@@ -1072,6 +1130,10 @@ void InventoryTask::drawSlotItem(TEXTURE &tex, int slot, int x, int y)
     char count_text[12];
     snprintf(count_text, sizeof(count_text), "%u", count);
     drawString(count_text, 0xFFFF, tex, x + inv_draw_slot_size - 10, y + 2);
+
+    // A tool that has been used shows how much of it is left, the same bar the
+    // hotbar draws.
+    Inventory::drawDurabilityBar(tex, block, current_inventory.slotDamage(slot), x, y, inv_draw_slot_size);
 }
 
 bool InventoryTask::isHoldingItem() const
@@ -1121,6 +1183,21 @@ void InventoryTask::consumeCraftingIngredients()
 
 void InventoryTask::handleLeftClick(int slot)
 {
+    // Worn armour is put on and taken off from its own widgets.
+    if(!furnace_mode && slot >= ARMOR_SLOT_OFFSET && slot < ARMOR_SLOT_OFFSET + Inventory::armor_slot_count)
+    {
+        armorHandleClick(slot - ARMOR_SLOT_OFFSET);
+        return;
+    }
+
+    // Chest slots only exist in the chest container, and they are numbered above
+    // every other slot, so this can never shadow the branches below.
+    if(chest_mode && slot >= CHEST_SLOT_OFFSET)
+    {
+        chestHandleClick(slot, false);
+        return;
+    }
+
     if(furnace_mode && slot >= FURNACE_INPUT_SLOT && slot <= FURNACE_OUTPUT_SLOT)
     {
         const int fi = slot - FURNACE_INPUT_SLOT;
@@ -1128,12 +1205,17 @@ void InventoryTask::handleLeftClick(int slot)
         {
             if(furnace_counts[2] > 0 && getBLOCK(furnace_slots[2]) != BLOCK_AIR)
             {
+                // Taking the smelted stack out of the furnace is when vanilla hands
+                // over the experience, so that is where it is handed over here: one
+                // point per item taken, which is Survival::XpFromSmelting.
+                const int taken = static_cast<int>(furnace_counts[2]);
                 if(!isHoldingItem())
                 {
                     held_block = furnace_slots[2];
                     held_count = furnace_counts[2];
                     furnace_slots[2] = BLOCK_AIR;
                     furnace_counts[2] = 0;
+                    world_task.addExperience(taken * Survival::XpFromSmelting);
                     syncFurnaceStorage(false);
                     return;
                 }
@@ -1142,6 +1224,7 @@ void InventoryTask::handleLeftClick(int slot)
                     held_count += furnace_counts[2];
                     furnace_slots[2] = BLOCK_AIR;
                     furnace_counts[2] = 0;
+                    world_task.addExperience(taken * Survival::XpFromSmelting);
                     syncFurnaceStorage(false);
                     return;
                 }
@@ -1270,9 +1353,11 @@ void InventoryTask::handleLeftClick(int slot)
         return;
     }
 
-    // Handle regular inventory slots
+    // Handle regular inventory slots. The wear of the stack travels with it, so
+    // a used tool stays used when it is moved around the inventory.
     const BLOCK_WDATA slot_block = current_inventory.slotBlock(slot);
     const unsigned int slot_count = current_inventory.slotCount(slot);
+    const unsigned short slot_damage = current_inventory.slotDamage(slot);
 
     if(!isHoldingItem())
     {
@@ -1280,6 +1365,7 @@ void InventoryTask::handleLeftClick(int slot)
         {
             held_block = slot_block;
             held_count = slot_count;
+            held_damage = slot_damage;
             current_inventory.setSlot(slot, BLOCK_AIR, 0);
         }
         return;
@@ -1287,38 +1373,59 @@ void InventoryTask::handleLeftClick(int slot)
 
     if(getBLOCK(slot_block) == BLOCK_AIR || slot_count == 0)
     {
-        current_inventory.setSlot(slot, held_block, held_count);
+        current_inventory.setSlotWithDamage(slot, held_block, held_count, held_damage);
         held_block = BLOCK_AIR;
         held_count = 0;
+        held_damage = 0;
     }
-    else if(slot_block == held_block)
+    else if(slot_block == held_block && ItemRules::maxStackSize(slot_block) > 1)
     {
-        current_inventory.setSlot(slot, slot_block, slot_count + held_count);
+        // Only stackable items merge; two pickaxes stay two pickaxes, each with
+        // its own wear.
+        current_inventory.setSlotWithDamage(slot, slot_block, slot_count + held_count, slot_damage);
         held_block = BLOCK_AIR;
         held_count = 0;
+        held_damage = 0;
     }
     else
     {
-        current_inventory.setSlot(slot, held_block, held_count);
+        current_inventory.setSlotWithDamage(slot, held_block, held_count, held_damage);
         held_block = slot_block;
         held_count = slot_count;
+        held_damage = slot_damage;
     }
 }
 
 void InventoryTask::handleRightClick(int slot)
 {
+    if(!furnace_mode && slot >= ARMOR_SLOT_OFFSET && slot < ARMOR_SLOT_OFFSET + Inventory::armor_slot_count)
+    {
+        armorHandleClick(slot - ARMOR_SLOT_OFFSET);
+        return;
+    }
+
+    if(chest_mode && slot >= CHEST_SLOT_OFFSET)
+    {
+        chestHandleClick(slot, true);
+        return;
+    }
+
     if(furnace_mode && slot >= FURNACE_INPUT_SLOT && slot <= FURNACE_OUTPUT_SLOT)
     {
         if(slot == FURNACE_OUTPUT_SLOT)
         {
             if(furnace_counts[2] > 0 && getBLOCK(furnace_slots[2]) != BLOCK_AIR)
             {
+                // Right-clicking the output takes it just as a left click does, so
+                // it earns the same smelting experience.
+                const int taken = static_cast<int>(furnace_counts[2]);
                 if(!isHoldingItem())
                 {
                     held_block = furnace_slots[2];
                     held_count = furnace_counts[2];
                     furnace_slots[2] = BLOCK_AIR;
                     furnace_counts[2] = 0;
+                    world_task.addExperience(taken * Survival::XpFromSmelting);
                     syncFurnaceStorage(false);
                     return;
                 }
@@ -1448,6 +1555,7 @@ void InventoryTask::handleRightClick(int slot)
     // Handle regular inventory slots
     const BLOCK_WDATA slot_block = current_inventory.slotBlock(slot);
     const unsigned int slot_count = current_inventory.slotCount(slot);
+    const unsigned short slot_damage = current_inventory.slotDamage(slot);
 
     if(!isHoldingItem())
     {
@@ -1458,27 +1566,37 @@ void InventoryTask::handleRightClick(int slot)
         const unsigned int remaining = slot_count - picked;
         held_block = slot_block;
         held_count = picked;
-        current_inventory.setSlot(slot, remaining == 0 ? BLOCK_AIR : slot_block, remaining);
+        held_damage = slot_damage;
+        current_inventory.setSlotWithDamage(slot, remaining == 0 ? BLOCK_AIR : slot_block, remaining, slot_damage);
         return;
     }
 
     if(getBLOCK(slot_block) == BLOCK_AIR || slot_count == 0)
     {
-        current_inventory.setSlot(slot, held_block, 1);
+        current_inventory.setSlotWithDamage(slot, held_block, 1, held_damage);
         --held_count;
     }
-    else if(slot_block == held_block)
+    else if(slot_block == held_block && ItemRules::maxStackSize(slot_block) > 1)
     {
-        current_inventory.setSlot(slot, slot_block, slot_count + 1);
+        current_inventory.setSlotWithDamage(slot, slot_block, slot_count + 1, slot_damage);
         --held_count;
     }
 
     if(held_count == 0)
+    {
         held_block = BLOCK_AIR;
+        held_damage = 0;
+    }
 }
 
 void InventoryTask::handleHalfPlace(int slot)
 {
+    if(chest_mode && slot >= CHEST_SLOT_OFFSET)
+    {
+        chestHandleClick(slot, true);
+        return;
+    }
+
     if(!isHoldingItem())
         return;
 
@@ -1546,26 +1664,45 @@ void InventoryTask::handleHalfPlace(int slot)
 
     const BLOCK_WDATA slot_block = current_inventory.slotBlock(slot);
     const unsigned int slot_count = current_inventory.slotCount(slot);
+    const unsigned short slot_damage = current_inventory.slotDamage(slot);
 
     if(getBLOCK(slot_block) == BLOCK_AIR || slot_count == 0)
     {
-        current_inventory.setSlot(slot, held_block, place_count);
+        current_inventory.setSlotWithDamage(slot, held_block, place_count, held_damage);
     }
-    else if(slot_block == held_block)
+    else if(slot_block == held_block && ItemRules::maxStackSize(slot_block) > 1)
     {
-        current_inventory.setSlot(slot, slot_block, slot_count + place_count);
+        current_inventory.setSlotWithDamage(slot, slot_block, slot_count + place_count, slot_damage);
     }
     else
         return;
 
     held_count -= place_count;
     if(held_count == 0)
+    {
         held_block = BLOCK_AIR;
+        held_damage = 0;
+    }
 }
 
 void InventoryTask::render()
 {
     drawBackground();
+
+    // The chest screen is laid out by inventorychest.cpp: a variable number of
+    // rows, so none of the fixed offsets below apply to it.
+    if(chest_mode)
+    {
+        renderChestPanel();
+        return;
+    }
+
+    // Worn armour, in the strip left of the inventory window. Drawn before the
+    // window itself, which never covers that strip. The furnace screen has no
+    // inventory window (its panel is centred and wider), so the widgets are left
+    // out of it entirely rather than being drawn under the panel.
+    if(!furnace_mode)
+        renderArmorWidgets();
 
     const int inv_x = inventoryOriginX();
     const int inv_y = inventoryOriginY();

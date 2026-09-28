@@ -250,15 +250,18 @@ namespace Survival
 		case Damage::Void: return VoidDamage;
 		case Damage::Poison: return 1;
 		case Damage::Wither: return 1;
+		case Damage::Lightning: return LightningDamage;
 		default: return 0;
 		}
 	}
 
 	bool ignoresResistance(Damage source)
 	{
-		// Vanilla: starving, drowning, the void, poison and magic bypass armour.
+		// Vanilla: starving, drowning, the void, poison, magic and a lightning bolt
+		// bypass armour.
 		return source == Damage::Starve || source == Damage::Drown || source == Damage::Void
-			|| source == Damage::Poison || source == Damage::Wither || source == Damage::Magic;
+			|| source == Damage::Poison || source == Damage::Wither || source == Damage::Magic
+			|| source == Damage::Lightning;
 	}
 
 	bool blockedByFireResistance(Damage source)
@@ -456,6 +459,15 @@ namespace Survival
 		// Iron ore, stone and everything else give no experience.
 		default: return XpRange{ 0, 0 };
 		}
+	}
+
+	bool respirationSavesBreath(uint8_t level, uint32_t roll)
+	{
+		if(level == 0)
+			return false;
+		// One breath in level+1 is spent, the rest are kept: Respiration I keeps
+		// half, II two thirds, III three quarters.
+		return (roll % (static_cast<uint32_t>(level) + 1u)) != 0u;
 	}
 
 	int xpRoll(const XpRange &range, uint32_t roll)

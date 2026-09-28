@@ -6,15 +6,22 @@
 class StartTask : public Task
 {
 public:
+    /**
+     * The title screen's buttons, in the order they are drawn. There is no sound
+     * test here: it belongs with the options, which is where vanilla puts it, and
+     * the pause menu already has one.
+     */
     enum STARTITEM {
         CONTINUE = 0,
         NEW_FLAT,
         NEW_TERRAIN,
         NEW_GRAPH,
-        AUDIO_TEST,
         EXIT,
         START_ITEM_MAX
     };
+
+    /** True when the button does nothing: there is no saved world to continue. */
+    bool itemEnabled(int item) const { return item != CONTINUE || has_saved_world; }
 
     StartTask();
     virtual ~StartTask();
@@ -28,7 +35,6 @@ public:
 private:
     int selected_item = NEW_TERRAIN;
     bool has_saved_world = false;
-    const char *audio_status = nullptr;
 };
 
 extern StartTask start_task;

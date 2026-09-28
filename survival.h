@@ -110,6 +110,12 @@ namespace Survival
 		Mob,
 		Explosion,
 		Magic,
+		/**
+		 * A lightning strike. Vanilla's lightning_bolt bypasses armour, and this one
+		 * keeps that: it is the weather hitting you, not a blade. The strike also
+		 * sets its victim alight, which is the caller's job (worldweathersnow.cpp).
+		 */
+		Lightning,
 		Count
 	};
 
@@ -131,6 +137,14 @@ namespace Survival
 	/** Air restored per tick when the head is out of water. */
 	constexpr int AirRecoveryPerTick = 4;
 
+	/**
+	 * Respiration (the helmet's enchantment) gives a chance of not spending a breath
+	 * at all, so a diver with Respiration III keeps three breaths out of four and
+	 * stays under water four times as long. `roll` is the caller's own random
+	 * number; this rule only decides whether that roll saves the breath.
+	 */
+	bool respirationSavesBreath(uint8_t level, uint32_t roll);
+
 	/** Suffocation (standing inside a block): interval and damage. */
 	constexpr int SuffocateInterval = 10;
 	constexpr int SuffocateDamage = 1;
@@ -144,6 +158,9 @@ namespace Survival
 	/** Contact damage from cactus and the void. */
 	constexpr int CactusInterval = 10;
 	constexpr int VoidDamage = 4;
+
+	/** Damage of a direct lightning strike (vanilla: 5, five half-hearts). */
+	constexpr int LightningDamage = 5;
 
 	// ------------------------------------------------------ status effects
 

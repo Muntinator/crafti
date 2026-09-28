@@ -458,6 +458,32 @@ static void test_experience()
     CHECK(remaining == 7);
 }
 
+// Respiration (the helmet's enchantment) does not make the air bar bigger; it
+// makes some breaths free, so a diver stays down longer without the HUD showing
+// more bubbles. The rule is the level over the level plus one.
+static void test_respiration_breath()
+{
+    // Without the enchantment no breath is ever saved.
+    for(uint32_t roll = 0; roll < 20; ++roll)
+        CHECK(!respirationSavesBreath(0, roll));
+
+    // With it, the share of saved breaths is level/(level+1): count a full cycle
+    // of rolls per level and check the exact share.
+    for(uint8_t level = 1; level <= 4; ++level)
+    {
+        const uint32_t span = static_cast<uint32_t>(level) + 1u;
+        uint32_t saved = 0;
+        for(uint32_t roll = 0; roll < span * 50u; ++roll)
+            if(respirationSavesBreath(level, roll))
+                ++saved;
+        CHECK(saved == (span - 1u) * 50u);
+    }
+
+    // A deeper level never saves fewer breaths than a shallower one.
+    for(uint32_t roll = 0; roll < 100; ++roll)
+        CHECK(!(respirationSavesBreath(1, roll) && !respirationSavesBreath(3, roll)));
+}
+
 int main()
 {
     test_food_table();
@@ -469,6 +495,7 @@ int main()
     test_effect_durations_and_mappings();
     test_multipliers();
     test_experience();
+    test_respiration_breath();
 
     printf("survival_test: %d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;

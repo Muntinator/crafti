@@ -499,6 +499,64 @@ namespace
 
         CHECK(present > 0);
     }
+
+    void testTemperatureField()
+    {
+        // The temperature field is what decides whether the weather rains or
+        // snows and whether snow on the ground melts (weather.h, snowcover.h), so
+        // it is checked against the biome it is supposed to describe: a column the
+        // field calls cold is never a hot biome, and vice versa.
+        const uint32_t seed = 0x7e4f00d;
+        int cold = 0, warm = 0, hot = 0, sampled = 0;
+        int coldest = 1024, hottest = -1;
+
+        for(int x = -600; x < 600; x += 5)
+            for(int z = -600; z < 600; z += 5)
+            {
+                const int temperature = BiomeGen::temperatureAt(seed, x, z);
+                CHECK(temperature >= 0 && temperature <= 1023);
+                // Pure: the same column always answers the same thing.
+                CHECK(BiomeGen::temperatureAt(seed, x, z) == temperature);
+
+                if(temperature < coldest)
+                    coldest = temperature;
+                if(temperature > hottest)
+                    hottest = temperature;
+
+                const bool is_cold = BiomeGen::isColdAt(seed, x, z);
+                CHECK(is_cold == (temperature <= BiomeGen::ColdTemperature));
+                if(is_cold)
+                    ++cold;
+
+                // The biome is resolved from the same field (plus height and
+                // humidity), so the two can never contradict each other the way a
+                // copied constant would: no desert is cold enough to snow, and no
+                // cold column is a savanna.
+                const BiomeGen::Column column = [&] {
+                    BiomeGen::Column c;
+                    BiomeGen::columnAt(seed, x, z, 20, c);
+                    return c;
+                }();
+                if(is_cold)
+                    CHECK(column.biome != BiomeGen::BiomeDesert && column.biome != BiomeGen::BiomeSavanna);
+                else if(column.biome == BiomeGen::BiomeDesert)
+                    ++hot;
+                else if(column.biome == BiomeGen::BiomeSavanna)
+                    ++warm;
+
+                ++sampled;
+            }
+
+        printf("    temperature: %d..%d, cold %d%%, desert %d%%, savanna %d%% of %d columns\n",
+               coldest, hottest, cold * 100 / sampled, hot * 100 / sampled, warm * 100 / sampled, sampled);
+
+        // The field has to use its whole range and actually produce both kinds of
+        // weather, or one of the two would be a feature nobody could ever see.
+        CHECK(coldest < BiomeGen::ColdTemperature);
+        CHECK(hottest > BiomeGen::ColdTemperature);
+        CHECK(cold > sampled / 100);
+        CHECK(cold < sampled / 2);
+    }
 }
 
 int main()
@@ -515,6 +573,7 @@ int main()
     testCaves();
     testRavines();
     testRavineNeverBreaksTheSurface();
+    testTemperatureField();
 
     printf("biomegen_test: %d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;

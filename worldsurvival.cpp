@@ -9,10 +9,14 @@
 
 #include "worldtask.h"
 
+#include <cstdlib>
+
 #include "audio_manager.h"
 #include "deathtask.h"
+#include "enchanting.h"
 #include "font.h"
 #include "inventory.h"
+#include "itemrules.h"
 #include "settingstask.h"
 #include "survival.h"
 
@@ -112,6 +116,12 @@ void WorldTask::applyDamage(int amount, Survival::Damage source, const char *msg
     if(amount <= 0 || health <= 0)
         return;
 
+    // Creative mode cannot be hurt at all. The check is here rather than only in
+    // updateSurvival() because damage also arrives from the mobs, the fall and the
+    // world itself, and all of them funnel through this one place.
+    if(isCreative())
+        return;
+
     // Fire resistance stops fire and lava completely; resistance scales the rest,
     // except for the sources vanilla lets bypass armour (starvation, drowning,
     // the void, poison, magic).
@@ -124,6 +134,27 @@ void WorldTask::applyDamage(int amount, Survival::Damage source, const char *msg
         amount = static_cast<int>(static_cast<float>(amount) * Survival::resistanceMultiplier(static_cast<uint8_t>(resistance)) + 0.5f);
         if(amount < 1)
             amount = 1;
+    }
+
+    // Worn armour takes the edge off, and every hit wears what is worn. The
+    // sources that ignore Resistance are the same ones vanilla lets bypass
+    // armour (starvation, drowning, the void, poison, magic).
+    if(!Survival::ignoresResistance(source))
+    {
+        const int armor_points = current_inventory.totalArmorPoints();
+        if(armor_points > 0)
+        {
+            amount = ItemRules::reduceDamageWithArmor(amount, armor_points);
+            if(current_inventory.damageArmor())
+                setMessage("Armour broke!");
+        }
+
+        // The enchantments on that armour are a second, separate reduction rather
+        // than more armour points: both are capped at 80% in vanilla, so adding
+        // them up would make Protection pointless under a full diamond suit.
+        const int protection = armorProtectionPoints(source);
+        if(protection > 0)
+            amount = ItemRules::reduceDamageWithArmor(amount, protection);
     }
 
     // Absorption is a shield that is spent before health.
@@ -155,10 +186,57 @@ void WorldTask::applyDamage(int amount, Survival::Damage source, const char *msg
         setMessage(msg);
 }
 
+int WorldTask::heldMeleeDamage(Enchanting::TargetKind target) const
+{
+    const Enchanting::Set &weapon = current_inventory.currentSlotEnchant();
+    int damage = Enchanting::meleeDamage(ItemRules::attackDamage(current_inventory.currentSlot()),
+                                         weapon, target);
+
+    const int strength = effectAmplifier(Survival::Strength);
+    if(strength >= 0)
+        damage = static_cast<int>(static_cast<float>(damage)
+                                  * Survival::attackMultiplier(Survival::Strength, static_cast<uint8_t>(strength)) + 0.5f);
+
+    return damage < 1 ? 1 : damage;
+}
+
+int WorldTask::armorProtectionPoints(Survival::Damage source) const
+{
+    // Which of vanilla's five protections answers this kind of hit. Only the kinds
+    // the game can actually deal are named; arrows and mob melee are not in the
+    // game yet, so a projectile would land in "everything" if one ever arrives.
+    Enchanting::ProtectionKind kind = Enchanting::ProtectionKind::FromAll;
+    switch(source)
+    {
+    case Survival::Damage::Fall:
+        kind = Enchanting::ProtectionKind::FromFall;
+        break;
+    case Survival::Damage::Fire:
+    case Survival::Damage::Lava:
+        kind = Enchanting::ProtectionKind::FromFire;
+        break;
+    case Survival::Damage::Explosion:
+        kind = Enchanting::ProtectionKind::FromBlast;
+        break;
+    default:
+        break;
+    }
+
+    int points = 0;
+    for(int piece = 0; piece < Inventory::armor_slot_count; ++piece)
+        points += Enchanting::protectionPointsFor(current_inventory.armor_enchant[piece], kind);
+    return points;
+}
+
 void WorldTask::hurtPlayer(unsigned int dmg, const char *msg)
 {
-    // Mob and explosion damage: reduced by resistance, but not fire resistance.
+    // Mob damage: reduced by resistance and by armour, but not by fire resistance.
     applyDamage(static_cast<int>(dmg), Survival::Damage::Mob, msg);
+}
+
+void WorldTask::hurtPlayerByExplosion(unsigned int dmg, const char *msg)
+{
+    applyDamage(static_cast<int>(dmg), Survival::Damage::Explosion, msg);
 }
 
 int WorldTask::survivalSteps(GLFix dt)
@@ -192,6 +270,18 @@ void WorldTask::updateSurvival(GLFix dt)
     // A graph view is a plot of a function: no survival, no hunger, no damage.
     if(world.worldType() == World::WorldType::Graph)
         return;
+
+    // Creative mode has no survival to run: nothing hurts (applyDamage says so as
+    // well, because mobs and falling call it directly), hunger never drains and
+    // the breath meter stays full. The state is settled rather than merely frozen
+    // so the HUD cannot come back showing an empty bar.
+    if(isCreative())
+    {
+        health = Survival::MaxHealth;
+        air = Survival::MaxAir;
+        fire_ticks = 0;
+        return;
+    }
 
     const int steps = survivalSteps(dt);
     if(steps <= 0)
@@ -247,7 +337,12 @@ void WorldTask::updateSurvival(GLFix dt)
     // --- Breath ---
     if(in_water)
     {
-        if(air > 0)
+        // Respiration (the helmet's) keeps some breaths outright, which is how
+        // vanilla lengthens a dive without touching the size of the air bar.
+        const int respiration = current_inventory.armor_enchant[ItemRules::HelmetSlot]
+                                  .levelOf(Enchanting::Respiration);
+        if(air > 0 && !Survival::respirationSavesBreath(static_cast<uint8_t>(respiration),
+                                                        static_cast<uint32_t>(rand())))
             air -= steps;
         if(air <= 0)
         {
@@ -276,6 +371,12 @@ void WorldTask::updateSurvival(GLFix dt)
         fire_ticks -= steps;
         if(in_water)
             fire_ticks = 0; // stepping into water puts it out
+        else if(weather_precipitation != Weather::NoPrecipitation && weather_outdoors)
+            // Standing in the rain (or the snow: a flake is frozen water) puts it
+            // out as well. It has to be the weather *on the player*, so the roofline
+            // check from updateWeather is what decides it -- under a roof you keep
+            // burning, which is the point of a roof.
+            fire_ticks = 0;
         else
         {
             fire_timer -= steps;

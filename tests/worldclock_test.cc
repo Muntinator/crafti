@@ -297,6 +297,53 @@ static void test_celestial_projection()
     CHECK(pixelsPerDegree(0) == 1);
 }
 
+static void test_camera_pitch_sign()
+{
+    // xr is the engine's pitch: 0 on the horizon, growing as the camera looks
+    // *down*, wrapping through 270 at straight up (the world task decreases it
+    // for "look up", and crosshairRay's forward y is -sin(xr)). The sky offset
+    // function wants the same angle in [-180, 180), positive looking down.
+    CHECK(cameraPitch(0) == 0);
+    CHECK(cameraPitch(30) == 30);
+    CHECK(cameraPitch(90) == 90);
+    CHECK(cameraPitch(330) == -30);
+    CHECK(cameraPitch(270) == -90);
+    CHECK(cameraPitch(359) == -1);
+    CHECK(cameraPitch(181) == -179);
+    // An xr that has not been normalised yet, or a negative one, still lands in
+    // the range rather than throwing the sky to the far side of the screen.
+    CHECK(cameraPitch(400) == 40);
+    CHECK(cameraPitch(-30) == -30);
+    CHECK(cameraPitch(-330) == 30);
+
+    // The sky has to sweep past the player as they pitch: a body on the horizon
+    // is *below* the centre while the camera looks up, and *above* it while the
+    // camera looks down. Handing the offset function the raw xr, or -xr, is what
+    // breaks this, and it is invisible until a player looks up at night.
+    const int ppd = 4;
+    int ox = 0, oy = 0;
+
+    celestialScreenOffset(0, cameraPitch(330), 0, 0, ppd, ox, oy);
+    CHECK(oy == 30 * ppd);
+
+    celestialScreenOffset(0, cameraPitch(30), 0, 0, ppd, ox, oy);
+    CHECK(oy == -30 * ppd);
+
+    // A star 30 degrees up lands in the middle of the screen when the camera
+    // looks up by 30, and the noon sun is centred when the camera looks straight
+    // up -- the two cases that make the sun and moon feel attached to the sky.
+    celestialScreenOffset(0, cameraPitch(330), 0, 30, ppd, ox, oy);
+    CHECK(oy == 0);
+
+    celestialScreenOffset(0, cameraPitch(270), 0, 90, ppd, ox, oy);
+    CHECK(oy == 0);
+
+    // The same body 90 degrees to the side of the view stays off to that side
+    // whatever the pitch is: the two axes are independent.
+    celestialScreenOffset(0, cameraPitch(270), 90, 90, ppd, ox, oy);
+    CHECK(ox == 90 * ppd);
+}
+
 static void test_star_field()
 {
     // Deterministic, in range, and spread out rather than clumped.
@@ -361,6 +408,104 @@ static void test_wall_clock()
 // The clock is advanced from elapsed wall-clock milliseconds, not from frames or
 // simulation steps, so the day lasts the same real time on the CX (a few logic
 // steps per second) as on the desktop (tens per second).
+static void test_moon_phases()
+{
+    // The phase walks one step per day and wraps over the month, so two nights in
+    // a row never look the same and the first night is a full moon.
+    reset();
+    CHECK(moonPhase() == MoonPhases / 2);
+    CHECK(dayCount() == 0);
+
+    int seen[MoonPhases] = {};
+    for(unsigned int day = 0; day < static_cast<unsigned int>(MoonPhases); ++day)
+    {
+        CHECK(moonPhase() >= 0 && moonPhase() < MoonPhases);
+        ++seen[moonPhase()];
+        setTime(TicksPerDay - 1);
+        advance(1); // one day later
+    }
+
+    for(int phase = 0; phase < MoonPhases; ++phase)
+        CHECK(seen[phase] == 1); // every phase exactly once per month
+
+    CHECK(moonPhase() == MoonPhases / 2); // and back to a full moon
+}
+
+static void test_celestial_discs()
+{
+    // A body is a round disc of pixels, not a square.
+    CHECK(discPixel(4, 0, 0));
+    CHECK(discPixel(4, 4, 0));
+    CHECK(discPixel(4, 0, -4));
+    CHECK(!discPixel(4, 5, 0));
+    CHECK(!discPixel(4, 3, 3));
+    CHECK(!discPixel(4, -4, -4));
+    CHECK(!discPixel(-1, 0, 0));
+
+    const int radius = 8;
+
+    // A new moon is dark, a full moon is whole, and nothing outside the disc is
+    // ever lit whatever the phase says.
+    int counts[MoonPhases] = {};
+    for(int phase = 0; phase < MoonPhases; ++phase)
+    {
+        int lit = 0;
+        for(int dy = -radius - 2; dy <= radius + 2; ++dy)
+            for(int dx = -radius - 2; dx <= radius + 2; ++dx)
+            {
+                if(moonPixel(radius, dx, dy, phase))
+                {
+                    ++lit;
+                    CHECK(discPixel(radius, dx, dy)); // never outside the disc
+                }
+            }
+        counts[phase] = lit;
+    }
+
+    CHECK(counts[0] == 0);
+    int full = 0;
+    for(int dy = -radius; dy <= radius; ++dy)
+        for(int dx = -radius; dx <= radius; ++dx)
+            if(discPixel(radius, dx, dy))
+                ++full;
+    CHECK(counts[MoonPhases / 2] == full);
+
+    // Crescent to full to crescent: the lit area grows to the full moon and then
+    // shrinks again, and the month is symmetric around it.
+    for(int phase = 1; phase < MoonPhases / 2; ++phase)
+        CHECK(counts[phase] > counts[phase - 1]);
+    for(int phase = MoonPhases / 2 + 1; phase < MoonPhases; ++phase)
+        CHECK(counts[phase] < counts[phase - 1]);
+    for(int phase = 0; phase < MoonPhases; ++phase)
+        CHECK(counts[phase] == counts[(MoonPhases - phase) % MoonPhases]);
+
+    // The second half of the month is the mirror image of the first, which is
+    // what makes the moon wax on one side and wane on the other.
+    for(int phase = 0; phase < MoonPhases; ++phase)
+        for(int dy = -radius; dy <= radius; ++dy)
+            for(int dx = -radius; dx <= radius; ++dx)
+                CHECK(moonPixel(radius, dx, dy, phase) == moonPixel(radius, -dx, dy, (MoonPhases - phase) % MoonPhases));
+
+    // ...and at the quarters the lit side really is the other side: the limb is
+    // lit while its mirror pixel is in shadow, and the other way round a week later.
+    const int waxing = MoonPhases / 4;
+    const int waning = MoonPhases - waxing;
+    for(int dy = -radius; dy <= radius; ++dy)
+    {
+        if(!discPixel(radius, radius - 1, dy))
+            continue; // its mirror pixel is outside the disc, so there is nothing to compare
+
+        CHECK(moonPixel(radius, radius - 1, dy, waxing));
+        CHECK(!moonPixel(radius, -(radius - 1), dy, waxing));
+        CHECK(!moonPixel(radius, radius - 1, dy, waning));
+        CHECK(moonPixel(radius, -(radius - 1), dy, waning));
+    }
+
+    // A phase outside the month is treated as a new moon rather than as junk.
+    CHECK(!moonPixel(radius, 0, 0, -1));
+    CHECK(!moonPixel(radius, 0, 0, MoonPhases));
+}
+
 static void test_elapsed_advance()
 {
     setDayLengthSeconds(DefaultDayLengthSeconds);
@@ -476,8 +621,11 @@ int main()
     test_sky_light_factor();
     test_sky_colour();
     test_celestial_projection();
+    test_camera_pitch_sign();
     test_star_field();
     test_wall_clock();
+    test_moon_phases();
+    test_celestial_discs();
     test_elapsed_advance();
     test_sky_rotation();
 

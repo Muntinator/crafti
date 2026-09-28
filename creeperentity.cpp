@@ -7,6 +7,7 @@
 #include "world.h"
 #include "terrain.h"
 #include "fastmath.h"
+#include "enchanting.h"
 #include "grounddrops.h"
 #include "worldtask.h"
 #include "audio_manager.h"
@@ -106,6 +107,7 @@ CreeperEntity::CreeperEntity()
       yaw(0), walk_timer(0), swing_intensity(0),
       health(20), hurt_time(0), hurt_resistant(0), death_time(0),
       dir_timer(60), on_ground(false), loot_spawned(false),
+      fire_ticks(0), killing_looting(0),
       fuse_timer(0), died_by_explosion(false)
 {
     aabb = {x - WIDTH / 2, y, z - WIDTH / 2, x + WIDTH / 2, y + HEIGHT, z + WIDTH / 2};
@@ -117,6 +119,7 @@ CreeperEntity::CreeperEntity(GLFix px, GLFix py, GLFix pz)
       yaw(GLFix(rand() % 360)), walk_timer(0), swing_intensity(0),
       health(20), hurt_time(0), hurt_resistant(0), death_time(0),
       dir_timer(rand() % 60), on_ground(false), loot_spawned(false),
+      fire_ticks(0), killing_looting(0),
       fuse_timer(0), died_by_explosion(false)
 {
     aabb = {x - WIDTH / 2, y, z - WIDTH / 2, x + WIDTH / 2, y + HEIGHT, z + WIDTH / 2};
@@ -129,14 +132,31 @@ void CreeperEntity::update()
     if(hurt_resistant > 0)
         --hurt_resistant;
 
+    // Burning: one point of damage a second, like vanilla (Fire Aspect starts it).
+    if(fire_ticks > 0 && health > 0)
+    {
+        --fire_ticks;
+        if((fire_ticks % 20) == 0)
+            health -= Survival::FireDamage;
+    }
+
     const bool dead = health <= 0;
     if(dead && !loot_spawned && !died_by_explosion)
     {
         loot_spawned = true;
-        const unsigned int n = static_cast<unsigned int>(rand() % 3);
+        // Looting adds one more roll of the gunpowder table per level, the way
+        // vanilla does it.
+        const int rolls = 1 + Enchanting::lootingExtraDrops(killing_looting);
+        unsigned int n = 0;
+        for(int roll = 0; roll < rolls; ++roll)
+            n += static_cast<unsigned int>(rand() % 3);
         if(n > 0u)
             spawnWorldDrop(x, y, z,
                            getBLOCKWDATA(BLOCK_ITEM, static_cast<uint8_t>(ItemTexture::GUNPOWDER)), n);
+
+        // A creeper killed before it goes off is worth experience; one that took
+        // itself out with the blast is not (survival.h's table).
+        world_task.addExperience(Survival::xpFromMob(Survival::XpMob::Hostile));
     }
     if(dead)
     {
@@ -185,7 +205,7 @@ void CreeperEntity::update()
             const float dist3 =
                 std::sqrt(dxp * dxp + dyp * dyp + dzp * dzp);
             if(dist3 <= blast_radius.toFloat())
-                world_task.hurtPlayer(4, "Kaboom!");
+                world_task.hurtPlayerByExplosion(4, "Kaboom!");
             aabb = {x - WIDTH / 2, y, z - WIDTH / 2, x + WIDTH / 2, y + HEIGHT, z + WIDTH / 2};
             return;
         }
@@ -288,7 +308,8 @@ void CreeperEntity::update()
     }
 }
 
-void CreeperEntity::applyMeleeDamage(int amount, GLFix attacker_yaw)
+void CreeperEntity::applyMeleeDamage(int amount, GLFix attacker_yaw, int knockback_steps,
+                                    int looting, int set_fire_ticks)
 {
     if(health <= 0 || hurt_resistant > 0)
         return;
@@ -299,16 +320,22 @@ void CreeperEntity::applyMeleeDamage(int amount, GLFix attacker_yaw)
     hurt_time = 10;
     hurt_resistant = 10;
 
+    if(set_fire_ticks > 0 && fire_ticks < set_fire_ticks)
+        fire_ticks = set_fire_ticks;
+    if(looting > killing_looting)
+        killing_looting = static_cast<int8_t>(looting);
+
     GameAudio::mobSound(GameAudio::MobCreeper, true, blocksToPlayer(x, z));
 
+    const GLFix impulse = GLFix(10 + 4 * (knockback_steps < 0 ? 0 : knockback_steps));
     GLFix ay = attacker_yaw;
     ay.normaliseAngle();
     GLFix kx = GLFix(fast_sin(ay));
     GLFix kz = GLFix(fast_cos(ay));
     vx /= 2;
     vz /= 2;
-    vx += kx * GLFix(10);
-    vz += kz * GLFix(10);
+    vx += kx * impulse;
+    vz += kz * impulse;
     if(on_ground)
     {
         vy /= 2;
@@ -334,6 +361,8 @@ void CreeperEntity::render() const
     }
     else if(fuse_timer > 0 && ((fuse_timer / 4) % 2) == 0)
         nglSetTextureModulate(GLFix(1.12f), GLFix(1.12f), GLFix(1.12f));
+    else if(fire_ticks > 0 && health > 0)
+        nglSetTextureModulate(GLFix(1), GLFix(0.55f), GLFix(0.25f));
 
     const GLFix S = GLFix(BLOCK_SIZE) / GLFix(16);
 

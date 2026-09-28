@@ -10,6 +10,7 @@
 #include "aabb.h"
 #include "blockrenderer.h"
 #include "blocklisttask.h"
+#include "commandtask.h"
 #include "menutask.h"
 #include "settingstask.h"
 #include "fastmath.h"
@@ -26,17 +27,24 @@
 #include "textures/blockselection.h"
 
 #include "deathtask.h"
-#include "humanentity.h"
 #include "livestockentity.h"
 #include "villagegen.h"
 #include "villagerentity.h"
 #include "worldclock.h"
 #include "creeperentity.h"
 #include "grounddrops.h"
+#include "itemrules.h"
+#include "worlditems.h"
 
 WorldTask world_task;
 
 constexpr GLFix  WorldTask::player_width,  WorldTask::player_height,  WorldTask::eye_pos;
+
+/** The level of one enchantment on the held stack, 0 when it has none. */
+static int heldEnchant(const Enchanting::Id id)
+{
+    return current_inventory.currentSlotEnchant().levelOf(id);
+}
 
 static BLOCK_WDATA inventoryDropItem(const BLOCK_WDATA block)
 {
@@ -64,64 +72,16 @@ static BLOCK_WDATA inventoryDropItem(const BLOCK_WDATA block)
     return getBLOCKWDATA(getBLOCK(block), getBLOCKDATA(block));
 }
 
-static int heldPickaxeTier(const BLOCK_WDATA held)
-{
-    if(getBLOCK(held) != BLOCK_ITEM)
-        return 0;
-
-    switch(static_cast<ItemTexture>(getITEMDATA(held)))
-    {
-    case ItemTexture::WOODEN_PICKAXE:
-        return 1;
-    case ItemTexture::STONE_PICKAXE:
-        return 2;
-    case ItemTexture::IRON_PICKAXE:
-        return 3;
-    case ItemTexture::DIAMOND_PICKAXE:
-        return 4;
-    case ItemTexture::GOLDEN_PICKAXE:
-        return 5;
-    default:
-        return 0;
-    }
-}
-
-static int requiredPickaxeTierForDrop(const BLOCK block)
-{
-    switch(block)
-    {
-    case BLOCK_STONE:
-    case BLOCK_COBBLESTONE:
-    case BLOCK_COAL_ORE:
-    case BLOCK_FURNACE:
-    case BLOCK_NETHERRACK:
-        return 1; // Wooden+
-
-    case BLOCK_IRON_ORE:
-    case BLOCK_IRON:
-        return 2; // Stone+
-
-    case BLOCK_GOLD_ORE:
-    case BLOCK_GOLD:
-    case BLOCK_DIAMOND_ORE:
-    case BLOCK_DIAMOND:
-    case BLOCK_REDSTONE_ORE:
-        return 3; // Iron+
-
-    default:
-        return 0;
-    }
-}
-
-static bool isPickaxeMinedBlock(const BLOCK block)
-{
-    return requiredPickaxeTierForDrop(block) > 0;
-}
+// The tool tiers, the harvest requirements and the wear a use costs all live in
+// itemrules.h now: they are a table, not a behaviour, and the host tests pin
+// every entry down (tests/itemrules_test.cc).
 
 /** Maps a block to the footstep/break material family used by the audio engine. */
 static GameAudio::Material materialForBlock(const BLOCK block)
 {
-    if(block >= BLOCK_WOOL_BLACK && block <= BLOCK_WOOL_ORANGE)
+    // A bed is a mattress on a wooden frame, so it sounds like the wool it is
+    // mostly made of rather than like the stone the default would give it.
+    if(block == BLOCK_BED || (block >= BLOCK_WOOL_BLACK && block <= BLOCK_WOOL_ORANGE))
         return GameAudio::MaterialCloth;
 
     switch(block)
@@ -142,6 +102,12 @@ static GameAudio::Material materialForBlock(const BLOCK block)
 
     case BLOCK_SAND:
         return GameAudio::MaterialSand;
+
+    case BLOCK_SNOW:
+        // The audio pack has a snow family of its own, so a footstep on a snow
+        // layer is a crunch rather than a stone click: weather that is visible and
+        // audible changes the sound of the ground it settles on.
+        return GameAudio::MaterialSnow;
 
     case BLOCK_DIRT:
         return GameAudio::MaterialGravel;
@@ -221,24 +187,6 @@ static bool tryMeleeMob()
     yr.normaliseAngle();
     const GLFix eye_y = world_task.y + WorldTask::eye_pos;
 
-    HumanEntity *hit_h = nullptr;
-    GLFix h_dist = GLFix::maxValue();
-    for(auto &h : human_entities)
-    {
-        if(!h.isAliveMob())
-            continue;
-        GLFix dist;
-        if(h.aabb.intersectsRay(world_task.x, eye_y, world_task.z, dx, dy, dz, dist) == AABB::NONE)
-            continue;
-        if(dist < GLFix(0))
-            continue;
-        if(dist < h_dist)
-        {
-            h_dist = dist;
-            hit_h = &h;
-        }
-    }
-
     LivestockEntity *hit_c = nullptr;
     GLFix c_dist = GLFix::maxValue();
     for(auto &c : livestock_entities)
@@ -293,30 +241,25 @@ static bool tryMeleeMob()
         }
     }
 
-    if(hit_h == nullptr && hit_c == nullptr && hit_cr == nullptr && hit_v == nullptr)
+    if(hit_c == nullptr && hit_cr == nullptr && hit_v == nullptr)
         return false;
 
     GLFix best_dist = GLFix::maxValue();
-    int pick = -1; // 0 human, 1 livestock, 2 creeper, 3 villager
-    if(hit_h != nullptr && h_dist < best_dist)
-    {
-        best_dist = h_dist;
-        pick = 0;
-    }
+    int pick = -1; // 0 livestock, 1 creeper, 2 villager
     if(hit_c != nullptr && c_dist < best_dist)
     {
         best_dist = c_dist;
-        pick = 1;
+        pick = 0;
     }
     if(hit_cr != nullptr && cr_dist < best_dist)
     {
         best_dist = cr_dist;
-        pick = 2;
+        pick = 1;
     }
     if(hit_v != nullptr && v_dist < best_dist)
     {
         best_dist = v_dist;
-        pick = 3;
+        pick = 2;
     }
     if(pick < 0)
         return false;
@@ -328,15 +271,31 @@ static bool tryMeleeMob()
     if(got_block && side != AABB::NONE && block_dist <= best_dist)
         return false;
 
-    if(pick == 1)
-        hit_c->applyMeleeDamage(2, yr);
-    else if(pick == 2)
-        hit_cr->applyMeleeDamage(2, yr);
-    else if(pick == 3)
-        hit_v->applyMeleeDamage(2, yr);
+    // What the hit is worth: the weapon's own damage (ItemRules::attackDamage,
+    // vanilla's table), its Sharpness and the Strength effect, in one rule kept
+    // with the survival state. The weapon's other enchantments travel with the hit
+    // rather than changing its damage: Knockback throws the mob further, Looting is
+    // rolled into its drop when it dies and Fire Aspect sets it alight.
+    const int damage = world_task.heldMeleeDamage(Enchanting::TargetKind::Normal);
+    const Enchanting::Set &weapon = current_inventory.currentSlotEnchant();
+    const int knockback = Enchanting::knockbackSteps(weapon.levelOf(Enchanting::Knockback));
+    const int looting = weapon.levelOf(Enchanting::Looting);
+    const int fire_aspect = Enchanting::fireAspectTicks(weapon.levelOf(Enchanting::FireAspect));
+
+    if(pick == 0)
+        hit_c->applyMeleeDamage(damage, yr, knockback, looting, fire_aspect);
+    else if(pick == 1)
+        hit_cr->applyMeleeDamage(damage, yr, knockback, looting, fire_aspect);
     else
-        hit_h->applyMeleeDamage(2, yr);
+        hit_v->applyMeleeDamage(damage, yr, knockback, looting, fire_aspect);
     GameAudio::play(GameAudio::EventMobHit);
+
+    // Landing a hit is work: vanilla charges exhaustion for every attack.
+    world_task.addExhaustion(Survival::ExhaustionPerAttack);
+
+    // Landing a hit wears the weapon: a sword by one point, any other tool by
+    // two, and bare hands not at all.
+    wearHeldItem(ItemRules::durabilityPerAttack(current_inventory.currentSlot()));
     return true;
 }
 
@@ -390,6 +349,15 @@ void WorldTask::logic(GLFix dt)
     updateClock(dt);
     // After the clock: the weather is derived from the time of day it just moved.
     updateWeather(dt);
+
+    // A sleeping player lies still. The night was skipped the moment the bed was
+    // used, so all that is left is the short fade that carries them into the
+    // morning (worldbed.cpp).
+    if(sleeping)
+    {
+        updateSleep(dt);
+        return;
+    }
 #ifndef _TINSPIRE
     const Uint8 *desktop_keys = SDL_GetKeyState(nullptr);
     const bool desktop_t_held = desktop_keys[SDLK_t] != 0;
@@ -528,7 +496,14 @@ void WorldTask::logic(GLFix dt)
             if(!safe_spawn_pending && !in_water)
             {
                 const int fall_blocks = fall_distance.toInteger<int>() / BLOCK_SIZE;
-                const int dmg = Survival::fallDamage(fall_blocks);
+                int dmg = Survival::fallDamage(fall_blocks);
+                // Feather Falling is the boots' enchantment, and it takes its share
+                // off the fall before the armour ever sees it (vanilla applies it to
+                // the fall itself).
+                const int feather = Enchanting::featherFallingPercentReduction(
+                    current_inventory.armor_enchant[ItemRules::BootsSlot].levelOf(Enchanting::FeatherFalling));
+                if(feather > 0)
+                    dmg = dmg * (100 - feather) / 100;
                 if(dmg > 0)
                 {
                     // applyDamage switches to the death screen at zero health.
@@ -774,13 +749,23 @@ void WorldTask::logic(GLFix dt)
 
     if(key_held_down)
     {
-        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_7) || keyPressed(KEY_NSPIRE_1) || keyPressed(KEY_NSPIRE_3) || keyPressed(KEY_NSPIRE_PERIOD) || keyPressed(KEY_NSPIRE_MINUS) || keyPressed(KEY_NSPIRE_PLUS) || keyPressed(KEY_NSPIRE_MENU) || keyPressed(KEY_NSPIRE_A) || desktop_t_held;
+        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_7) || keyPressed(KEY_NSPIRE_1) || keyPressed(KEY_NSPIRE_3) || keyPressed(KEY_NSPIRE_PERIOD) || keyPressed(KEY_NSPIRE_MINUS) || keyPressed(KEY_NSPIRE_PLUS) || keyPressed(KEY_NSPIRE_MENU) || keyPressed(KEY_NSPIRE_A) || keyPressed(KEY_NSPIRE_DIVIDE) || desktop_t_held;
         key_held_down = key_held_down || desktop_g_held || desktop_j_held || desktop_x_held || desktop_z_held;
     }
 
     else if(keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_MENU))
     {
         menu_task.makeCurrent();
+        key_held_down = true;
+        return;
+    }
+    else if(keyPressed(KEY_NSPIRE_DIVIDE))
+    {
+        // The divide key is the one the calculator spells '/' with, which is what
+        // a command is written after. The console takes the frame from here, so
+        // the world stops moving while a line is typed and nothing the player
+        // walks into is lost.
+        command_task.open();
         key_held_down = true;
         return;
     }
@@ -797,7 +782,14 @@ void WorldTask::logic(GLFix dt)
             if(world.intersect(aabb))
                 return;
 
+            // A block that does something when used (a lever, a door, a crafting
+            // table) acts before placement is considered, in every mode.
             if(world.blockAction(selection_pos.x, selection_pos.y, selection_pos.z))
+                return;
+
+            // Armour is worn rather than placed, so using a piece puts it on (and
+            // swaps out whatever was in that slot) instead of doing nothing.
+            if(tryEquipHeldArmor())
                 return;
 
             BLOCK_WDATA current_block = world.getBlock(selection_pos.x, selection_pos.y, selection_pos.z),
@@ -815,7 +807,10 @@ void WorldTask::logic(GLFix dt)
                    || (getBLOCK(current_block) == BLOCK_LAVA && getBLOCK(block_to_place) == BLOCK_LAVA)))
             {
                 world.changeBlock(selection_pos.x, selection_pos.y, selection_pos.z, block_to_place);
-                current_inventory.removeFromCurrentSlot();
+                // Creative builds without spending anything, which is the point of
+                // the mode: the hotbar is a palette rather than a supply.
+                if(!isCreative())
+                    current_inventory.removeFromCurrentSlot();
                 GameAudio::placeBlock(materialForBlock(getBLOCK(block_to_place)));
                 return;
             }
@@ -851,6 +846,24 @@ void WorldTask::logic(GLFix dt)
             //Only set the block if there's air
             if(current_block == BLOCK_AIR || (in_water && getBLOCK(current_block) == BLOCK_WATER))
             {
+                // A bed is two cells laid flat sharing one facing, so which way it
+                // points comes from where the player is looking rather than from
+                // the face that was clicked, and both halves go down together or
+                // neither does (worlditems.cpp).
+                if(getBLOCK(block_to_place) == BLOCK_BED)
+                {
+                    if(tryPlaceBed(pos.x, pos.y, pos.z, yr))
+                    {
+                        if(!isCreative())
+                            current_inventory.removeFromCurrentSlot();
+                        GameAudio::placeBlock(materialForBlock(BLOCK_BED));
+                    }
+                    else
+                        setMessage("No room for a bed");
+
+                    return;
+                }
+
                 bool placed = false;
                 if(!global_block_renderer.isOriented(block_to_place))
                 {
@@ -879,7 +892,12 @@ void WorldTask::logic(GLFix dt)
                 {
                     if(getBLOCK(block_to_place) == BLOCK_FURNACE)
                         inventory_task.ensureFurnaceTile(pos.x, pos.y, pos.z);
-                    current_inventory.removeFromCurrentSlot();
+                    // A chest starts an empty container, and pairs with a chest
+                    // beside it to become a double chest.
+                    if(getBLOCK(block_to_place) == BLOCK_CHEST)
+                        placeChestAt(pos.x, pos.y, pos.z);
+                    if(!isCreative())
+                        current_inventory.removeFromCurrentSlot();
                     GameAudio::placeBlock(materialForBlock(getBLOCK(block_to_place)));
                 }
             }
@@ -891,7 +909,7 @@ void WorldTask::logic(GLFix dt)
         if(selection_side != AABB::NONE && getBLOCK(b) != BLOCK_BEDROCK && getBLOCK(b) != BLOCK_AIR)
         {
             const BLOCK b_type = getBLOCK(b);
-            const int pickaxe_tier = heldPickaxeTier(current_inventory.currentSlot());
+            const int pickaxe_tier = ItemRules::pickaxeTier(current_inventory.currentSlot());
 
             if (mining_pos.x != selection_pos.x || mining_pos.y != selection_pos.y || mining_pos.z != selection_pos.z) {
                 mining_pos = selection_pos;
@@ -905,7 +923,7 @@ void WorldTask::logic(GLFix dt)
                 else if (b_type == BLOCK_GLASS) mining_duration = 15;
                 else if (b_type == BLOCK_IRON || b_type == BLOCK_GOLD || b_type == BLOCK_DIAMOND) mining_duration = 100;
 
-                if(isPickaxeMinedBlock(b_type))
+                if(ItemRules::isPickaxeMinedBlock(b_type))
                 {
                     if(pickaxe_tier == 0)
                         mining_duration *= 3;
@@ -923,36 +941,90 @@ void WorldTask::logic(GLFix dt)
                     if(mining_duration < 3)
                         mining_duration = 3;
                 }
+
+                // Mining under water is five times slower, exactly as vanilla has
+                // it -- and Aqua Affinity (the helmet's) is the enchantment that
+                // takes that penalty away, which is the whole reason it exists.
+                const int aqua_affinity = current_inventory.armor_enchant[ItemRules::HelmetSlot]
+                                              .levelOf(Enchanting::AquaAffinity);
+                if(in_water && !Enchanting::aquaAffinity(aqua_affinity))
+                    mining_duration *= 5;
+
+                // Creative breaks a block at a touch, whatever it is made of.
+                if(isCreative())
+                    mining_duration = 1;
             }
             mining_tick_accum += dt;
             while(mining_tick_accum >= GLFix(1))
             {
                 mining_tick_accum -= GLFix(1);
-                mining_progress++;
 
-                if (mining_progress % 10 == 0) {
+                // Efficiency speeds the swing up rather than shortening the block:
+                // the progress bar moves faster, which is what a player sees in
+                // vanilla, and the digging sound and the wear keep their cadence.
+                const int efficiency = Enchanting::efficiencyPercent(heldEnchant(Enchanting::Efficiency));
+                mining_progress += efficiency >= 100 ? efficiency / 100 : 1;
+
+                if ((mining_progress / 10) != ((mining_progress - 1) / 10)) {
                     world.spawnDestructionParticles(selection_pos.x, selection_pos.y, selection_pos.z);
                 }
 
                 if (mining_progress >= mining_duration) {
                     world.spawnDestructionParticles(selection_pos.x, selection_pos.y, selection_pos.z);
-                    const int required_pickaxe_tier = requiredPickaxeTierForDrop(b_type);
+                    const int required_pickaxe_tier = ItemRules::requiredPickaxeTierForDrop(b_type);
                     const bool can_harvest = required_pickaxe_tier == 0 || pickaxe_tier >= required_pickaxe_tier;
                     if(can_harvest)
                     {
-                        const BLOCK_WDATA drop_stack = inventoryDropItem(b);
+                        // Silk Touch drops the block itself; Fortune rolls for extra
+                        // drops of whatever it would have dropped anyway. Both are
+                        // read off the tool that is doing the mining.
+                        BLOCK_WDATA drop_stack = inventoryDropItem(b);
+                        unsigned int drop_count = 1;
+                        if(Enchanting::silkTouch(heldEnchant(Enchanting::SilkTouch)))
+                            drop_stack = b;
+                        else
+                        {
+                            // Fortune: one roll per level, each with the chance that
+                            // level adds (the steps in enchanting.cpp's multiplier
+                            // table), so Fortune III really does drop more than
+                            // Fortune I rather than rolling the same dice three times.
+                            const int fortune = heldEnchant(Enchanting::Fortune);
+                            for(int level = 1; level <= fortune; ++level)
+                            {
+                                const int chance = Enchanting::fortuneExtraDropPercent(level)
+                                    - Enchanting::fortuneExtraDropPercent(level - 1);
+                                if((rand() % 100) < chance)
+                                    ++drop_count;
+                            }
+                        }
+
                         if(getBLOCK(drop_stack) != BLOCK_AIR)
                         {
                             const GLFix sx = selection_pos.x * GLFix(BLOCK_SIZE) + GLFix(BLOCK_SIZE / 2);
                             const GLFix sy = selection_pos.y * GLFix(BLOCK_SIZE) + GLFix(BLOCK_SIZE) + GLFix::minStep();
                             const GLFix sz = selection_pos.z * GLFix(BLOCK_SIZE) + GLFix(BLOCK_SIZE / 2);
-                            spawnWorldDrop(sx, sy, sz, drop_stack, 1u);
+                            spawnWorldDrop(sx, sy, sz, drop_stack, drop_count);
                         }
+
+                        // Ores are worth experience, and which ore is worth how much
+                        // is survival.h's table rather than a number written here.
+                        const Survival::XpRange range = Survival::xpBlockRange(b_type);
+                        const int xp = Survival::xpRoll(range, static_cast<uint32_t>(rand()));
+                        if(xp > 0)
+                            addExperience(xp);
                     }
                     if(b_type == BLOCK_FURNACE)
                         inventory_task.removeFurnaceTile(selection_pos.x, selection_pos.y, selection_pos.z);
+                    // Before the block goes: the chest hands its contents to the
+                    // world as drops, so nothing inside is lost.
+                    if(b_type == BLOCK_CHEST)
+                        breakChestAt(selection_pos.x, selection_pos.y, selection_pos.z);
                     world.changeBlock(selection_pos.x, selection_pos.y, selection_pos.z, BLOCK_AIR);
                     GameAudio::digBlock(materialForBlock(b_type));
+                    // Using a tool wears it: one point per block, and a tool that
+                    // reaches its limit breaks instead of dropping. Unbreaking is
+                    // rolled inside wearHeldItem(), where every use goes through.
+                    wearHeldItem(ItemRules::durabilityPerBlockMined(current_inventory.currentSlot()));
                     mining_progress = 0;
                     mining_tick_accum = 0;
                     break;
@@ -1092,11 +1164,12 @@ void WorldTask::logic(GLFix dt)
     {
         sim_tick_accum -= GLFix(1);
         inventory_task.tickFurnaces(world);
-        updateHumanEntities();
         updateLivestockEntities();
         updateVillagerEntities();
         updateCreeperEntities();
-        updateGroundDrops();
+        // Real milliseconds per step, so a drop's five-minute lifetime is the
+        // same on the calculator (300 ms steps) and on the desktop (33 ms ones).
+        updateGroundDrops(simulation_tick_ms);
         ++sim_steps;
     }
 }
@@ -1113,8 +1186,14 @@ void WorldTask::render()
     // left at full brightness so a plot stays readable at midnight, and at full
     // daylight the shade stays neutral, which costs nothing per pixel.
     const bool day_night = !graph_mode && settings_task.getValue(SettingsTask::DAY_NIGHT) != 0;
+    // Night vision raises the floor the tint may darken the world to, which is
+    // what survival.h's lightFloorFor() is for: a player under the effect keeps
+    // the dusk they had when they drank it instead of sinking to the usual floor.
+    // Nothing happens without the effect, since the floor it returns is zero.
+    const int light_floor = effectAmplifier(Survival::NightVision) >= 0
+        ? Survival::lightFloorFor(Survival::NightVision) : 0;
     unsigned int global_shade = day_night
-        ? static_cast<unsigned int>(WorldClock::skyLightFactor() * 256.0f + 0.5f)
+        ? static_cast<unsigned int>(WorldClock::skyLightFactor(light_floor) * 256.0f + 0.5f)
         : 256u;
     // Rain and cloud darken the world on top of the time of day. A lightning
     // flash is an overlay in renderWeather() instead: this factor is a ceiling
@@ -1138,7 +1217,6 @@ void WorldTask::render()
     // Render entities only in normal worlds.
     if(!graph_mode)
     {
-        renderHumanEntities();
         renderLivestockEntities();
         renderVillagerEntities();
         renderCreeperEntities();
@@ -1282,20 +1360,28 @@ void WorldTask::render()
 
     nglSetGlobalShade(256);
 
-    crosshairPixel(0, 0);
-    crosshairPixel(-1, 0);
-    crosshairPixel(-2, 0);
-    crosshairPixel(0, -1);
-    crosshairPixel(0, -2);
-    crosshairPixel(1, 0);
-    crosshairPixel(2, 0);
-    crosshairPixel(0, 1);
-    crosshairPixel(0, 2);
+    // No crosshair while the player is asleep: there is nothing to aim at with
+    // their eyes shut, and the fade is already darkening the screen.
+    if(!isSleeping())
+    {
+        crosshairPixel(0, 0);
+        crosshairPixel(-1, 0);
+        crosshairPixel(-2, 0);
+        crosshairPixel(0, -1);
+        crosshairPixel(0, -2);
+        crosshairPixel(1, 0);
+        crosshairPixel(2, 0);
+        crosshairPixel(0, 1);
+        crosshairPixel(0, 2);
+    }
 
     // In front of the world, behind the HUD: rain must not obscure the bars.
     renderWeather();
 
     renderHud();
+
+    // Over everything, the HUD included: the night goes by behind a dark screen.
+    renderSleepFade();
 
     frame_counter++;
 }
@@ -1308,14 +1394,12 @@ void WorldTask::resetWorld()
     world.generateSeed();
     if(world.worldType() != World::WorldType::Graph)
     {
-        initHumanEntities();
         initLivestockEntities();
         initVillagerEntities();
         initCreeperEntities();
     }
     else
     {
-        human_entities.clear();
         clearLivestockEntities();
         clearVillagerEntities();
         creeper_entities.clear();
@@ -1327,10 +1411,21 @@ void WorldTask::resetWorld()
     // begins under the same sky.
     WorldClock::reset();
     clearGroundDrops();
+    // A new world has no chests; a loaded one fills this in from its save file.
+    clearChests();
     world.clear();
     current_inventory.reset();
     inventory_task.reset();
     block_list_task.current_selection = 1;
+
+    // A new world is a fresh start: survival, and the weather its own seed and
+    // clock imply rather than whatever the previous world was forced into. It has
+    // no bed either, so the last world's is forgotten along with everything else.
+    gamemode = 0;
+    clearWeatherOverride();
+    bed_spawn = Bed::SpawnPoint();
+    sleeping = false;
+    sleep_ms = 0;
 
     resetSurvivalState();
     fall_distance = 0;
@@ -1360,12 +1455,93 @@ void WorldTask::respawnPlayer()
     vy = 0;
     fall_distance = 0;
     safe_spawn_pending = world.worldType() != World::WorldType::Graph;
-
-    // Place above the world so the down-ray has something to hit.
-    y = world.worldType() == World::WorldType::Graph ? GLFix((world.graphOriginY() + 8) * BLOCK_SIZE) : GLFix(World::HEIGHT * Chunk::SIZE * BLOCK_SIZE);
     in_water = false;
     can_jump = false;
     message_timeout = 0;
+
+    // A bed that was slept in is where the player comes back to. They are dropped
+    // in from just above the mattress and settled by the same down-ray that a
+    // fresh spawn uses, so a bed that has since been built over still leaves them
+    // on solid ground instead of inside a wall.
+    if(bed_spawn.valid && world.worldType() != World::WorldType::Graph)
+    {
+        x = GLFix(bed_spawn.x * BLOCK_SIZE + BLOCK_SIZE / 2);
+        z = GLFix(bed_spawn.z * BLOCK_SIZE + BLOCK_SIZE / 2);
+        y = GLFix((bed_spawn.y + 1) * BLOCK_SIZE);
+        return;
+    }
+
+    // Place above the world so the down-ray has something to hit.
+    y = world.worldType() == World::WorldType::Graph ? GLFix((world.graphOriginY() + 8) * BLOCK_SIZE) : GLFix(World::HEIGHT * Chunk::SIZE * BLOCK_SIZE);
+}
+
+void WorldTask::setGamemode(int mode)
+{
+    gamemode = mode == 1 ? 1 : 0;
+
+    if(isCreative())
+    {
+        // The state is settled here rather than left to be fixed up on the next
+        // survival tick: /gamemode is instant, and the HUD draws before that tick
+        // would have run.
+        health = Survival::MaxHealth;
+        air = Survival::MaxAir;
+        fire_ticks = 0;
+        clearEffects();
+    }
+
+    setMessage(isCreative() ? "Creative mode" : "Survival mode");
+}
+
+void WorldTask::teleportTo(int block_x, int block_y, int block_z)
+{
+    x = GLFix(block_x * BLOCK_SIZE + BLOCK_SIZE / 2);
+    y = GLFix(block_y * BLOCK_SIZE);
+    z = GLFix(block_z * BLOCK_SIZE + BLOCK_SIZE / 2);
+
+    // Nothing from the old place may follow the player: a fall in progress would
+    // otherwise be paid for on arrival, and a jump in progress would carry over.
+    vy = 0;
+    fall_distance = 0;
+    can_jump = false;
+    in_water = false;
+    tp_had_contact = false;
+    // The down-ray that settles a fresh spawn would move the player off the spot
+    // that was just asked for, so it is told not to run.
+    safe_spawn_pending = false;
+
+    // Loading the chunks around the destination now, rather than waiting for the
+    // next frame, is what keeps a teleport from arriving in unloaded air.
+    world.setPosition(block_x, block_y, block_z);
+    world.setDirty();
+}
+
+void WorldTask::setWeatherOverride(int state, unsigned int seconds)
+{
+    // The override is counted in game ticks, because that is the unit the weather
+    // module speaks and the unit the clock advances in, so a duration in real
+    // seconds has to go through the configured day length. Four days is the
+    // ceiling: past that the natural weather has plainly been replaced for good,
+    // and the setting is the place to make that choice.
+    const unsigned int day_seconds = WorldClock::dayLengthSeconds();
+    const unsigned long long day_ticks = WorldClock::TicksPerDay;
+    unsigned long long ticks = day_seconds == 0
+        ? day_ticks
+        : static_cast<unsigned long long>(seconds) * day_ticks / day_seconds;
+
+    if(ticks > day_ticks * 4ULL)
+        ticks = day_ticks * 4ULL;
+    if(ticks == 0)
+        ticks = 1;
+
+    weather_override_state = state;
+    weather_override_ticks = static_cast<unsigned int>(ticks);
+}
+
+void WorldTask::clearWeatherOverride()
+{
+    weather_override_state = -1;
+    weather_override_ticks = 0;
 }
 
 void WorldTask::setMessage(const char *message)

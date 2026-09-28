@@ -150,7 +150,10 @@ namespace
     // --- more concentrated than a uniform one (its standard deviation is about
     // --- 130 of the 0..1023 range, not 295), so these thresholds were measured
     // --- rather than guessed: each of them is a z-score against that spread.
-    constexpr int ColdLevel = 281;
+    // The cold threshold lives in the header now: the weather asks the same
+    // question (does precipitation freeze here?) and the two answers must be the
+    // same number, not two constants that happen to agree.
+    constexpr int ColdLevel = BiomeGen::ColdTemperature;
     constexpr int HotLevel = 677;
     constexpr int WetLevel = 616;
     /** Mountainous terrain: roughly a tenth of the surface, like vanilla. */
@@ -227,12 +230,17 @@ namespace
         }
     }
 
+    int temperatureField(uint32_t world_seed, int world_x, int world_z)
+    {
+        return field2(world_seed, SaltTemperature, world_x, world_z, BiomeShift, BiomeDetailShift);
+    }
+
     int landBiome(uint32_t world_seed, int world_x, int world_z, bool mountainous)
     {
         if(mountainous)
             return BiomeGen::BiomeMountains;
 
-        const int temperature = field2(world_seed, SaltTemperature, world_x, world_z, BiomeShift, BiomeDetailShift);
+        const int temperature = temperatureField(world_seed, world_x, world_z);
         const int humidity = field2(world_seed, SaltHumidity, world_x, world_z, BiomeShift, BiomeDetailShift);
 
         if(temperature >= HotLevel)
@@ -318,6 +326,16 @@ const char *BiomeGen::biomeName(int biome)
     case BiomeMountains: return "Mountains";
     default: return "Unknown";
     }
+}
+
+int BiomeGen::temperatureAt(uint32_t world_seed, int world_x, int world_z)
+{
+    return temperatureField(world_seed, world_x, world_z);
+}
+
+bool BiomeGen::isColdAt(uint32_t world_seed, int world_x, int world_z)
+{
+    return temperatureField(world_seed, world_x, world_z) <= ColdLevel;
 }
 
 int BiomeGen::riverDepth(uint32_t world_seed, int world_x, int world_z)

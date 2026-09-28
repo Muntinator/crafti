@@ -6,6 +6,7 @@
 #include "texturetools.h"
 #include "worldtask.h"
 #include "helptask.h"
+#include "menuui.h"
 #include "settingstask.h"
 #include "starttask.h"
 #include "font.h"
@@ -31,73 +32,27 @@ void MenuTask::makeCurrent()
     Task::makeCurrent();
 }
 
-static void fillRect(TEXTURE &tex, int x, int y, int w, int h, COLOR c)
-{
-    if(x >= (int)tex.width || y >= (int)tex.height || w <= 0 || h <= 0)
-        return;
-
-    if(x < 0)
-    {
-        w += x;
-        x = 0;
-    }
-    if(y < 0)
-    {
-        h += y;
-        y = 0;
-    }
-    if(x + w > (int)tex.width)
-        w = tex.width - x;
-    if(y + h > (int)tex.height)
-        h = tex.height - y;
-
-    for(int yy = 0; yy < h; ++yy)
-    {
-        COLOR *line = tex.bitmap + (y + yy) * tex.width + x;
-        for(int xx = 0; xx < w; ++xx)
-            line[xx] = c;
-    }
-}
-
 void MenuTask::render()
 {
     drawBackground();
 
-    // Darken background
-    for(int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; ++i)
-    {
-        COLOR c = screen->bitmap[i];
-        // Simple RGB565 darkening: (c & 0xF7DE) >> 1
-        screen->bitmap[i] = (c & 0xF7DE) >> 1;
-    }
+    // The world behind the menu, dimmed the way vanilla dims it. Only the world's
+    // half of the screen is touched; the fade of a wake-up or a death is not this
+    // screen's business.
+    MenuUI::shadeRect(*screen, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 50);
 
-    drawStringCenter("Game Menu", 0xFFFF, *screen, SCREEN_WIDTH / 2, 30);
-
-    const char *items[MENU_ITEM_MAX] = { "Back to Game", "Settings", "Help", "Save World", "Audio Test", "Quit to Title" };
-
-    int start_y = 60;
-    int button_w = 200;
-    int button_h = 20;
-    int button_x = (SCREEN_WIDTH - button_w) / 2;
+    // Vanilla's pause menu is buttons and nothing else -- no heading, because the
+    // world behind it is still on screen and says where the player is.
+    const MenuUI::ButtonColumn buttons = MenuUI::pauseMenuLayout();
 
     for(int i = 0; i < MENU_ITEM_MAX; ++i)
     {
-        int y = start_y + i * 26;
-        COLOR label_color = 0xFFFF;
+        const int y = buttons.buttonY(i);
+        const bool focused = (i == menu_selected_item);
 
-        if(i == menu_selected_item)
-        {
-            fillRect(*screen, button_x, y, button_w, button_h, 0x7BEF); // Minecraft-like selection color
-            drawRectangle(*screen, button_x, y, button_w, button_h, 0xFFFF);
-            label_color = 0x0000;
-        }
-        else
-        {
-            fillRect(*screen, button_x, y, button_w, button_h, 0x4208);
-            drawRectangle(*screen, button_x, y, button_w, button_h, 0x8410);
-        }
-
-        drawStringCenter(items[i], label_color, *screen, SCREEN_WIDTH / 2, y + 4);
+        MenuUI::drawButton(*screen, buttons.x, y, buttons.w, buttons.h, focused);
+        MenuUI::drawButtonLabel(MenuUI::pauseLabels[i], *screen, buttons.x, y, buttons.w, buttons.h,
+                                focused);
     }
 }
 

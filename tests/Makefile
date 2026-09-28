@@ -17,7 +17,11 @@ BINS := build/audio_pack_test build/audio_gpio4_test \
         build/audio_manager_test build/audio_output_test \
         build/livestock_test build/villagegen_test \
         build/worldclock_test build/survival_test \
-        build/blockdata_test build/biomegen_test build/weather_test
+        build/blockdata_test build/biomegen_test build/weather_test \
+        build/itemrules_test build/cheststore_test \
+        build/structuregen_test build/blocklight_test \
+        build/command_test build/bed_test build/snowcover_test \
+        build/enchanting_test build/menuui_test build/menuui_wide_test
 
 .PHONY: all run clean
 
@@ -74,6 +78,68 @@ build/biomegen_test: biomegen_test.cc $(ROOT)/biomegen.cpp $(ROOT)/biomegen.h | 
 # so it needs no engine sources either.
 build/weather_test: weather_test.cc $(ROOT)/weather.cpp $(ROOT)/weather.h | build
 	$(CXX) $(COMMON) -o $@ weather_test.cc $(ROOT)/weather.cpp
+
+# Enchantments: the registry, the table's offers, the anvil's combining rules
+# and the numbers the effects are worth. Engine-free; the item and block ids it
+# keeps as numbers are checked against textures/items.h and terrain.h here, which
+# is why the texture headers have to be on the include path.
+build/enchanting_test: enchanting_test.cc $(ROOT)/enchanting.cpp $(ROOT)/enchanting.h \
+                       $(ROOT)/terrain.h $(ROOT)/textures/items.h | build
+	$(CXX) $(COMMON) -I$(ROOT)/nGL -o $@ enchanting_test.cc $(ROOT)/enchanting.cpp
+
+# Snow cover: the depth a step grows and melts, what a layer can rest on, and
+# where a step's columns are. Engine-free except that the block ids it keeps as
+# numbers are checked against the real ones here.
+build/snowcover_test: snowcover_test.cc $(ROOT)/snowcover.cpp $(ROOT)/snowcover.h $(ROOT)/terrain.h | build
+	$(CXX) $(COMMON) -I$(ROOT)/nGL -o $@ snowcover_test.cc $(ROOT)/snowcover.cpp
+
+# Durability, armour and the lifetime of a dropped stack: pure rules over the
+# real item ids, so it needs the item atlas header and terrain.h's packing only.
+build/itemrules_test: itemrules_test.cc $(ROOT)/itemrules.cpp $(ROOT)/itemrules.h | build
+	$(CXX) $(COMMON) -I$(ROOT)/nGL -o $@ itemrules_test.cc $(ROOT)/itemrules.cpp
+
+# Chest contents, including double chests and the save-file round trip. Pure,
+# except that it shares the item stacking rules with itemrules.cpp.
+build/cheststore_test: cheststore_test.cc $(ROOT)/cheststore.cpp $(ROOT)/cheststore.h $(ROOT)/itemrules.h | build
+	$(CXX) $(COMMON) -I$(ROOT)/nGL -o $@ cheststore_test.cc $(ROOT)/cheststore.cpp $(ROOT)/itemrules.cpp
+
+# Per-block light: the sky depth falloff, the shading curve, the emitter table
+# and the light lattice. Engine-free, but the emitter ids it keeps as numbers are
+# checked against terrain.h here.
+build/blocklight_test: blocklight_test.cc $(ROOT)/blocklight.cpp $(ROOT)/blocklight.h $(ROOT)/terrain.h | build
+	$(CXX) $(COMMON) -I$(ROOT)/nGL -o $@ blocklight_test.cc $(ROOT)/blocklight.cpp
+
+# Structures (dungeons, ruins, temples) are engine-free like the village and
+# biome generators, but the test also checks the block and item ids it writes
+# against the real headers, so it needs terrain.h and the item atlas.
+build/structuregen_test: structuregen_test.cc $(ROOT)/structuregen.cpp $(ROOT)/structuregen.h $(ROOT)/biomegen.h | build
+	$(CXX) $(COMMON) -I$(ROOT)/nGL -o $@ structuregen_test.cc $(ROOT)/structuregen.cpp
+
+# The debug command language: tokeniser, numbers, name folding, the time and
+# weather spellings and the /fill cap. Engine-free, so it is tested whole; the
+# named times it shares with the clock and the weather names it shares with the
+# weather states come from those modules, which is why both are linked in -- the
+# test checks that /weather's names and weather.h's agree state for state.
+build/command_test: command_test.cc $(ROOT)/command.cpp $(ROOT)/command.h \
+                    $(ROOT)/worldclock.h $(ROOT)/weather.h $(ROOT)/weather.cpp | build
+	$(CXX) $(COMMON) -o $@ command_test.cc $(ROOT)/command.cpp $(ROOT)/weather.cpp
+
+# The bed's two halves, its facing, the sleep decision and the respawn point.
+# Pure rules plus the clock it measures a night against, so worldclock.cpp is
+# linked in rather than the whole engine.
+build/bed_test: bed_test.cc $(ROOT)/bed.cpp $(ROOT)/bed.h \
+                $(ROOT)/worldclock.cpp $(ROOT)/worldclock.h $(ROOT)/terrain.h | build
+	$(CXX) $(COMMON) -I$(ROOT)/nGL -o $@ bed_test.cc $(ROOT)/bed.cpp $(ROOT)/worldclock.cpp
+
+# The front-end layout is the one part of the menus a host can check: the labels
+# against the boxes they are drawn in. It is built twice, because the calculator
+# screen (320x240, _TINSPIRE) is half the desktop's in each direction and a label
+# that fits one need not fit the other.
+build/menuui_test: menuui_test.cc $(ROOT)/menuui.cpp $(ROOT)/menuui.h $(ROOT)/font.cpp | build
+	$(CXX) $(COMMON) -I$(ROOT)/nGL -D_TINSPIRE -o $@ menuui_test.cc $(ROOT)/menuui.cpp $(ROOT)/font.cpp
+
+build/menuui_wide_test: menuui_test.cc $(ROOT)/menuui.cpp $(ROOT)/menuui.h $(ROOT)/font.cpp | build
+	$(CXX) $(COMMON) -I$(ROOT)/nGL -o $@ menuui_test.cc $(ROOT)/menuui.cpp $(ROOT)/font.cpp
 
 clean:
 	rm -rf build

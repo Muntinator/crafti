@@ -68,6 +68,9 @@ struct VillagerEntity
     bool on_ground;
     bool resting; ///< true while walking home for the night
 
+    /** Ticks the villager is on fire for (Fire Aspect); 0 when it is not. */
+    int16_t fire_ticks;
+
     /** The village this villager belongs to (origin, ground level and seed). */
     Village::Plan home;
 
@@ -77,7 +80,14 @@ struct VillagerEntity
     VillagerEntity(uint8_t profession, uint8_t home_slot, const Village::Plan &plan, GLFix px, GLFix py, GLFix pz);
 
     void update();
-    void applyMeleeDamage(int amount, GLFix attacker_yaw);
+    /**
+     * Player melee, with the weapon's enchantments: `knockback_steps` throws the
+     * villager further and `set_fire_ticks` is Fire Aspect's burning time. Looting
+     * is ignored, because a villager drops nothing to add rolls to. Both default
+     * to "a plain hit".
+     */
+    void applyMeleeDamage(int amount, GLFix attacker_yaw, int knockback_steps = 0,
+                          int looting = 0, int set_fire_ticks = 0);
 
     bool isAliveMob() const { return health > 0; }
     bool inTradeCooldown() const { return trade_cooldown > 0; }

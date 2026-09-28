@@ -124,6 +124,29 @@ namespace WorldClock
 	 */
 	int skyRotationDegrees();
 
+	/**
+	 * The moon's phase: 0 is new (dark), 4 is full, 8 values per lunar month of
+	 * eight days. The first night of a world is a full moon, which is the one the
+	 * sky renderer draws unless the phase says otherwise.
+	 */
+	constexpr int MoonPhases = 8;
+	int moonPhase();
+
+	/**
+	 * True when a pixel of a celestial body's disc is inside it. `dx`/`dy` are
+	 * relative to the body's centre and measured in screen pixels, and the disc is
+	 * a circle of `radius` pixels -- the sun and the moon are round, not squares.
+	 */
+	bool discPixel(int radius, int dx, int dy);
+
+	/**
+	 * True when a moon pixel is lit for this phase. The shadow is a second disc of
+	 * the same size sliding across the moon, so one shape gives the crescent, the
+	 * half and the gibbous moon, and the lit side swaps over between the waxing and
+	 * the waning half of the month.
+	 */
+	bool moonPixel(int radius, int dx, int dy, int phase);
+
 	/** 0..255 global sky exposure for the terrain light tint. */
 	int skyLightLevel();
 	/** Same as skyLightLevel but never falling below `floor_level` (night vision). */
@@ -143,12 +166,32 @@ namespace WorldClock
 	void formatClock(char *out, unsigned int size);
 
 	/**
+	 * The camera pitch in the sign celestialScreenOffset() takes, from the engine's
+	 * own `xr`.
+	 *
+	 * `xr` is normalised to [0, 360) and *grows as the camera looks down*: the
+	 * world task decreases it for "look up", and crosshairRay's forward vector has
+	 * y = -sin(xr), so 0 is the horizon, 90 is straight down and 270 is straight
+	 * up. celestialScreenOffset() wants the same thing wrapped into [-180, 180),
+	 * where a positive pitch looks down.
+	 *
+	 * Handing the sky the raw `xr`, or its negation, mirrors the whole sky
+	 * vertically: the sun drops out of view when the player looks up and slides
+	 * into view when they look down. That is why the conversion lives in one
+	 * function instead of at each call site, and why it is pinned by tests.
+	 */
+	int cameraPitch(int xr_degrees);
+
+	/**
 	 * Where a celestial body at (azimuth, elevation) lands on screen, in pixels
 	 * relative to the screen centre, for a camera looking at (yaw, pitch).
 	 *
 	 * `pixels_per_degree` is a linear approximation of the projection: the real
 	 * projection is perspective, but a body that far away is nearly at infinity
 	 * and stretching it linearly keeps the math allocation-free and testable.
+	 *
+	 * `camera_pitch` is in degrees and positive looking down: pass cameraPitch(xr),
+	 * never `xr` itself and never `-xr`.
 	 */
 	void celestialScreenOffset(int camera_yaw, int camera_pitch, int azimuth, int elevation,
 	                           int pixels_per_degree, int &out_x, int &out_y);

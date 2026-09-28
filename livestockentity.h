@@ -39,6 +39,13 @@ struct LivestockEntity
     /** Negative while a baby, counting up to 0 when fully grown. */
     int16_t age;
     uint16_t ticks_alive;
+    /** Ticks the animal is on fire for, from Fire Aspect or from being struck. */
+    int16_t fire_ticks;
+    /**
+     * Looting level of the weapon that last damaged it, kept so the drop table can
+     * roll its extra drops when the animal dies (vanilla rolls them at the kill).
+     */
+    int8_t killing_looting;
 
     uint8_t species; ///< Livestock::Species
 
@@ -51,7 +58,14 @@ struct LivestockEntity
     LivestockEntity(Livestock::Species species, GLFix px, GLFix py, GLFix pz, bool baby = false);
 
     void update();
-    void applyMeleeDamage(int amount, GLFix attacker_yaw);
+    /**
+     * Player melee. `knockback_steps` and `looting` are the enchantment levels on
+     * the weapon that hit it (enchanting.h): the first throws the animal further,
+     * the second rolls extra drops, and `set_fire_ticks` is Fire Aspect's burning
+     * time. All three default to "no enchantment", which is what a punch is.
+     */
+    void applyMeleeDamage(int amount, GLFix attacker_yaw, int knockback_steps = 0,
+                          int looting = 0, int set_fire_ticks = 0);
     void feed();
 
     bool isAliveMob() const { return health > 0; }

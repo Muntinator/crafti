@@ -12,6 +12,8 @@
 #include "weather.h"
 
 #include <stdio.h>
+#include <string.h>
+#include <time.h>
 
 static int failures = 0;
 static int checks = 0;
@@ -54,6 +56,11 @@ namespace
             Weather::spellAt(seed, tick, spell);
 
             CHECK(spell.state >= Weather::Clear && spell.state < Weather::StateCount);
+            // Nature rains and storms, but it never picks snow: whether water
+            // freezes is a property of where the player is standing, and this
+            // module does not know where that is (weather.h). Snow is the state
+            // /weather snow forces, and precipitation() does the rest.
+            CHECK(spell.state != Weather::Snow);
             CHECK(spell.intensity >= 0 && spell.intensity <= Weather::MaxIntensity);
             CHECK(Weather::rainStrength(spell) >= 0 && Weather::rainStrength(spell) <= Weather::MaxIntensity);
             CHECK(Weather::darkness(spell) >= 0 && Weather::darkness(spell) <= Weather::MaxIntensity);
@@ -248,6 +255,202 @@ namespace
         CHECK(tally.flash_ticks * Weather::MaxFlashPeriodTicks >= tally.thunder_ticks * Weather::FlashTicks);
     }
 
+    void testPrecipitationType()
+    {
+        Weather::Spell spell;
+
+        CHECK(Weather::precipitation(spell, false) == Weather::NoPrecipitation);
+        CHECK(Weather::precipitation(spell, true) == Weather::NoPrecipitation);
+
+        // A plain shower is rain where it is warm and snow where it is cold -- and
+        // the spell is the same spell either way, which is what lets a player walk
+        // from a plains into a cold forest and watch the drops turn to flakes.
+        spell.state = Weather::Rain;
+        spell.intensity = Weather::MaxIntensity;
+        CHECK(Weather::precipitation(spell, false) == Weather::RainPrecipitation);
+        CHECK(Weather::precipitation(spell, true) == Weather::SnowPrecipitation);
+
+        spell.state = Weather::Thunder;
+        CHECK(Weather::precipitation(spell, false) == Weather::RainPrecipitation);
+        CHECK(Weather::precipitation(spell, true) == Weather::SnowPrecipitation);
+
+        // A forced snow spell stays snow anywhere, so /weather snow works over a
+        // desert; that is the only way to see the flakes without a cold biome.
+        spell.state = Weather::Snow;
+        spell.flash_period = 0;
+        CHECK(Weather::precipitation(spell, false) == Weather::SnowPrecipitation);
+        CHECK(Weather::precipitation(spell, true) == Weather::SnowPrecipitation);
+
+        // Snow's strength and darkening are their own, and both lighter than rain:
+        // a storm should not look like a blizzard.
+        CHECK(Weather::rainStrength(spell) == Weather::SnowStrength);
+        CHECK(Weather::darkness(spell) == Weather::SnowDarkness);
+        CHECK(Weather::SnowStrength < Weather::RainStrength);
+        CHECK(Weather::SnowDarkness < Weather::RainDarkness);
+        CHECK(Weather::SnowDarkness < Weather::ThunderDarkness);
+
+        // Snow never brings lightning, whatever tick it is asked about.
+        CHECK(!Weather::lightningAt(spell, 0));
+        CHECK(!Weather::lightningAt(spell, 123456));
+        CHECK(Weather::strikeIndex(spell, 123456) == 0);
+
+        // Every state has a name of its own: /weather prints them.
+        const char *seen[Weather::StateCount];
+        for(int state = 0; state < Weather::StateCount; ++state)
+        {
+            seen[state] = Weather::stateName(state);
+            CHECK(strcmp(seen[state], "Unknown") != 0);
+            for(int other = 0; other < state; ++other)
+                CHECK(strcmp(seen[state], seen[other]) != 0);
+        }
+        CHECK(strcmp(Weather::stateName(Weather::Snow), "Snow") == 0);
+        CHECK(strcmp(Weather::stateName(-1), "Unknown") == 0);
+        CHECK(strcmp(Weather::stateName(Weather::StateCount + 5), "Unknown") == 0);
+    }
+
+    void testStrikes()
+    {
+        // A fully arrived thunderstorm with a period of its own, so the strike
+        // schedule can be walked tick by tick.
+        Weather::Spell storm;
+        storm.state = Weather::Thunder;
+        storm.intensity = Weather::MaxIntensity;
+        storm.flash_period = 600;
+
+        // The flash is lit for FlashTicks and no longer, and every lit tick belongs
+        // to the strike whose index it names: the frame that draws the bolt and the
+        // frame that resolves it therefore agree on which bolt it is.
+        int flashes = 0;
+        for(unsigned long long tick = 0; tick < 10000ull; ++tick)
+        {
+            const bool lit = Weather::lightningAt(storm, tick);
+            CHECK(lit == (tick % 600ull < static_cast<unsigned long long>(Weather::FlashTicks)));
+            if(lit)
+                ++flashes;
+            CHECK(Weather::strikeIndex(storm, tick) == tick / 600ull);
+        }
+        // One flash per period, FlashTicks long, plus the part of the last one the
+        // walk reached.
+        const int full_flashes = (10000 / 600) * Weather::FlashTicks;
+        const int trailing = (10000 % 600) < Weather::FlashTicks ? (10000 % 600) : Weather::FlashTicks;
+        CHECK(flashes == full_flashes + trailing);
+
+        // The index only ever moves forward, so a storm cannot send a bolt back to
+        // where an earlier one landed.
+        unsigned long long previous_index = 0;
+        for(unsigned long long tick = 0; tick < 10000ull; tick += 7)
+        {
+            const unsigned long long index = Weather::strikeIndex(storm, tick);
+            CHECK(index >= previous_index);
+            previous_index = index;
+        }
+
+        // A storm with no lightning has no strikes at all.
+        Weather::Spell calm;
+        CHECK(Weather::strikeIndex(calm, 99999) == 0);
+
+        // Where a bolt lands: deterministic, inside the advertised radius, spread
+        // over every block of it, and not parked on the player's own column.
+        const uint32_t seed = 0x5708c9u;
+        const int span = Weather::StrikeRadius * 2 + 1;
+        int dx_hits[64] = {0}, dz_hits[64] = {0};
+        int positives = 0, negatives = 0, same = 0, on_player = 0, distinct = 0;
+        const int samples = 6000;
+
+        for(int i = 0; i < samples; ++i)
+        {
+            int dx = 0, dz = 0;
+            Weather::strikeOffset(seed, static_cast<unsigned long long>(i), dx, dz);
+
+            int again_dx = 0, again_dz = 0;
+            Weather::strikeOffset(seed, static_cast<unsigned long long>(i), again_dx, again_dz);
+            CHECK(dx == again_dx && dz == again_dz);
+
+            CHECK(dx >= -Weather::StrikeRadius && dx <= Weather::StrikeRadius);
+            CHECK(dz >= -Weather::StrikeRadius && dz <= Weather::StrikeRadius);
+            CHECK(dx + Weather::StrikeRadius < 64 && dz + Weather::StrikeRadius < 64);
+            ++dx_hits[dx + Weather::StrikeRadius];
+            ++dz_hits[dz + Weather::StrikeRadius];
+
+            if(dx > 0 || dz > 0)
+                ++positives;
+            if(dx < 0 || dz < 0)
+                ++negatives;
+            if(dx == dz)
+                ++same;
+            if(dx == 0 && dz == 0)
+                ++on_player;
+
+            int next_dx = 0, next_dz = 0;
+            Weather::strikeOffset(seed, static_cast<unsigned long long>(i) + 1ull, next_dx, next_dz);
+            if(next_dx != dx || next_dz != dz)
+                ++distinct;
+        }
+
+        for(int i = 0; i < span; ++i)
+        {
+            CHECK(dx_hits[i] > 0);
+            CHECK(dz_hits[i] > 0);
+        }
+
+        printf("    strikes: %d targets, %d positive, %d negative, %d diagonal, %d straight on the player\n",
+               samples, positives, negatives, same, on_player);
+
+        CHECK(positives > samples / 4);
+        CHECK(negatives > samples / 4);
+        // The two offsets come from different halves of one hash, so they are not
+        // correlated: landing on the diagonal happens about once per span.
+        CHECK(same < samples / 8);
+        // A bolt straight onto the player's own column is rare (about one in
+        // span^2), which is what keeps being struck feeling like bad luck rather
+        // than like a schedule.
+        CHECK(on_player < samples / 16);
+        // Consecutive strikes go to different places: a storm does not hammer one
+        // spot for its whole length.
+        CHECK(distinct > samples * 9 / 10);
+
+        // A different seed moves the storm's bolts.
+        int a_dx = 0, a_dz = 0, b_dx = 0, b_dz = 0;
+        Weather::strikeOffset(0x11111111u, 3, a_dx, a_dz);
+        Weather::strikeOffset(0x22222222u, 3, b_dx, b_dz);
+        CHECK(a_dx != b_dx || a_dz != b_dz);
+    }
+
+    void testCost()
+    {
+        // The weather is asked once a frame, and the CX runs about three frames a
+        // second, so the per-call cost of the pure module is the whole of the
+        // weather's frame budget. Timed rather than asserted (host timings vary),
+        // so a regression in the module shows up as a number that changed.
+        const int rounds = 200000;
+        Weather::Spell spell;
+        volatile int sink = 0;
+
+        clock_t start = clock();
+        for(int i = 0; i < rounds; ++i)
+            Weather::spellAt(0x1234567u, static_cast<unsigned long long>(i) * 37ull, spell);
+        const double spell_us = clock() - start;
+
+        start = clock();
+        for(int i = 0; i < rounds; ++i)
+            sink += Weather::precipitation(spell, i & 1) + Weather::rainStrength(spell) + Weather::darkness(spell);
+        const double parts_us = clock() - start;
+
+        start = clock();
+        for(int i = 0; i < rounds; ++i)
+        {
+            int dx = 0, dz = 0;
+            Weather::strikeOffset(0x1234567u, static_cast<unsigned long long>(i), dx, dz);
+            sink += Weather::strikeIndex(spell, static_cast<unsigned long long>(i) * 97ull) + dx + dz;
+        }
+        const double strike_us = clock() - start;
+
+        const double per_call = 1000000.0 / (static_cast<double>(CLOCKS_PER_SEC) * rounds);
+        printf("    cost: spellAt %.3f us, precipitation+strength %.3f us, strike %.3f us per call\n",
+               spell_us * per_call, parts_us * per_call, strike_us * per_call);
+        CHECK(sink != 0);
+    }
+
     void testSaveCompatibility()
     {
         // The weather is derived from the clock, so a reloaded world must get the
@@ -285,6 +488,9 @@ int main()
     testCloudCoverComesInSpells();
     testRampsGradually();
     testLightning();
+    testPrecipitationType();
+    testStrikes();
+    testCost();
     testSaveCompatibility();
 
     printf("weather_test: %d checks, %d failures\n", checks, failures);

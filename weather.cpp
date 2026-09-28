@@ -15,6 +15,7 @@ namespace
     constexpr uint32_t SaltWeather = 0x57454154u; // "WEAT"
     constexpr uint32_t SaltSeason = 0x53544F52u;  // "STOR"
     constexpr uint32_t SaltFlash = 0x464C4153u;   // "FLAS"
+    constexpr uint32_t SaltStrike = 0x5354524Bu;  // "STRK"
 
     /** Percent of seasons that contain any weather at all. */
     constexpr uint32_t StormySeasonPercent = 55;
@@ -62,6 +63,7 @@ const char *Weather::stateName(int state)
     case Clear: return "Clear";
     case Rain: return "Rain";
     case Thunder: return "Thunder";
+    case Snow: return "Snow";
     default: return "Unknown";
     }
 }
@@ -107,12 +109,25 @@ void Weather::spellAt(uint32_t world_seed, unsigned long long total_ticks, Spell
     }
 }
 
+Weather::Precipitation Weather::precipitation(const Spell &spell, bool freezing)
+{
+    if(spell.state == Clear)
+        return NoPrecipitation;
+    // A forced snow spell is snow even over a desert: it is how the flakes are
+    // seen at all without walking to a cold forest first.
+    if(spell.state == Snow)
+        return SnowPrecipitation;
+    return freezing ? SnowPrecipitation : RainPrecipitation;
+}
+
 int Weather::rainStrength(const Spell &spell)
 {
     if(spell.state == Clear)
         return 0;
-    // A thunderstorm is the heavier of the two.
-    const int peak = spell.state == Thunder ? MaxIntensity : RainStrength;
+    // The peak belongs to the state: a thunderstorm is the heaviest, a snow
+    // shower the lightest, because a flake is a dot and a drop is a streak.
+    const int peak = spell.state == Thunder ? MaxIntensity
+        : (spell.state == Snow ? SnowStrength : RainStrength);
     return (peak * spell.intensity) / MaxIntensity;
 }
 
@@ -120,7 +135,8 @@ int Weather::darkness(const Spell &spell)
 {
     if(spell.state == Clear)
         return 0;
-    const int peak = spell.state == Thunder ? ThunderDarkness : RainDarkness;
+    const int peak = spell.state == Thunder ? ThunderDarkness
+        : (spell.state == Snow ? SnowDarkness : RainDarkness);
     return (peak * spell.intensity) / MaxIntensity;
 }
 
@@ -132,4 +148,22 @@ bool Weather::lightningAt(const Spell &spell, unsigned long long total_ticks)
     // as long as the window lasts and the caller needs no state for it.
     return (total_ticks % static_cast<unsigned long long>(spell.flash_period))
         < static_cast<unsigned long long>(FlashTicks);
+}
+
+unsigned long long Weather::strikeIndex(const Spell &spell, unsigned long long total_ticks)
+{
+    if(spell.flash_period <= 0)
+        return 0;
+    return total_ticks / static_cast<unsigned long long>(spell.flash_period);
+}
+
+void Weather::strikeOffset(uint32_t world_seed, unsigned long long strike_index, int &dx, int &dz)
+{
+    // Both offsets come from the same 32-bit hash, split in half: three bits of
+    // the low half would follow the divisor, and a strike that always landed on
+    // the same diagonal would be worse than one that misses.
+    const uint32_t h = hashWindow(world_seed, strike_index, SaltStrike);
+    const int span = StrikeRadius * 2 + 1;
+    dx = static_cast<int>(h % static_cast<uint32_t>(span)) - StrikeRadius;
+    dz = static_cast<int>((h >> 12) % static_cast<uint32_t>(span)) - StrikeRadius;
 }

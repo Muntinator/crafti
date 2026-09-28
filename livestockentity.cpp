@@ -6,6 +6,7 @@
 #include "audio_manager.h"
 #include "fastmath.h"
 #include "gl.h"
+#include "enchanting.h"
 #include "grounddrops.h"
 #include "terrain.h"
 #include "textures/items.h"
@@ -289,7 +290,7 @@ LivestockEntity::LivestockEntity()
 	: x(0), y(GLFix(World::HEIGHT * Chunk::SIZE) * BLOCK_SIZE), z(0),
 	  vx(0), vy(0), vz(0), yaw(0), walk_timer(0), swing_intensity(0),
 	  health(1), hurt_time(0), hurt_resistant(0), death_time(0), dir_timer(0),
-	  love_timer(0), flee_timer(0), age(0), ticks_alive(0),
+	  love_timer(0), flee_timer(0), age(0), ticks_alive(0), fire_ticks(0), killing_looting(0),
 	  species(static_cast<uint8_t>(Livestock::Species::Cow)),
 	  on_ground(false), loot_spawned(false)
 {
@@ -303,7 +304,7 @@ LivestockEntity::LivestockEntity(Livestock::Species kind_, GLFix px, GLFix py, G
 	: x(px), y(py), z(pz),
 	  vx(0), vy(0), vz(0), yaw(GLFix(rand() % 360)), walk_timer(0), swing_intensity(0),
 	  health(1), hurt_time(0), hurt_resistant(0), death_time(0), dir_timer(rand() % 60),
-	  love_timer(0), flee_timer(0), age(baby ? -BabyTicks / 2 : 0), ticks_alive(0),
+	  love_timer(0), flee_timer(0), age(baby ? -BabyTicks / 2 : 0), ticks_alive(0), fire_ticks(0), killing_looting(0),
 	  species(static_cast<uint8_t>(kind_)),
 	  on_ground(false), loot_spawned(false)
 {
@@ -313,7 +314,8 @@ LivestockEntity::LivestockEntity(Livestock::Species kind_, GLFix px, GLFix py, G
 	aabb = { x - w / 2, y, z - w / 2, x + w / 2, y + GLFix(st.height), z + w / 2 };
 }
 
-void LivestockEntity::applyMeleeDamage(int amount, GLFix attacker_yaw)
+void LivestockEntity::applyMeleeDamage(int amount, GLFix attacker_yaw, int knockback_steps,
+                                      int looting, int set_fire_ticks)
 {
 	if(health <= 0 || hurt_resistant > 0)
 		return;
@@ -323,14 +325,26 @@ void LivestockEntity::applyMeleeDamage(int amount, GLFix attacker_yaw)
 	hurt_resistant = 10;
 	flee_timer = FleeTicks;
 
+	// Fire Aspect sets the animal alight for as long as the weapon says; a burn
+	// already going only gets longer.
+	if(set_fire_ticks > 0 && fire_ticks < set_fire_ticks)
+		fire_ticks = static_cast<int16_t>(set_fire_ticks);
+
+	// Looting is remembered until the animal dies, because the extra drops are
+	// rolled where the drop table is (in update(), below).
+	if(looting > killing_looting)
+		killing_looting = static_cast<int8_t>(looting);
+
 	GameAudio::mobSound(audioKind(kind()), true, blocksToPlayer(x, z));
 
+	// Knockback throws the animal further than the plain hit does.
+	const GLFix impulse = GLFix(10 + 4 * (knockback_steps < 0 ? 0 : knockback_steps));
 	GLFix ay = attacker_yaw;
 	ay.normaliseAngle();
 	vx /= 2;
 	vz /= 2;
-	vx += fast_sin(ay) * GLFix(10);
-	vz += fast_cos(ay) * GLFix(10);
+	vx += fast_sin(ay) * impulse;
+	vz += fast_cos(ay) * impulse;
 	if(on_ground)
 	{
 		vy /= 2;
@@ -362,6 +376,16 @@ void LivestockEntity::update()
 		--hurt_time;
 	if(hurt_resistant > 0)
 		--hurt_resistant;
+
+	// Burning: one point of damage a second, like vanilla, for as long as the
+	// ticks last. Fire Aspect is what starts it (applyMeleeDamage).
+	if(fire_ticks > 0 && health > 0)
+	{
+		--fire_ticks;
+		if((fire_ticks % 20) == 0)
+			health -= Survival::FireDamage;
+	}
+
 	if(flee_timer > 0)
 		--flee_timer;
 	if(love_timer > 0)
@@ -377,6 +401,10 @@ void LivestockEntity::update()
 	if(dead && !loot_spawned)
 	{
 		loot_spawned = true;
+		// Looting adds one more roll of the drop table per level, which is what
+		// vanilla does with it.
+		const int rolls = 1 + Enchanting::lootingExtraDrops(killing_looting);
+		for(int roll = 0; roll < rolls; ++roll)
 		for(unsigned int i = 0; i < st.drop_count; ++i)
 		{
 			const uint16_t stack = st.drop_stack[i];
@@ -388,6 +416,11 @@ void LivestockEntity::update()
 			if(count > 0)
 				spawnWorldDrop(x, y, z, stack, count);
 		}
+
+		// Killing an animal is worth experience, and a baby is not worth any (the
+		// rule is survival.h's table, so the mods here cannot disagree with it).
+		if(!isBaby())
+			world_task.addExperience(Survival::xpFromMob(Survival::XpMob::Passive));
 	}
 
 	if(dead)
@@ -520,6 +553,12 @@ void LivestockEntity::render() const
 	{
 		const GLFix t = GLFix(hurt_time) / GLFix(10);
 		nglSetTextureModulate(GLFix(1), GLFix(1) - t * GLFix(0.52f), GLFix(1) - t * GLFix(0.48f));
+	}
+	else if(fire_ticks > 0 && health > 0)
+	{
+		// Burning animals are drawn glowing orange, which is the only part of the
+		// vanilla look a texture modulate can carry.
+		nglSetTextureModulate(GLFix(1), GLFix(0.55f), GLFix(0.25f));
 	}
 
 	GLFix render_yaw = yaw + GLFix(180);

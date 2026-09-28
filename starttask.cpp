@@ -1,20 +1,88 @@
 #include "starttask.h"
 
 #include "audio_manager.h"
-#include "audiotesttask.h"
 
 #include "font.h"
+#include "menuui.h"
 #include "worldtask.h"
 #include "graphtask.h"
 #include "world.h"
 #include "blockrenderer.h"
 #include "terrain.h"
 #include "texturetools.h"
-#include "textures/selection.h"
 
 extern unsigned char font_dat[];
 
 StartTask start_task;
+
+namespace
+{
+    /**
+     * The title screen is static: the dirt backdrop and the wordmark are the same
+     * every frame. Both are therefore drawn once into textures of their own and
+     * blitted from then on, which is what makes the screen cheap on the calculator
+     * (two copies instead of a few hundred scaled tiles and a full-screen darkening
+     * pass every frame). They are deliberately never freed: this task lives as long
+     * as the game does, and freeing a texture after nglUninit() is not safe.
+     */
+    TEXTURE *title_backdrop = nullptr;
+    TEXTURE *title_logo = nullptr;
+
+    constexpr int TitleDirtTile = 16; ///< one dirt block, in screen pixels at scale 1
+
+    /** One of the jokes under the wordmark, picked once per visit to the screen. */
+    const char *current_splash = MenuUI::splashLines[0];
+
+    /**
+     * Gives the two cached textures back. They are worth their 150 kB while the
+     * title screen is up and worth nothing once the world is, so they are built
+     * when the screen is shown and released when it is left -- a world that never
+     * returns to the title keeps the memory, which is the point.
+     */
+    void releaseTitleGraphics()
+    {
+        if(title_backdrop != nullptr)
+        {
+            deleteTexture(title_backdrop);
+            title_backdrop = nullptr;
+        }
+        if(title_logo != nullptr)
+        {
+            deleteTexture(title_logo);
+            title_logo = nullptr;
+        }
+    }
+
+    /** Tiles the dirt once into a screen-sized texture and dims it like vanilla. */
+    void buildTitleBackdrop()
+    {
+        title_backdrop = newTexture(SCREEN_WIDTH, SCREEN_HEIGHT, 0, false);
+
+        // terrain_atlas[2][0] is the dirt block: the same tile the world draws.
+        const TextureAtlasEntry &dirt = terrain_atlas[2][0].resized;
+        const int tile = TitleDirtTile * MenuUI::uiScale();
+
+        for(int y = 0; y + tile <= static_cast<int>(title_backdrop->height); y += tile)
+            for(int x = 0; x + tile <= static_cast<int>(title_backdrop->width); x += tile)
+                drawTexture(*terrain_resized, *title_backdrop,
+                            dirt.left, dirt.top,
+                            dirt.right - dirt.left, dirt.bottom - dirt.top,
+                            x, y, tile, tile);
+
+        // Vanilla's menu backdrop is the dirt at about two thirds brightness, so
+        // that the logo and the labels on top of it stay readable.
+        MenuUI::shadeRect(*title_backdrop, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 62);
+    }
+
+    /** Draws the wordmark once, into a texture sized to hold its outline and bevel. */
+    void buildTitleLogo(const MenuUI::TitleLayout &layout)
+    {
+        const int margin = MenuUI::logoMargin(layout.logo_scale);
+
+        title_logo = newTexture(layout.logo_width + margin * 2, layout.logo_height + margin * 2, 0, true, 0);
+        MenuUI::drawLogo(MenuUI::titleWordmark, *title_logo, title_logo->width / 2, margin, layout.logo_scale);
+    }
+}
 
 StartTask::StartTask()
 {
@@ -26,169 +94,98 @@ StartTask::~StartTask()
 
 void StartTask::makeCurrent()
 {
-    selected_item = NEW_TERRAIN;
+    // Vanilla opens on the first button it can actually use.
+    selected_item = has_saved_world ? CONTINUE : NEW_TERRAIN;
+    current_splash = MenuUI::splashLines[static_cast<unsigned int>(rand()) % MenuUI::splashLineCount];
     GameAudio::stopMusic();
     Task::makeCurrent();
 }
 
-static unsigned int measureTextWidth(const char *str)
-{
-    unsigned int w = 0;
-    while(*str)
-        w += font_dat[17 + static_cast<unsigned char>(*str++)];
-    return w;
-}
-
-static void drawStringBigCenter(const char *str, COLOR color, TEXTURE &dest, int center_x, int center_y, int scale)
-{
-    if(scale <= 1)
-    {
-        drawStringCenter(str, color, dest, center_x, center_y);
-        return;
-    }
-
-    unsigned int w = measureTextWidth(str);
-    unsigned int h = fontHeight();
-    if(w == 0 || h == 0)
-    {
-        drawStringCenter(str, color, dest, center_x, center_y);
-        return;
-    }
-
-    TEXTURE *tmp = newTexture(w, h, 0, true, 0);
-    drawString(str, color, *tmp, 0, 0);
-
-    int big_w = w * scale;
-    int big_h = h * scale;
-    int dest_x = center_x - big_w / 2;
-    int dest_y = center_y - big_h / 2;
-
-    drawTexture(*tmp, dest, 0, 0, w, h, dest_x, dest_y, big_w, big_h);
-    deleteTexture(tmp);
-}
-
-static void fillRect(TEXTURE &tex, int x, int y, int w, int h, COLOR c)
-{
-    if(x >= (int)tex.width || y >= (int)tex.height || w <= 0 || h <= 0)
-        return;
-
-    if(x < 0)
-    {
-        w += x;
-        x = 0;
-    }
-    if(y < 0)
-    {
-        h += y;
-        y = 0;
-    }
-    if(x + w > (int)tex.width)
-        w = tex.width - x;
-    if(y + h > (int)tex.height)
-        h = tex.height - y;
-
-    for(int yy = 0; yy < h; ++yy)
-    {
-        COLOR *line = tex.bitmap + (y + yy) * tex.width + x;
-        for(int xx = 0; xx < w; ++xx)
-            line[xx] = c;
-    }
-}
-
 void StartTask::render()
 {
-    // Tile real dirt tile from terrain atlas for the background (16x16 block layout, each block zoomed 4x => 96px).
-    const auto &dirt = terrain_atlas[2][0].resized; // [2][0] is dirt block texture in atlas.
-    const int tile_size = 96; // 24 * 4 zoom
-    const int cells_x = 16;
-    const int cells_y = 16;
-    const int total_width = cells_x * tile_size;
-    const int total_height = cells_y * tile_size;
-    const int offset_x = std::max(0, (SCREEN_WIDTH - total_width) / 2);
-    const int offset_y = std::max(0, (SCREEN_HEIGHT - total_height) / 2);
+    const MenuUI::TitleLayout layout = MenuUI::titleLayout();
 
-    for(int cy = 0; cy < cells_y; ++cy)
-    {
-        for(int cx = 0; cx < cells_x; ++cx)
-        {
-            int px = offset_x + cx * tile_size;
-            int py = offset_y + cy * tile_size;
-            // Scale each dirt tile to 2x by setting destination width/height = tile_size.
-            drawTexture(*terrain_resized,
-                        *screen,
-                        dirt.left, dirt.top,
-                        dirt.right - dirt.left, dirt.bottom - dirt.top,
-                        px, py,
-                        tile_size, tile_size);
-        }
-    }
+    if(title_backdrop == nullptr)
+        buildTitleBackdrop();
+    if(title_logo == nullptr)
+        buildTitleLogo(layout);
 
-    // Title
-    drawStringCenter("CRAFTI", 0xFFFF, *screen, SCREEN_WIDTH / 2, 12);
+    // The whole backdrop in one copy: the dirt is already tiled and dimmed inside it.
+    drawTexture(*title_backdrop, *screen,
+                0, 0, SCREEN_WIDTH, SCREEN_HEIGHT,
+                0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
-    // Subtitle
-    drawStringCenter("Select world type", 0xFFFF, *screen, SCREEN_WIDTH / 2, 28);
+    drawTexture(*title_logo, *screen,
+                0, 0, title_logo->width, title_logo->height,
+                (SCREEN_WIDTH - static_cast<int>(title_logo->width)) / 2, layout.logo_y,
+                title_logo->width, title_logo->height);
 
-    const char *items[START_ITEM_MAX] = { "Continue Saved World", "New Flat World", "New Terrain World", "Graphing Mode", "Audio Test", "Exit" };
-
-    int menu_height = START_ITEM_MAX * 24 - 4;
-    int start_y = (SCREEN_HEIGHT / 2) - menu_height / 2;
+    MenuUI::drawSplash(current_splash, *screen, SCREEN_WIDTH / 2, layout.splash_y);
 
     for(int i = 0; i < START_ITEM_MAX; ++i)
     {
-        int y = start_y + i * 24;
-        int button_w = 180;
-        int button_h = 20;
-        int button_x = (SCREEN_WIDTH - button_w) / 2;
+        const int y = layout.buttons.buttonY(i);
+        const bool enabled = itemEnabled(i);
+        const bool focused = (i == selected_item);
 
-        // Label color
-        COLOR label_color = 0xFFFF;
-
-        if(i == selected_item)
-        {
-            // selected button background
-            fillRect(*screen, button_x, y, button_w, button_h, 0x7BEF);
-            drawRectangle(*screen, button_x, y, button_w, button_h, 0xFFFF);
-            label_color = 0x0000;
-        }
-        else
-        {
-            drawRectangle(*screen, button_x, y, button_w, button_h, 0xFFFF);
-        }
-
-        drawStringCenter(items[i], label_color, *screen, SCREEN_WIDTH / 2, y + 4);
+        MenuUI::drawButton(*screen, layout.buttons.x, y, layout.buttons.w, layout.buttons.h,
+                           focused, enabled);
+        MenuUI::drawButtonLabel(MenuUI::titleLabels[i], *screen, layout.buttons.x, y,
+                                layout.buttons.w, layout.buttons.h, focused, enabled);
     }
 
-    drawStringCenter("Use 8/2 or Up/Down to move; 5 or Return to select", 0xFFFF, *screen, SCREEN_WIDTH / 2, SCREEN_HEIGHT - 24);
-    drawStringCenter(audio_status ? audio_status : GameAudio::packStatus(), 0xFFFF, *screen, SCREEN_WIDTH / 2, SCREEN_HEIGHT - 12);
-}
-
-void StartTask::logic(GLFix /*dt*/)
+    // The small print along the bottom, where vanilla keeps its version and its
+    // credits, and the two lines this build needs: how to drive the menu, and
+    // whether the audio pack was found.
+    MenuUI::drawSmallPrint(MenuUI::versionText, *screen, 1, layout.version_y);
+    MenuUI::drawSmallPrint(MenuUI::creditText, *screen,
+                           SCREEN_WIDTH - static_cast<int>(measureString(MenuUI::creditText)) - 1,
+                           layout.version_y);
+    MenuUI::drawSmallPrint(MenuUI::hintText, *screen, 1, layout.hint_y);
+    MenuUI::drawSmallPrint(GameAudio::packStatus(), *screen, 1, layout.audio_y);
+}void StartTask::logic(GLFix /*dt */)
 {
     if(key_held_down)
         key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_ENTER);
     else if(keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_8))
     {
-        --selected_item;
-        if(selected_item < 0)
-            selected_item = START_ITEM_MAX - 1;
+        do
+        {
+            --selected_item;
+            if(selected_item < 0)
+                selected_item = START_ITEM_MAX - 1;
+        } while(!itemEnabled(selected_item));
         key_held_down = true;
     }
     else if(keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_2))
     {
-        ++selected_item;
-        if(selected_item == START_ITEM_MAX)
-            selected_item = 0;
+        do
+        {
+            ++selected_item;
+            if(selected_item == START_ITEM_MAX)
+                selected_item = 0;
+        } while(!itemEnabled(selected_item));
         key_held_down = true;
     }
     else if(keyPressed(KEY_NSPIRE_5))
     {
+        if(!itemEnabled(selected_item))
+        {
+            key_held_down = true;
+            return;
+        }
+
         GameAudio::play(GameAudio::EventMenuSelect);
+
+        // Every choice but quitting leaves the title screen, and the two cached
+        // textures go with it (the next visit builds them again).
+        if(selected_item != EXIT)
+            releaseTitleGraphics();
+
         switch(selected_item)
         {
         case CONTINUE:
-            if(has_saved_world)
-                world_task.makeCurrent();
+            world_task.makeCurrent();
             break;
         case NEW_FLAT:
             world.setWorldType(World::WorldType::Flat);
@@ -203,9 +200,6 @@ void StartTask::logic(GLFix /*dt*/)
         case NEW_GRAPH:
             graph_task.makeCurrent();
             break;
-        case AUDIO_TEST:
-            audio_test_task.openFrom(this);
-            break;
         case EXIT:
             running = false;
             break;
@@ -216,7 +210,10 @@ void StartTask::logic(GLFix /*dt*/)
     else if(keyPressed(KEY_NSPIRE_ESC))
     {
         if(has_saved_world)
+        {
+            releaseTitleGraphics();
             world_task.makeCurrent();
+        }
         else
             running = false;
 

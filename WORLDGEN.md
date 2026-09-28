@@ -69,10 +69,14 @@ noise field (standard deviation ~220 of the 0..1023 range, not the ~295 of a
 uniform one), which is why they look arbitrary. They were calibrated by running
 the host test, not guessed.
 
-**On the block palette:** this game has no snow, ice, sandstone, gravel, clay or
-cactus block id, so the biome set is limited to what the existing ids can
-express honestly. There is deliberately no "snowy" biome that would have to fake
-snow with white wool. The "cold" band is a dense forest for the same reason.
+**On the block palette:** this game has no ice, sandstone, gravel, clay or cactus
+block id, so the biome set is limited to what the existing ids can express
+honestly. There is deliberately no "snowy" biome: the cold band is a dense
+forest, because what makes it cold is the temperature field, and snow is
+something the weather *adds* to it (WEATHER.md) rather than something terrain
+generation paints on. That keeps this module free of the snow block, and it means
+a cold forest is white after its first storm rather than from the moment it is
+created.
 
 ## Caves and ravines
 
@@ -112,7 +116,9 @@ Per chunk column (five chunks, 8x8x40 blocks), the new work is roughly:
 * ~900 cave samples in the column strip (~1.5 fields of 16 lattice hashes each),
 * 64 ravine lookups, each a cheap hashed cell test plus at most nine segment
   distance tests,
-* at most ten tree templates in a forest.
+* at most ten tree templates in a forest,
+* up to four structure cells tested per chunk, of which the three in four that
+  hold nothing cost one hash and no terrain sample at all (see STRUCTURES.md).
 
 That is a few milliseconds on a 150 MHz CX, and only for a chunk that is being
 generated for the first time. Nothing here runs per frame.
@@ -134,8 +140,15 @@ ravine invariants (never at the surface, always a fissure).
 ## Still open
 
 * **Weather** is implemented, but separately: see WEATHER.md.
-* **Rare structures** on top of the existing villages are not implemented yet.
-* Sandstone/gravel/snow/ice block ids do not exist, which caps how distinct the
-  desert and any snowy biome can look.
+* **Rare structures** (dungeons, ruins and desert temples) are implemented on top
+  of the existing villages: see STRUCTURES.md.
+* A structure chest's contents are not written to the save file until the chest is
+  first touched, because they are a pure function of the world seed.
+* Sandstone/gravel/ice block ids do not exist, which caps how distinct the desert
+  and the cold biomes can look; snow itself does exist now, but as weather cover
+  rather than as generated terrain (WEATHER.md).
+* `BiomeGen::temperatureAt()` / `isColdAt()` expose the temperature field so the
+  weather can ask the same question the biome is chosen from; the threshold is
+  `BiomeGen::ColdTemperature`, shared rather than copied.
 * Nothing here has been checked on real hardware. The numbers above come from
   the host test; how the biomes read on the 320x240 screen of a CX is unknown.

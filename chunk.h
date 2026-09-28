@@ -12,6 +12,8 @@
 #include "aabb.h"
 #include "particle.h"
 #include "oregeneration.h"
+#include "structuregen.h"
+#include "blocklight.h"
 
 class World;
 
@@ -106,6 +108,36 @@ private:
     };
     static void villageWriteBlock(void *context, int world_x, int world_y, int world_z, uint16_t block);
 
+    //Per-block lighting (chunklight.cpp, plus the sky map in chunk.cpp): the
+    //shade of a vertex from how deep it sits under the sky and from the blocks
+    //that glow. Baked when the mesh is built, so nothing of it runs per frame.
+    COLOR litColor(const COLOR color, const int x, const int y, const int z);
+    int lightLevel(const int x, const int y, const int z);
+    int localLightLevel(const int x, const int y, const int z);
+    void rebuildLightField();
+    int skyHeightOf(const int local_x, const int local_z);
+    int columnSkyHeight(const int world_x, const int world_z) const;
+    void rebuildSkyHeights();
+
+    // Highest sky-blocking block of every column, and the light the chunk's own
+    // emitters spread. Both are rebuilt lazily -- each needs work that generation
+    // and a block change have already paid for -- and neither is saved: they are
+    // a function of the blocks.
+    uint8_t column_sky_height[SIZE][SIZE];
+    bool sky_heights_valid = false;
+    uint8_t block_light[BlockLight::Field::Cells];
+    bool light_field_valid = false;
+
+    //Procedural dungeons, ruins and temples: same contract as the villages, and
+    //run after them so a structure always wins where the two overlap.
+    void generateStructures();
+    struct StructureWriteContext
+    {
+        Chunk *chunk;
+        int base_x, base_y, base_z; // chunk origin in world block coordinates
+    };
+    static void structureWriteBlock(void *context, int world_x, int world_y, int world_z, uint16_t block);
+
     //Data
     unsigned int getPosition(unsigned int x, unsigned int y, unsigned int z);
 
@@ -149,5 +181,14 @@ void drawLoadingtext(const int i);
  * villager spawner calls this once to repopulate the plan registry.
  */
 void registerVillagesNearColumn(int world_x, int world_z);
+
+/**
+ * True when a world block position is a structure's chest, in which case `out`
+ * holds that structure's plan and `out_index` the index of the chest in it. The
+ * chest store uses this to fill the chest the first time it is touched: the
+ * contents are a pure function of the plan, so nothing has to be saved for a
+ * chest the player never finds.
+ */
+bool structureChestAt(int world_x, int world_y, int world_z, Structures::Plan &out, int &out_index);
 
 #endif // CHUNK_H

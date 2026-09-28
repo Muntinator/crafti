@@ -131,12 +131,51 @@ static void test_power_flag_is_independent_of_data()
     CHECK(!getPOWERSTATE(getBLOCKWDATA(BLOCK_REDSTONE_TORCH, 4)));
 }
 
+// The name table in terrain.cpp (block_names) covers exactly the plain blocks, so
+// anything that names a block has to split on BLOCK_NORMAL_LAST before indexing
+// it -- a torch would read past the end of that table. This pins the invariant
+// that makes the split necessary, and it is the reason worldcommands.cpp asks the
+// specials separately instead of trusting one lookup.
+static void test_special_blocks_live_outside_the_plain_range()
+{
+    CHECK(BLOCK_SNOW == BLOCK_NORMAL_LAST);
+    // The blocks that own state outside the terrain tables -- a chest's contents,
+    // a bed's halves and a snow layer's depth -- are still plain blocks, so they
+    // are named from the same table and have to sit inside its range.
+    CHECK(BLOCK_CHEST < BLOCK_NORMAL_LAST);
+    CHECK(BLOCK_BED < BLOCK_NORMAL_LAST);
+    // A snow layer stores its depth in its data byte, which has to fit the seven
+    // bits getBLOCKDATA() masks with (snowcover.h pins the same thing).
+    CHECK(BLOCK_SNOW > BLOCK_BED);
+    CHECK(BLOCK_SPECIAL_START > BLOCK_NORMAL_LAST);
+    CHECK(BLOCK_SPECIAL_LAST >= BLOCK_SPECIAL_START);
+
+    const BLOCK specials[] = {
+        BLOCK_TORCH, BLOCK_FLOWER, BLOCK_SPIDERWEB, BLOCK_CAKE, BLOCK_MUSHROOM,
+        BLOCK_DOOR, BLOCK_WATER, BLOCK_LAVA, BLOCK_WHEAT, BLOCK_REDSTONE_LAMP,
+        BLOCK_REDSTONE_SWITCH, BLOCK_REDSTONE_WIRE, BLOCK_REDSTONE_TORCH,
+        BLOCK_PRESSURE_PLATE, BLOCK_WATER_FAST
+    };
+
+    for(unsigned int i = 0; i < sizeof(specials) / sizeof(specials[0]); ++i)
+    {
+        CHECK(specials[i] > BLOCK_NORMAL_LAST);
+        CHECK(specials[i] >= BLOCK_SPECIAL_START);
+        CHECK(specials[i] <= BLOCK_SPECIAL_LAST);
+    }
+
+    // Items are not blocks either: they carry an atlas id in the data byte and
+    // live past every block id, which is what keeps the two lookups apart.
+    CHECK(BLOCK_ITEM > BLOCK_SPECIAL_LAST);
+}
+
 int main()
 {
     test_item_ids_round_trip();
     test_block_ids_round_trip();
     test_block_data_stays_below_the_power_flag();
     test_power_flag_is_independent_of_data();
+    test_special_blocks_live_outside_the_plain_range();
 
     printf("blockdata_test: %d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;

@@ -31,6 +31,23 @@ public:
 
     static bool keyPressed(const t_key &key);
 
+    /**
+     * The character a text key is typing, or 0 when none was newly pressed.
+     *
+     * The command console needs what the game's own controls deliberately leave
+     * alone -- the calculator's letter and digit keys -- and it needs them as an
+     * edge rather than as the level keyPressed() reports, because a held key must
+     * not type over and over. Both are handled here so the console does not have
+     * to know which machine it is running on.
+     */
+    static char textKeyPressed();
+    /**
+     * Forgets which text keys were held. Called when a text field opens: a key
+     * that was already down (the '/' that opened the console, say) must not count
+     * as the first character typed.
+     */
+    static void resetTextKeys();
+
     static void initializeGlobals(const char *savefile);
     static void deinitializeGlobals();
 

@@ -53,7 +53,10 @@ const char *block_names[BLOCK_NORMAL_LAST + 1] =
     "Yellow Wool",
     "Light Blue Wool",
     "Magenta Wool",
-    "Orange Wool"
+    "Orange Wool",
+    "Chest",
+    "Bed",
+    "Snow Layer"
 };
 
 struct BLOCK_TEXTURE {
@@ -81,10 +84,18 @@ static const BLOCK_TEXTURE texture_atlas[][16] =
     { ALL(BLOCK_COBBLESTONE), ALL(BLOCK_BEDROCK), ALL(BLOCK_SAND), NON, SID(BLOCK_WOOD), TAB(BLOCK_WOOD), ALL(BLOCK_IRON), ALL(BLOCK_GOLD), ALL(BLOCK_DIAMOND), NON, NON, NON, NON, NON, NON, NON },
     { ALL(BLOCK_GOLD_ORE), ALL(BLOCK_IRON_ORE), ALL(BLOCK_COAL_ORE), FRO(BLOCK_BOOKSHELF), NON, NON, NON, NON, NON, NON, NON, TAB(BLOCK_CRAFTING_TABLE), FRO(BLOCK_FURNACE), SWF(BLOCK_FURNACE), NON, NON },
     { ALL(BLOCK_SPONGE), ALL(BLOCK_GLASS), ALL(BLOCK_DIAMOND_ORE), ALL(BLOCK_REDSTONE_ORE), NON, ALL(BLOCK_LEAVES), NON, NON, NON, NON, NON, SID(BLOCK_CRAFTING_TABLE), FRO(BLOCK_CRAFTING_TABLE), NON, TOP(BLOCK_FURNACE), NON },
-    { NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON },
-    { NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON },
+    // Row 4 was unused; the chest is painted there by paintChestTexture().
+    { TAB(BLOCK_CHEST), SID(BLOCK_CHEST), FRO(BLOCK_CHEST), NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON },
+    // Row 5 is the bed, painted by paintBedTexture(). Only three of its four
+    // tiles are mapped here: the plain blanket top (5,3) is used by the renderer
+    // for the foot end of the bed and is never the whole block's face, so giving
+    // it a block side would only make the item icon ambiguous.
+    { TOP(BLOCK_BED), BOT(BLOCK_BED), SID(BLOCK_BED), NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON },
     { NON, NON, NON, NON, NON, NON, TAB(BLOCK_PUMPKIN), ALL(BLOCK_NETHERRACK), NON, ALL(BLOCK_GLOWSTONE), NON, NON, NON, NON, NON, NON},
-    { NON, ALL(BLOCK_WOOL_BLACK), ALL(BLOCK_WOOL_GRAY), NON, NON, NON, SWF(BLOCK_PUMPKIN), FRO(BLOCK_PUMPKIN), NON, NON, NON, NON, NON, NON, NON, NON },
+    // (5,7) is the packs' own light grey gravel-like tile, unused until now: the
+    // snow layer is drawn with it rather than with a new texture, so all three
+    // texture packs get snow without a byte of art being authored.
+    { NON, ALL(BLOCK_WOOL_BLACK), ALL(BLOCK_WOOL_GRAY), NON, NON, ALL(BLOCK_SNOW), SWF(BLOCK_PUMPKIN), FRO(BLOCK_PUMPKIN), NON, NON, NON, NON, NON, NON, NON, NON },
     { NON, ALL(BLOCK_WOOL_RED), ALL(BLOCK_WOOL_PINK), NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON },
     { NON, ALL(BLOCK_WOOL_DARK_GREEN), ALL(BLOCK_WOOL_GREEN), NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON },
     { NON, ALL(BLOCK_WOOL_BROWN), ALL(BLOCK_WOOL_YELLOW), NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON, NON },
@@ -147,6 +158,205 @@ static void makeWaterOpaque(TEXTURE &texture, const int x, const int y, const in
             color.b = (color.b * 3) / 4;
             texture.bitmap[x1 + y1*texture.width] = colorRGB(color);
         }
+}
+
+/**
+ * Draws the chest into one 16x16 tile of the atlas.
+ *
+ * The chest is the only block with no art of its own: the atlas ships in three
+ * variants (an external 512x512 file and two embedded 256x256 ones), so instead
+ * of adding a texture to each the tile is painted here, in the atlas the runtime
+ * actually loaded. Row 4 of the atlas was unused, which is where these go.
+ *
+ * `variant` is 0 for the top, 1 for a plain side and 2 for the front, which
+ * carries the latch.
+ */
+static void paintChestTile(TEXTURE &texture, const int x, const int y, const int w, const int h, const int variant)
+{
+    static const RGB wood      = { 0.62f, 0.40f, 0.20f };
+    static const RGB wood_dark = { 0.36f, 0.22f, 0.10f };
+    static const RGB wood_light= { 0.76f, 0.55f, 0.30f };
+    static const RGB latch     = { 0.60f, 0.60f, 0.48f };
+    static const RGB latch_dark= { 0.24f, 0.24f, 0.17f };
+
+    for(int px = 0; px < w; ++px)
+        for(int py = 0; py < h; ++py)
+        {
+            // 0..15 inside the tile, whatever the atlas resolution is.
+            const int u = (px * 16) / w;
+            const int v = (py * 16) / h;
+
+            const bool frame = (u == 0 || u == 15 || v == 0 || v == 15);
+            const bool inner_edge = (u == 1 || u == 14 || v == 1 || v == 14);
+            const bool lid_seam = (variant != 0) && (v == 5 || v == 6);
+
+            RGB color = wood;
+            if(frame)
+                color = wood_dark;
+            else if(inner_edge)
+                color = wood_light;
+            else if(lid_seam)
+                color = (v == 5) ? wood_dark : wood;
+
+            // A darker band across the middle of the side gives the lid a body.
+            if(variant == 1 && v == 11 && u > 1 && u < 14)
+                color = wood_dark;
+
+            // The top is a lid: an inset panel with a plank line down the middle.
+            if(variant == 0)
+            {
+                if((u == 2 || u == 13 || v == 2 || v == 13))
+                    color = wood_light;
+                if(u == 7 || u == 8)
+                    color = wood_dark;
+            }
+
+            if(variant == 2)
+            {
+                // Hinges on the lid...
+                if((u == 3 || u == 12) && v == 4)
+                    color = latch_dark;
+                // ...and the latch, with a keyhole, over the seam.
+                if(u >= 6 && u <= 9 && v >= 4 && v <= 9)
+                    color = latch;
+                if(u >= 6 && u <= 9 && (v == 4 || v == 9))
+                    color = latch_dark;
+                if((u == 6 || u == 9) && v >= 4 && v <= 9)
+                    color = latch_dark;
+                if((u == 7 || u == 8) && v == 7)
+                    color = latch_dark;
+            }
+
+            texture.bitmap[(x + px) + (y + py) * texture.width] = colorRGB(color);
+        }
+}
+
+/** The three chest tiles in the atlas: top at (0,4), sides at (1,4), front at (2,4). */
+static void paintChestTexture(TEXTURE &texture, const int field_width, const int field_height)
+{
+    paintChestTile(texture, 0 * field_width, 4 * field_height, field_width, field_height, 0);
+    paintChestTile(texture, 1 * field_width, 4 * field_height, field_width, field_height, 1);
+    paintChestTile(texture, 2 * field_width, 4 * field_height, field_width, field_height, 2);
+}
+
+/**
+ * Draws one bed tile into a 16x16 field of the atlas.
+ *
+ * Like the chest, the bed has no art in the atlas files, so its four tiles are
+ * painted here into row 5 (rows 4 and 5 were the unused ones; the chest took 4).
+ * They are the only tiles in the game that belong to a *shape* rather than to a
+ * block: the bed is a two-block slab, and its ends are told apart by these.
+ *
+ *   variant 0  the head end's top: the blanket, with the pillow pad inset
+ *   variant 1  the underside: plain planks, which is what a bed is built on
+ *   variant 2  a side: the blanket turned over the wooden frame
+ *   variant 3  the foot end's top: the blanket on its own
+ *
+ * Every variant is left-right symmetric, and only the side has a meaningful top
+ * and bottom, so no tile has to be turned to follow which way the bed faces.
+ * That is deliberate: the top faces of the two halves meet along their short
+ * edge, and a tile that had to be rotated per facing would need four variants of
+ * each of the two top tiles to avoid a seam.
+ */
+static void paintBedTile(TEXTURE &texture, const int x, const int y, const int w, const int h, const int variant)
+{
+    static const RGB blanket      = { 0.66f, 0.17f, 0.14f };
+    static const RGB blanket_dim  = { 0.48f, 0.11f, 0.09f };
+    static const RGB blanket_lit  = { 0.80f, 0.28f, 0.22f };
+    static const RGB pillow       = { 0.90f, 0.89f, 0.84f };
+    static const RGB pillow_dim   = { 0.68f, 0.67f, 0.62f };
+    static const RGB wood         = { 0.62f, 0.40f, 0.20f };
+    static const RGB wood_dark    = { 0.36f, 0.22f, 0.10f };
+
+    for(int px = 0; px < w; ++px)
+        for(int py = 0; py < h; ++py)
+        {
+            // 0..15 inside the tile, whatever the atlas resolution is.
+            const int u = (px * 16) / w;
+            const int v = (py * 16) / h;
+
+            RGB color = blanket;
+            const bool edge = (u == 0 || u == 15);
+
+            switch(variant)
+            {
+            case 0: // The pillow end.
+            {
+                // The blanket first, with a quiet quilt: every fourth row and
+                // column of thread is a shade off.
+                if(edge || v == 15)
+                    color = blanket_dim;
+                else if(u % 4 == 0 || v % 4 == 0)
+                    color = blanket_lit;
+
+                // The pillow pad, inset from every side so the blanket shows as a
+                // border around it.
+                if(u >= 2 && u <= 13 && v >= 3 && v <= 11)
+                {
+                    color = pillow;
+                    if(v == 3 || v == 11)
+                        color = pillow_dim;
+                }
+                break;
+            }
+            case 1: // The underside.
+            {
+                color = wood;
+                if(edge || v == 0 || v == 15)
+                    color = wood_dark;
+                // Plank seams, spaced so they line up between the two halves.
+                else if(u == 5 || u == 10)
+                    color = wood_dark;
+                break;
+            }
+            case 2: // A side: blanket over the frame.
+            {
+                if(v <= 5)
+                {
+                    color = blanket;
+                    if(v == 5)
+                        color = blanket_dim;      // the seam where the blanket tucks in
+                    else if(edge)
+                        color = blanket_dim;
+                    else if(v == 0)
+                        color = blanket_lit;
+                }
+                else
+                {
+                    color = wood;
+                    if(v == 6)
+                        color = wood_dark;
+                    else if(v == 15)
+                        color = wood_dark;
+                    else if(edge)
+                        color = wood_dark;
+                }
+                break;
+            }
+            default: // 3: the foot end's top, blanket only.
+            {
+                if(edge || v == 15)
+                    color = blanket_dim;
+                else if(u % 4 == 0 || v % 4 == 0)
+                    color = blanket_lit;
+                // A fold across the middle, so the foot end is not a flat print.
+                else if(v >= 6 && v <= 7)
+                    color = blanket_lit;
+                break;
+            }
+            }
+
+            texture.bitmap[(x + px) + (y + py) * texture.width] = colorRGB(color);
+        }
+}
+
+/** The four bed tiles in the atlas, in row 5: pillow, underside, side, blanket. */
+static void paintBedTexture(TEXTURE &texture, const int field_width, const int field_height)
+{
+    paintBedTile(texture, 0 * field_width, 5 * field_height, field_width, field_height, 0);
+    paintBedTile(texture, 1 * field_width, 5 * field_height, field_width, field_height, 1);
+    paintBedTile(texture, 2 * field_width, 5 * field_height, field_width, field_height, 2);
+    paintBedTile(texture, 3 * field_width, 5 * field_height, field_width, field_height, 3);
 }
 
 // Some embedded texture variants store block-breaking frames with white background
@@ -212,6 +422,13 @@ void terrainInit(const char *texture_path)
 
     // Water has opacity of 0.5 but it's not rendered with alpha here.
     // makeWaterOpaque(*terrain_current, 13 * field_width, 12 * field_height, field_width, field_height);
+
+    // The chest has no texture in the atlas files, so it is painted here. This
+    // has to happen before terrain_resized is made, so the inventory and the
+    // block list get the icon as well.
+    paintChestTexture(*terrain_current, field_width, field_height);
+    // ...and the bed, whose four tiles are painted for the same reason.
+    paintBedTexture(*terrain_current, field_width, field_height);
 
     if(terrain_current->width == 384 && terrain_current->height == 384)
         terrain_resized = terrain_current;

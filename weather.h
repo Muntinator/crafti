@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 /**
- * Deterministic weather: clear, rain and thunderstorms.
+ * Deterministic weather: clear, rain, thunderstorms and snow.
  *
  * Like worldclock.h, this is a pure function of the world and holds no state of
  * its own. The weather at a moment is derived from the world seed and the total
@@ -36,7 +36,22 @@ namespace Weather
         Clear = 0,
         Rain,
         Thunder,
+        /**
+         * Snow. spellAt() never returns this on its own: whether falling water
+         * freezes depends on where the player is standing, and this module knows
+         * nothing about the world. A cold biome turns Rain into snow through
+         * precipitation(), and /weather snow forces it anywhere.
+         */
+        Snow,
         StateCount
+    };
+
+    /** What is actually falling out of the sky. */
+    enum Precipitation
+    {
+        NoPrecipitation = 0,
+        RainPrecipitation,
+        SnowPrecipitation
     };
 
     const char *stateName(int state);
@@ -67,8 +82,22 @@ namespace Weather
     /** Peak sky darkening for rain and for a thunderstorm, out of MaxIntensity. */
     constexpr int RainDarkness = 96;
     constexpr int ThunderDarkness = 150;
+    /** 
+     * Snow is bright weather: it darkens the sky less than rain and carries fewer
+     * particles, because a flake is a dot where a raindrop is a streak.
+     */
+    constexpr int SnowDarkness = 64;
     /** Peak rain strength for plain rain; a thunderstorm reaches MaxIntensity. */
     constexpr int RainStrength = 200;
+    constexpr int SnowStrength = 150;
+    /**
+     * How far from the player a lightning strike may land, in blocks. Vanilla
+     * searches a 128-block box, which on the CX is well past the render distance:
+     * the bolt itself would never be seen, only the flash. Keeping the strike
+     * close to the player means the impact, the burst of particles and the
+     * burning grass are all in view.
+     */
+    constexpr int StrikeRadius = 24;
 
     /** The weather at one moment. */
     struct Spell
@@ -83,16 +112,48 @@ namespace Weather
     /** Resolves the weather at `total_ticks` (dayCount * TicksPerDay + time). */
     void spellAt(uint32_t world_seed, unsigned long long total_ticks, Spell &out);
 
-    /** Rain strength for the renderer, 0..MaxIntensity (0 when clear). */
+    /**
+     * What is falling, given whether the place the player stands is freezing.
+     *
+     * Rain over a cold biome comes down as snow, and a spell forced with
+     * /weather snow stays snow wherever it is, which is what makes it possible
+     * to see the flakes without first finding a cold forest.
+     */
+    Precipitation precipitation(const Spell &spell, bool freezing);
+
+    /**
+     * Precipitation strength for the renderer, 0..MaxIntensity (0 when clear): how
+     * many particles of the spell are drawn, whether they are drops or flakes.
+     */
     int rainStrength(const Spell &spell);
 
     /** How much the sky and the terrain tint should darken, 0..MaxIntensity. */
     int darkness(const Spell &spell);
 
-    /** True on the ticks a thunder flash is lit. */
+    /**
+     * True on the ticks a thunder flash is lit. A flash is a strike: the moment
+     * it is drawn is the moment the bolt lands, so the caller resolves the impact
+     * on the rising edge of this and at no other tick.
+     */
     bool lightningAt(const Spell &spell, unsigned long long total_ticks);
 
-    /** True when this spell puts water in the air. */
+    /**
+     * Index of the strike flashing on `total_ticks`, counted from the start of the
+     * world, or 0 when there is no lightning. Every strike of a storm has its own
+     * index, so a strike can be named -- and its target derived -- without the
+     * caller keeping any state between frames.
+     */
+    unsigned long long strikeIndex(const Spell &spell, unsigned long long total_ticks);
+
+    /**
+     * Where the strike with this index lands, as an offset in blocks from the
+     * player's column. Pure: the same seed, index and storm always put the bolt in
+     * the same place, so the two frames of one flash cannot disagree about where
+     * it hit.
+     */
+    void strikeOffset(uint32_t world_seed, unsigned long long strike_index, int &dx, int &dz);
+
+    /** True when this spell puts water in the air, as rain or as snow. */
     inline bool isPrecipitating(const Spell &spell) { return spell.state != Clear; }
 }
 

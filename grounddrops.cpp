@@ -10,6 +10,7 @@
 #include "gl.h"
 #include "inventory.h"
 #include "itemicons.h"
+#include "itemrules.h"
 #include "particle.h"
 #include "terrain.h"
 #include "world.h"
@@ -23,8 +24,16 @@ struct GroundDrop
     GLFix vx, vy, vz;
     BLOCK_WDATA stack;
     unsigned int count;
+    /** Wear of the item as it lies here, carried into the inventory on pickup. */
+    unsigned short damage;
+    /** Animation phase, in simulation steps. */
     int age_ticks;
+    /** Real time on the ground, in milliseconds: this is what drops expire by. */
+    unsigned int age_ms;
 };
+
+/** Upper bound on drops in the world, so a runaway spawner cannot exhaust the CX. */
+constexpr size_t max_ground_drops = 256;
 
 std::vector<GroundDrop> ground_drops;
 
@@ -54,10 +63,15 @@ TextureAtlasEntry blockDropIconUV(BLOCK_WDATA block)
 
 } // namespace
 
-void spawnWorldDrop(GLFix x, GLFix y, GLFix z, BLOCK_WDATA stack, unsigned int count)
+void spawnWorldDrop(GLFix x, GLFix y, GLFix z, BLOCK_WDATA stack, unsigned int count, unsigned short damage)
 {
     if(getBLOCK(stack) == BLOCK_AIR || count == 0)
         return;
+
+    // A live item outlives the drop and would otherwise be lost when the drop
+    // expires; the lifetime is long enough that this is only a safety net.
+    if(ground_drops.size() >= max_ground_drops)
+        ground_drops.erase(ground_drops.begin());
 
     GroundDrop d;
     d.x = x + GLFix((rand() % 31) - 15);
@@ -68,11 +82,13 @@ void spawnWorldDrop(GLFix x, GLFix y, GLFix z, BLOCK_WDATA stack, unsigned int c
     d.vy = GLFix(28);
     d.stack = stack;
     d.count = count;
+    d.damage = damage;
     d.age_ticks = 0;
+    d.age_ms = 0;
     ground_drops.push_back(d);
 }
 
-void updateGroundDrops()
+void updateGroundDrops(unsigned int elapsed_ms)
 {
     const float px = world_task.x.toFloat();
     const float py = world_task.y.toFloat();
@@ -92,6 +108,7 @@ void updateGroundDrops()
     for(auto &d : ground_drops)
     {
         ++d.age_ticks;
+        d.age_ms += elapsed_ms;
 
         const float dcx = d.x.toFloat();
         const float dcz = d.z.toFloat();
@@ -100,7 +117,14 @@ void updateGroundDrops()
         const float vdiff = dcy - chest_y;
         const bool in_pickup_box = horiz2 <= pickup_hr2 && vdiff <= pickup_vmax && vdiff >= -pickup_vmax;
 
-        if(!in_pickup_box && horiz2 <= attract_r * attract_r && vdiff <= attract_vmax && vdiff >= -attract_vmax)
+        // A stack that was just dropped cannot be collected for a moment, so a
+        // block you break does not fly into the inventory before you see it. The
+        // magnet is off for that moment too, but the drop still falls normally.
+        // Real time, not ticks: the CX logic loop runs nine times slower than the
+        // desktop one and both must hold the item for the same half second.
+        const bool pickupable = ItemRules::dropPickupable(static_cast<int>(d.age_ms));
+
+        if(pickupable && !in_pickup_box && horiz2 <= attract_r * attract_r && vdiff <= attract_vmax && vdiff >= -attract_vmax)
         {
             const float tdx = px - dcx;
             const float tdy = magnet_ty - dcy;
@@ -181,7 +205,16 @@ void updateGroundDrops()
 
     for(size_t i = 0; i < ground_drops.size();)
     {
-        const auto &d = ground_drops[i];
+        const GroundDrop &d = ground_drops[i];
+
+        // Five minutes after breaking the block the stack is gone, picked up or
+        // not: that is the lifetime the rules module states in real time.
+        if(ItemRules::dropExpired(static_cast<int>(d.age_ms)))
+        {
+            ground_drops.erase(ground_drops.begin() + i);
+            continue;
+        }
+
         const float fdx = d.x.toFloat() - px;
         const float fdz = d.z.toFloat() - pz;
         const float horiz2 = fdx * fdx + fdz * fdz;
@@ -189,7 +222,10 @@ void updateGroundDrops()
         const float vdiff_pick = dcy - chest_y;
         const bool in_range = horiz2 <= pickup_hr2 && vdiff_pick <= pickup_vmax && vdiff_pick >= -pickup_vmax;
 
-        if(in_range && current_inventory.addItem(d.stack, d.count))
+        // The wear travels with the item: a half-used pickaxe is picked up half
+        // used, and it goes back to the ground untouched when there is no room.
+        if(in_range && ItemRules::dropPickupable(static_cast<int>(d.age_ms))
+           && current_inventory.addItemWithDamage(d.stack, d.count, d.damage))
             ground_drops.erase(ground_drops.begin() + i);
         else
             ++i;

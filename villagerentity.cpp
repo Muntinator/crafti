@@ -8,7 +8,7 @@
 #include "chunk.h" // registerVillagesNearColumn
 #include "fastmath.h"
 #include "gl.h"
-#include "humanentity.h" // humanSkinTexture()
+#include "textures/steve.h" // the humanoid skin, shared with nothing else
 #include "terrain.h"
 #include "textures/items.h"
 #include "world.h"
@@ -187,7 +187,7 @@ namespace
 		}
 	}
 
-	// --- humanoid model, mirroring HumanEntity's box layout ------------------
+	// --- humanoid model: the same box layout the player is drawn with --------
 
 	TextureAtlasEntry skinArea(int u, int v, int w, int h)
 	{
@@ -290,7 +290,7 @@ VillagerEntity::VillagerEntity()
 	  vx(0), vy(0), vz(0), yaw(0), walk_timer(0), swing_intensity(0),
 	  health(20), hurt_time(0), hurt_resistant(0), death_time(0), dir_timer(60),
 	  flee_timer(0), trade_cooldown(0), ticks_alive(0), idle_timer(0),
-	  profession(0), home_slot(0), on_ground(false), resting(false)
+	  profession(0), home_slot(0), on_ground(false), resting(false), fire_ticks(0)
 {
 	aabb = { x - VillagerWidth / 2, y, z - VillagerWidth / 2,
 	         x + VillagerWidth / 2, y + VillagerHeight, z + VillagerWidth / 2 };
@@ -301,14 +301,17 @@ VillagerEntity::VillagerEntity(uint8_t profession_, uint8_t home_slot_, const Vi
 	  vx(0), vy(0), vz(0), yaw(GLFix(rand() % 360)), walk_timer(0), swing_intensity(0),
 	  health(20), hurt_time(0), hurt_resistant(0), death_time(0), dir_timer(rand() % 60),
 	  flee_timer(0), trade_cooldown(0), ticks_alive(0), idle_timer(static_cast<uint16_t>(rand() % IdleSoundInterval)),
-	  profession(profession_), home_slot(home_slot_), on_ground(false), resting(false), home(plan)
+	  profession(profession_), home_slot(home_slot_), on_ground(false), resting(false), fire_ticks(0), home(plan)
 {
 	aabb = { x - VillagerWidth / 2, y, z - VillagerWidth / 2,
 	         x + VillagerWidth / 2, y + VillagerHeight, z + VillagerWidth / 2 };
 }
 
-void VillagerEntity::applyMeleeDamage(int amount, GLFix attacker_yaw)
+void VillagerEntity::applyMeleeDamage(int amount, GLFix attacker_yaw, int knockback_steps,
+                                     int looting, int set_fire_ticks)
 {
+	(void)looting; // a villager drops nothing, so Looting has nothing to add to
+
 	if(health <= 0 || hurt_resistant > 0)
 		return;
 
@@ -317,14 +320,18 @@ void VillagerEntity::applyMeleeDamage(int amount, GLFix attacker_yaw)
 	hurt_resistant = 10;
 	flee_timer = FleeTicks;
 
+	if(set_fire_ticks > 0 && fire_ticks < set_fire_ticks)
+		fire_ticks = static_cast<int16_t>(set_fire_ticks);
+
 	GameAudio::mobSound(GameAudio::MobVillager, true, blocksToPlayer(x, z));
 
+	const GLFix impulse = GLFix(10 + 4 * (knockback_steps < 0 ? 0 : knockback_steps));
 	GLFix ay = attacker_yaw;
 	ay.normaliseAngle();
 	vx /= 2;
 	vz /= 2;
-	vx += fast_sin(ay) * GLFix(10);
-	vz += fast_cos(ay) * GLFix(10);
+	vx += fast_sin(ay) * impulse;
+	vz += fast_cos(ay) * impulse;
 	if(on_ground)
 	{
 		vy /= 2;
@@ -344,6 +351,15 @@ void VillagerEntity::update()
 		--hurt_time;
 	if(hurt_resistant > 0)
 		--hurt_resistant;
+
+	// Burning: one point of damage a second, like vanilla (Fire Aspect starts it).
+	if(fire_ticks > 0 && health > 0)
+	{
+		--fire_ticks;
+		if((fire_ticks % 20) == 0)
+			health -= Survival::FireDamage;
+	}
+
 	if(flee_timer > 0)
 		--flee_timer;
 	if(trade_cooldown > 0)
@@ -550,6 +566,13 @@ void VillagerEntity::render() const
 		const GLFix t = GLFix(hurt_time) / GLFix(10);
 		tint_g *= GLFix(1) - t * GLFix(0.52f);
 		tint_b *= GLFix(1) - t * GLFix(0.48f);
+	}
+	else if(fire_ticks > 0 && health > 0)
+	{
+		// A burning villager glows orange; the texture modulate is the only fire
+		// look this renderer can carry.
+		tint_g *= GLFix(0.55f);
+		tint_b *= GLFix(0.25f);
 	}
 	nglSetTextureModulate(tint_r, tint_g, tint_b);
 
@@ -769,7 +792,7 @@ void renderVillagerEntities()
 	if(!any)
 		return;
 
-	glBindTexture(humanSkinTexture());
+	glBindTexture(&steve_tex);
 	glBegin(GL_QUADS);
 	for(const VillagerEntity &e : villager_entities)
 	{

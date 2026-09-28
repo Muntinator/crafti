@@ -12,11 +12,16 @@
 #include "worldtask.h"
 
 #include "blockrenderer.h"
+#include "creeperentity.h"
 #include "font.h"
 #include "inventory.h"
+#include "itemrules.h"
+#include "livestockentity.h"
 #include "settingstask.h"
 #include "survival.h"
+#include "villagerentity.h"
 #include "weather.h"
+#include "worldclock.h"
 
 #include "textures/icons.h"
 #include "textures/inventory.h"
@@ -51,6 +56,9 @@ void WorldTask::renderHud()
         constexpr int full_x = 52;
         constexpr int half_x = 61;
         constexpr int heart_y = 0;
+        constexpr int armor_y_src = 9;
+        constexpr int armor_full_x = 34;
+        constexpr int armor_half_x = 43;
         constexpr int bubble_y_src = 18;
         constexpr int food_y = 27;
 
@@ -85,6 +93,25 @@ void WorldTask::renderHud()
                 drawTexture(icons, *screen, full_x, food_y, sp, sp, fx, row_y, icon_s, icon_s);
             else if (points == 1)
                 drawTexture(icons, *screen, half_x, food_y, sp, sp, fx, row_y, icon_s, icon_s);
+        }
+
+        // Armour, above the hearts on the left and only while something is worn:
+        // vanilla gives one icon per two points.
+        const int armor_points = current_inventory.totalArmorPoints();
+        if(armor_points > 0)
+        {
+            const int armor_y = row_y - 10 * hud_scale;
+            for(unsigned int i = 0; i < max_hearts; ++i)
+            {
+                const int ax = hud_left + static_cast<int>(i) * pitch;
+                drawTexture(icons, *screen, container_x, armor_y_src, sp, sp, ax, armor_y, icon_s, icon_s);
+
+                const int points = armor_points - static_cast<int>(i) * 2;
+                if(points >= 2)
+                    drawTexture(icons, *screen, armor_full_x, armor_y_src, sp, sp, ax, armor_y, icon_s, icon_s);
+                else if(points == 1)
+                    drawTexture(icons, *screen, armor_half_x, armor_y_src, sp, sp, ax, armor_y, icon_s, icon_s);
+            }
         }
 
         // Breath, only while there is something to warn about: one bubble per
@@ -137,7 +164,22 @@ void WorldTask::renderHud()
     {
         const BLOCK_WDATA current_slot = current_inventory.currentSlot();
         current_inventory.draw(*screen);
-        drawStringCenter(current_inventory.currentSlotCount() == 0 ? "Empty" : global_block_renderer.getName(current_slot), 0xFFFF, *screen, SCREEN_WIDTH / 2, SCREEN_HEIGHT - current_inventory.height() - fontHeight());
+
+        // The held item's name, with its wear when it is something that can break,
+        // so the number a tool is running out on is on screen.
+        char item_line[64];
+        if(current_inventory.currentSlotCount() == 0)
+            snprintf(item_line, sizeof(item_line), "Empty");
+        else
+        {
+            const int max_damage = ItemRules::maxDamage(current_slot);
+            if(max_damage > 0)
+                snprintf(item_line, sizeof(item_line), "%s (%d/%d)", global_block_renderer.getName(current_slot),
+                         ItemRules::remainingDurability(current_inventory.currentSlotDamage(), max_damage), max_damage);
+            else
+                snprintf(item_line, sizeof(item_line), "%s", global_block_renderer.getName(current_slot));
+        }
+        drawStringCenter(item_line, 0xFFFF, *screen, SCREEN_WIDTH / 2, SCREEN_HEIGHT - current_inventory.height() - fontHeight());
 
         // Draw selection indicator using inventory texture at (1,23) to (2,44)
         constexpr int hotbar_src_width = 22 * 9; // 22 * hotbar_slot_count
@@ -220,7 +262,10 @@ void WorldTask::renderHud()
         drawString(expr_msg, 0xFFFF, *screen, expr_x, 5);
     }
 
-    if(selection_side != AABB::NONE && settings_task.getValue(SettingsTask::COORD_INDICATOR))
+    // The debug screen prints the same coordinates, so the readout stands aside
+    // while it is on rather than drawing over it.
+    if(selection_side != AABB::NONE && settings_task.getValue(SettingsTask::COORD_INDICATOR)
+       && settings_task.getValue(SettingsTask::SHOW_FPS) == 0)
     {
         char pos_msg[64];
         const int bx = selection_pos.x.toInteger<int>();
@@ -256,15 +301,70 @@ void WorldTask::renderHud()
     }
 
     #ifdef FPS_COUNTER
-        if(message_timeout == 0 && settings_task.getValue(SettingsTask::SHOW_FPS))
-        {
-            // The closest thing the game has to a debug line, so the weather
-            // rides along with it rather than adding another overlay.
-            if(weather.state == Weather::Clear)
-                snprintf(this->message, sizeof(this->message), "FPS: %u", fps);
-            else
-                snprintf(this->message, sizeof(this->message), "FPS: %u %s", fps, Weather::stateName(weather.state));
-            message_timeout = 20;
-        }
+        // The debug screen. It used to be one line of FPS sharing the message
+        // channel; it is now its own block, because the same setting is also the
+        // only way to see the clock, the weather and the population count. A real
+        // message still takes precedence over it, since a message is about the
+        // moment and a debug readout is always available.
+        if(settings_task.getValue(SettingsTask::SHOW_FPS) && message_timeout == 0)
+            renderDebugOverlay();
     #endif
+}
+
+void WorldTask::renderDebugOverlay()
+{
+    const bool graph_mode = world.worldType() == World::WorldType::Graph;
+
+    // Where the top-left corner can go without covering something already there:
+    // a message, the effects listed under it, and the two lines a graph view puts
+    // in the same corner. Everything below is one font height per row.
+    const int row = static_cast<int>(fontHeight());
+    int line_y = 5;
+
+    unsigned int effect_rows = effect_count;
+    if(effect_rows > 4)
+        effect_rows = 4; // the HUD only lists four of them
+    line_y += static_cast<int>(effect_rows) * row;
+
+    if(graph_mode)
+        line_y = row * 2 + 9;
+
+    char line[48];
+
+    // The clock and the play mode. The time is printed by the clock's own
+    // formatter, so the debug screen and /time can never disagree about it.
+    char clock[8];
+    WorldClock::formatClock(clock, sizeof(clock));
+    snprintf(line, sizeof(line), "Day %u %s %s", WorldClock::dayCount(), clock,
+             isCreative() ? "Creative" : "Survival");
+    drawString(line, 0xFFFF, *screen, 2, line_y);
+    line_y += row;
+
+    // The block the player is standing in, as whole blocks: those are the numbers
+    // /teleport and /setblock take, so they can be read off and typed back.
+    snprintf(line, sizeof(line), "X %d Y %d Z %d",
+             static_cast<int>((x / BLOCK_SIZE).floor()),
+             static_cast<int>((this->y / BLOCK_SIZE).floor()),
+             static_cast<int>((z / BLOCK_SIZE).floor()));
+    drawString(line, 0xFFFF, *screen, 2, line_y);
+    line_y += row;
+
+    // The weather, how hard it is falling, and the sky's own light level: the last
+    // one is what the day/night tint is made from, so a dark screen at noon can be
+    // told from a dark screen at night.
+    snprintf(line, sizeof(line), "%s %d%% sky %d%s",
+             Weather::stateName(weather.state),
+             (weather_rain * 100) / Weather::MaxIntensity,
+             WorldClock::skyLightLevel(),
+             weatherOverrideTicks() > 0 ? " forced" : "");
+    drawString(line, 0xFFFF, *screen, 2, line_y);
+    line_y += row;
+
+    // Frame rate and how much is alive: between them these are what explains a slow
+    // frame, and the population is worth seeing because the mobs are what fills it.
+    const unsigned int mobs = static_cast<unsigned int>(livestock_entities.size())
+        + static_cast<unsigned int>(creeper_entities.size())
+        + static_cast<unsigned int>(villager_entities.size());
+    snprintf(line, sizeof(line), "fps %u mobs %u", fps, mobs);
+    drawString(line, 0xFFFF, *screen, 2, line_y);
 }

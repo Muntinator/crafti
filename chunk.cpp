@@ -10,6 +10,7 @@
 #include "blockrenderer.h"
 #include "oregeneration.h"
 #include "villagegen.h"
+#include "structuregen.h"
 
 //Texture with "Loading" written on it
 #include "textures/loadingtext.h"
@@ -22,6 +23,7 @@
 
 constexpr const int Chunk::SIZE;
 static_assert(Village::ChunkBlocks == Chunk::SIZE, "villagegen.h and Chunk::SIZE disagree on the chunk size!");
+static_assert(Structures::ChunkBlocks == Chunk::SIZE, "structuregen.h and Chunk::SIZE disagree on the chunk size!");
 int Chunk::pos_indices[SIZE + 1][SIZE + 1][SIZE + 1];
 
 Chunk::Chunk(int x, int y, int z)
@@ -119,6 +121,69 @@ static int floorDiv(int value, int divisor)
     if((value % divisor) != 0 && ((value < 0) != (divisor < 0)))
         --quotient;
     return quotient;
+}
+
+// The sky map: for every column of this chunk, the world Y of the highest block
+// that blocks the sky. A vertex's sky light is then simply how far below that it
+// sits (blocklight.h does the falloff), which is what makes a cave, a tunnel or
+// the space under an overhang dark while the ground above it stays bright.
+//
+// The terrain surface comes from the same column function the terrain and the
+// villages use, so the two always agree, and anything this chunk placed above it
+// (a tree, a house, a ruin) is taken into account as well. Blocks in *other*
+// chunks of the same column are deliberately left out: a canopy two chunks up
+// costs a few levels of light, not a visible difference, and leaving it out keeps
+// the cost of the whole thing to one terrain sample per column.
+int Chunk::columnSkyHeight(const int world_x, const int world_z) const
+{
+    // A flat or graph world has nothing to do with the terrain noise, and its
+    // blocks are lit from above either way, so nothing there is darkened.
+    if(world.worldType() != World::WorldType::Terrain)
+        return BlockLight::SkyAlwaysOpen;
+
+    const PerlinNoise &noise = world.noiseGenerator();
+    int highest = terrainSurfaceHeight(noise, world.seedValue(), world_x, world_z) - 1;
+    if(highest < 0)
+        highest = 0;
+
+    const int local_x = world_x - this->x * SIZE;
+    const int local_z = world_z - this->z * SIZE;
+    if(local_x >= 0 && local_x < SIZE && local_z >= 0 && local_z < SIZE)
+    {
+        for(int y = SIZE - 1; y >= 0; --y)
+        {
+            const int world_y = this->y * SIZE + y;
+            if(world_y <= highest)
+                break; // the terrain is already higher than anything in this chunk
+
+            const BLOCK_WDATA block = blocks[local_x][y][local_z];
+            if(block != BLOCK_AIR && global_block_renderer.isOpaque(block))
+            {
+                highest = world_y;
+                break;
+            }
+        }
+    }
+
+    const int ceiling = World::HEIGHT * SIZE - 1;
+    return highest > ceiling ? ceiling : highest;
+}
+
+void Chunk::rebuildSkyHeights()
+{
+    for(int x = 0; x < SIZE; ++x)
+        for(int z = 0; z < SIZE; ++z)
+            column_sky_height[x][z] = static_cast<uint8_t>(columnSkyHeight(this->x * SIZE + x, this->z * SIZE + z));
+
+    sky_heights_valid = true;
+}
+
+int Chunk::skyHeightOf(const int local_x, const int local_z)
+{
+    if(!sky_heights_valid)
+        rebuildSkyHeights();
+
+    return column_sky_height[local_x][local_z];
 }
 
 namespace
@@ -226,12 +291,17 @@ unsigned int Chunk::getPosition(unsigned int x, unsigned int y, unsigned int z)
 
 void Chunk::addAlignedVertex(const int x, const int y, const int z, GLFix u, GLFix v, const COLOR c)
 {
-    build_vertices.emplace_back(IndexedVertex{getPosition(x, y, z), u, v, c});
+    // The one place every block face goes through: the per-block light is baked
+    // into the shade byte here, so no renderer has to know about it.
+    build_vertices.emplace_back(IndexedVertex{getPosition(x, y, z), u, v, litColor(c, x, y, z)});
 }
 
 void Chunk::addUnalignedVertex(const GLFix x, const GLFix y, const GLFix z, const GLFix u, const GLFix v, const COLOR c)
 {
-    build_vertices_unaligned.emplace_back(VERTEX{x, y, z, u, v, c});
+    const int block_x = (x / BLOCK_SIZE).round();
+    const int block_y = (y / BLOCK_SIZE).round();
+    const int block_z = (z / BLOCK_SIZE).round();
+    build_vertices_unaligned.emplace_back(VERTEX{x, y, z, u, v, litColor(c, block_x, block_y, block_z)});
 }
 
 void Chunk::addUnalignedVertex(const VERTEX &v)
@@ -251,7 +321,7 @@ void Chunk::addParticle(const Particle &particle)
 
 void Chunk::addAlignedVertexQuad(const int x, const int y, const int z, GLFix u, GLFix v, const COLOR c)
 {
-    build_vertices_quad.emplace_back(IndexedVertex{getPosition(x, y, z), u, v, c});
+    build_vertices_quad.emplace_back(IndexedVertex{getPosition(x, y, z), u, v, litColor(c, x, y, z)});
 }
 
 void Chunk::addAlignedVertexForceColor(const int x, const int y, const int z, GLFix u, GLFix v, const COLOR c)
@@ -531,6 +601,14 @@ void Chunk::setLocalBlock(const int x, const int y, const int z, const BLOCK_WDA
 {
     assert(inBounds(x, y, z));
     blocks[x][y][z] = block;
+
+    // The light is a function of the blocks, so a change invalidates it: the one
+    // column is patched on the spot (one terrain sample) and the emitter field is
+    // rebuilt on the next mesh build, which a block change triggers anyway.
+    if(sky_heights_valid)
+        column_sky_height[x][z] = static_cast<uint8_t>(columnSkyHeight(this->x * SIZE + x, this->z * SIZE + z));
+    light_field_valid = false;
+
     if(!set_dirty)
         return;
 
@@ -702,6 +780,12 @@ void Chunk::generate()
     //Everything air
     std::fill(blocks[0][0] + 0, blocks[SIZE - 1][SIZE - 1] + SIZE, BLOCK_AIR);
 
+    // The light caches are a function of the blocks, so generating (or
+    // regenerating) a chunk always invalidates them, including the flat and graph
+    // worlds that return early below.
+    sky_heights_valid = false;
+    light_field_valid = false;
+
     debug("Generating chunk %d:%d:%d...\t", x, y, z);
 
     if(world.worldType() == World::WorldType::Flat)
@@ -859,6 +943,16 @@ void Chunk::generate()
 
     generateVillages();
 
+    // Rare structures are generated last, so a dungeon is not accidentally
+    // filled in again by the village pass and a ruin can stand on a village
+    // edge without the two of them fighting over a block.
+    generateStructures();
+
+    // The light depends on the blocks that are now in place, so both caches are
+    // dropped and rebuilt the first time this chunk is meshed.
+    sky_heights_valid = false;
+    light_field_valid = false;
+
     debug("Done!\n");
 }
 
@@ -880,6 +974,11 @@ bool Chunk::loadFromFile(gzFile file)
 {
     if(gzfread(blocks, sizeof(***blocks), SIZE*SIZE*SIZE, file) == SIZE*SIZE*SIZE)
     {
+        // A chunk read from a save file has to rebuild both light caches, and
+        // neither of them is in the file: the sky map comes from the terrain and
+        // from the blocks, the emitter field from the blocks.
+        sky_heights_valid = false;
+        light_field_valid = false;
         debug("Loaded chunk %d:%d:%d successfully.\n", x, y, z);
         return true;
     }
@@ -1084,6 +1183,167 @@ void Chunk::generateVillages()
 
             Village::emitChunk(plan, this->x, this->y, this->z, &Chunk::villageWriteBlock, &context);
         }
+}
+
+// How much a surface structure's footprint may slope before it is rejected. A
+// hut whose corner hangs over a cliff reads as a bug, so a ruin and a temple are
+// only placed on ground that is flat to within this many blocks.
+static constexpr int surface_flatness_tolerance = 2;
+
+// A surface structure stands on the ground; a dungeon is buried, so only it is
+// happy with any surface shape. This needs the terrain function, which is why it
+// is here and not in structuregen.cpp.
+static bool structureSiteIsFlat(const PerlinNoise &noise, unsigned int world_seed, const Structures::Plan &plan)
+{
+    if(plan.kind == Structures::KindDungeon)
+        return true;
+
+    const int reach = (plan.kind == Structures::KindRuin) ? 3 : 4;
+    int lowest = 0, highest = 0;
+
+    // A 3x3 grid over the footprint: the centre, the four corners and the four
+    // edge midpoints.
+    for(int dz = -1; dz <= 1; ++dz)
+        for(int dx = -1; dx <= 1; ++dx)
+        {
+            const int height = terrainSurfaceHeight(noise, world_seed, plan.origin_x + dx * reach, plan.origin_z + dz * reach);
+            if(dx == -1 && dz == -1)
+            {
+                lowest = height;
+                highest = height;
+                continue;
+            }
+            if(height < lowest)
+                lowest = height;
+            if(height > highest)
+                highest = height;
+        }
+
+    return (highest - lowest) <= surface_flatness_tolerance;
+}
+
+// The plan of one cell's structure, resolved from the surface its candidate
+// sits on. This is the only place a structure samples the terrain, so generation
+// and the chest lookup below can never disagree about where one is.
+static bool resolveStructurePlan(const PerlinNoise &noise, unsigned int world_seed, int cell_x, int cell_z, Structures::Plan &out)
+{
+    if(!Structures::cellHasStructure(world_seed, cell_x, cell_z))
+        return false;
+
+    for(int candidate = 0; candidate < Structures::CandidateCount; ++candidate)
+    {
+        int site_x = 0, site_z = 0;
+        Structures::cellCandidate(world_seed, cell_x, cell_z, candidate, site_x, site_z);
+
+        // The same column function the terrain uses, so the site's height and
+        // biome are the ones the world actually has.
+        const BiomeGen::Column column = terrainColumn(noise, world_seed, site_x, site_z);
+        if(!Structures::planStructure(world_seed, cell_x, cell_z, candidate, column.height, column.biome, out))
+            continue;
+
+        if(!structureSiteIsFlat(noise, world_seed, out))
+        {
+            out = Structures::Plan();
+            continue;
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
+void Chunk::generateStructures()
+{
+    const unsigned int world_seed = world.seedValue();
+    const PerlinNoise &noise = world.noiseGenerator();
+
+    const int base_x = this->x * SIZE;
+    const int base_z = this->z * SIZE;
+
+    // A structure reaches at most MaxReach blocks from its origin, so a chunk
+    // near a cell border can be touched by a neighbouring cell's structure.
+    const int reach = Structures::MaxReach;
+    const int cell_x_min = floorDiv(base_x - reach, Structures::CellBlocks);
+    const int cell_x_max = floorDiv(base_x + SIZE - 1 + reach, Structures::CellBlocks);
+    const int cell_z_min = floorDiv(base_z - reach, Structures::CellBlocks);
+    const int cell_z_max = floorDiv(base_z + SIZE - 1 + reach, Structures::CellBlocks);
+
+    StructureWriteContext context;
+    context.chunk = this;
+    context.base_x = base_x;
+    context.base_y = this->y * SIZE;
+    context.base_z = base_z;
+
+    for(int cell_z = cell_z_min; cell_z <= cell_z_max; ++cell_z)
+        for(int cell_x = cell_x_min; cell_x <= cell_x_max; ++cell_x)
+        {
+            Structures::Plan plan;
+            if(!resolveStructurePlan(noise, world_seed, cell_x, cell_z, plan))
+                continue;
+
+            Structures::emitChunk(plan, this->x, this->y, this->z, &Chunk::structureWriteBlock, &context);
+        }
+}
+
+// Emits one structure block into this chunk. The generator clips to the chunk
+// bounds before calling, so this only has to place the block in the grid.
+void Chunk::structureWriteBlock(void *context, int world_x, int world_y, int world_z, uint16_t block)
+{
+    StructureWriteContext *ctx = static_cast<StructureWriteContext *>(context);
+    if(ctx == nullptr || ctx->chunk == nullptr)
+        return;
+
+    const int local_x = world_x - ctx->base_x;
+    const int local_y = world_y - ctx->base_y;
+    const int local_z = world_z - ctx->base_z;
+    if(!inBounds(local_x, local_y, local_z))
+        return;
+
+    ctx->chunk->blocks[local_x][local_y][local_z] = block;
+}
+
+// The chest of a structure, if the position is one. Only called when a chest is
+// first touched, so the cost of the site search is paid once per chest, not per
+// chunk.
+bool structureChestAt(int world_x, int world_y, int world_z, Structures::Plan &out, int &out_index)
+{
+    // Only a normal terrain world generates structures at all, so a chest in a
+    // flat or graph world is always a player's own chest.
+    if(world.worldType() != World::WorldType::Terrain)
+        return false;
+
+    const unsigned int world_seed = world.seedValue();
+    const PerlinNoise &noise = world.noiseGenerator();
+
+    const int reach = Structures::MaxReach;
+    const int cell_x_min = floorDiv(world_x - reach, Structures::CellBlocks);
+    const int cell_x_max = floorDiv(world_x + reach, Structures::CellBlocks);
+    const int cell_z_min = floorDiv(world_z - reach, Structures::CellBlocks);
+    const int cell_z_max = floorDiv(world_z + reach, Structures::CellBlocks);
+
+    for(int cell_z = cell_z_min; cell_z <= cell_z_max; ++cell_z)
+        for(int cell_x = cell_x_min; cell_x <= cell_x_max; ++cell_x)
+        {
+            Structures::Plan plan;
+            if(!resolveStructurePlan(noise, world_seed, cell_x, cell_z, plan))
+                continue;
+
+            for(int i = 0; i < Structures::chestCount(plan); ++i)
+            {
+                int chest_x = 0, chest_y = 0, chest_z = 0;
+                if(!Structures::chestPosition(plan, i, chest_x, chest_y, chest_z))
+                    continue;
+                if(chest_x == world_x && chest_y == world_y && chest_z == world_z)
+                {
+                    out = plan;
+                    out_index = i;
+                    return true;
+                }
+            }
+        }
+
+    return false;
 }
 
 // Re-resolves the villages around a block column. Uses the same cache and site

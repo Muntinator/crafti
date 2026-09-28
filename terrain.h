@@ -55,7 +55,22 @@ constexpr BLOCK BLOCK_WOOL_YELLOW = 41;
 constexpr BLOCK BLOCK_WOOL_LIGHT_BLUE = 42;
 constexpr BLOCK BLOCK_WOOL_MAGENTA = 43;
 constexpr BLOCK BLOCK_WOOL_ORANGE = 44;
-constexpr BLOCK BLOCK_NORMAL_LAST = BLOCK_WOOL_ORANGE;
+/** Storage block; its contents live in cheststore.h, keyed by block position. */
+constexpr BLOCK BLOCK_CHEST = 45;
+/**
+ * Two blocks laid flat, a foot and a head, sharing one facing. bed.h describes
+ * the data byte (bits 0-2 facing, bit 3 head) and the rules; bedrenderer.cpp
+ * draws it and worlditems.cpp places it.
+ */
+constexpr BLOCK BLOCK_BED = 46;
+/**
+ * A layer of snow on the ground. Its data byte is its depth, 1..SnowCover::MaxLayers
+ * (snowcover.h owns the rules, snowrenderer.cpp draws it and worldweather.cpp
+ * grows and melts it). Several steps are the same block, so no extra id is
+ * needed for a deeper drift.
+ */
+constexpr BLOCK BLOCK_SNOW = 47;
+constexpr BLOCK BLOCK_NORMAL_LAST = BLOCK_SNOW;
 
 // Special block ID for items (stores ItemTexture in metadata)
 constexpr BLOCK BLOCK_ITEM = 254;

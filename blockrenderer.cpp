@@ -1,5 +1,6 @@
 #include "blockrenderer.h"
 
+#include "bedrenderer.h"
 #include "billboardrenderer.h"
 #include "cakerenderer.h"
 #include "colorrenderer.h"
@@ -10,6 +11,7 @@
 #include "leavesrenderer.h"
 #include "pressurerenderer.h"
 #include "redtorchrenderer.h"
+#include "snowrenderer.h"
 #include "switchrenderer.h"
 #include "tntrenderer.h"
 #include "torchrenderer.h"
@@ -20,7 +22,7 @@
 UniversalBlockRenderer global_block_renderer;
 
 
-static COLOR computeLighting(BLOCK_SIDE side, COLOR base_color) {
+COLOR BlockRenderer::computeLighting(BLOCK_SIDE side, COLOR base_color) {
     if ((base_color & 0x00FF) != 0) return base_color; 
     unsigned int shade = 128;
     switch(side) {
@@ -376,6 +378,9 @@ UniversalBlockRenderer::UniversalBlockRenderer()
     }
 
     map[BLOCK_AIR] = null_renderer;
+    // The bed is two blocks laid flat and only 9/16 high, so it draws its own
+    // geometry, and its two halves move and break together (bedrenderer.h).
+    map[BLOCK_BED] = std::make_shared<BedRenderer>();
     map[BLOCK_BOOKSHELF] = oriented_renderer;
     map[BLOCK_CAKE] = std::make_shared<CakeRenderer>();
     map[BLOCK_CRAFTING_TABLE] = oriented_renderer;
@@ -392,6 +397,9 @@ UniversalBlockRenderer::UniversalBlockRenderer()
     map[BLOCK_REDSTONE_SWITCH] = std::make_shared<SwitchRenderer>();
     map[BLOCK_REDSTONE_WIRE] = std::make_shared<WireRenderer>();
     map[BLOCK_REDSTONE_TORCH] = std::make_shared<RedstoneTorchRenderer>();
+    // Snow is a slab whose height is its data byte, so it draws its own geometry
+    // too. It is not an obstacle: the engine has no auto step-up (snowrenderer.h).
+    map[BLOCK_SNOW] = std::make_shared<SnowRenderer>();
     map[BLOCK_PRESSURE_PLATE] = std::make_shared<PressurePlateRenderer>();
     map[BLOCK_SAND] = color_renderer;
     map[BLOCK_STONE] = color_renderer;

@@ -142,6 +142,44 @@ namespace WorldClock
 
 	unsigned int dayCount() { return g_days; }
 
+	int moonPhase()
+	{
+		// The first day of a world gets a full moon (4), and the phase then walks
+		// one step per day, so a night never looks like the one before it and the
+		// whole month is over in eight days -- as fast as the week is here.
+		return static_cast<int>((static_cast<unsigned int>(MoonPhases / 2) + g_days) % static_cast<unsigned int>(MoonPhases));
+	}
+
+	bool discPixel(int radius, int dx, int dy)
+	{
+		if(radius < 0)
+			return false;
+		return dx * dx + dy * dy <= radius * radius;
+	}
+
+	bool moonPixel(int radius, int dx, int dy, int phase)
+	{
+		if(!discPixel(radius, dx, dy))
+			return false;
+		if(phase <= 0 || phase >= MoonPhases)
+			return false; // new moon: the whole disc is dark
+		if(phase == MoonPhases / 2)
+			return true; // full moon: nothing is in the way
+
+		// How far the shadow has slid, as a percentage of the way from "the shadow
+		// covers the disc" to "the shadow has cleared it": 0 at new, 100 at full.
+		const int distance_from_full = phase < MoonPhases / 2 ? phase : MoonPhases - phase;
+		const int progress = distance_from_full * 100 / (MoonPhases / 2);
+
+		// The shadow is a second disc of the same size, its centre sliding two radii
+		// out from the moon's centre. It covers the whole moon at new, half of it at
+		// the quarters and nothing at full, and it comes from the left while the moon
+		// is waxing and from the right while it is waning.
+		const int slide = (phase < MoonPhases / 2 ? -1 : 1) * (2 * radius * progress) / 100;
+		const int shadow_x = dx - slide;
+		return shadow_x * shadow_x + dy * dy > radius * radius;
+	}
+
 	unsigned int ticksUntil(unsigned int from, unsigned int target)
 	{
 		const unsigned int a = from % TicksPerDay;
@@ -248,6 +286,14 @@ namespace WorldClock
 		const unsigned int hours = minutes_of_day / 60;
 		const unsigned int minutes = minutes_of_day % 60;
 		snprintf(out, size, "%02u:%02u", hours, minutes);
+	}
+
+	int cameraPitch(int xr_degrees)
+	{
+		// Nothing more than the wrap, but the wrap is the whole point: 0 is the
+		// horizon, 90 straight down and 270 straight up, so "straight up" has to
+		// arrive at the offset function as -90 rather than as +270 or -270.
+		return wrap180(xr_degrees);
 	}
 
 	void celestialScreenOffset(int camera_yaw, int camera_pitch, int azimuth, int elevation,

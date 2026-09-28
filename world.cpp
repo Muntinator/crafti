@@ -12,6 +12,7 @@
 #include "world.h"
 #include "chunk.h"
 #include "inventorytask.h"
+#include "worlditems.h"
 #include "settingstask.h"
 
 World world;
@@ -915,6 +916,13 @@ bool World::blockAction(const int x, const int y, const int z)
         inventory_task.openCraftingTable();
         return true;
     }
+    if(getBLOCK(block) == BLOCK_CHEST)
+    {
+        // The contents live in cheststore, keyed by the block position; opening
+        // the chest creates its storage if the block was placed by an older save.
+        inventory_task.openChest(x, y, z);
+        return true;
+    }
 
     return global_block_renderer.action(block, local_x, local_y, local_z, *c);
 }
@@ -1115,6 +1123,9 @@ void World::spawnDestructionParticles(int x, int y, int z)
 void World::explosionTNT(int gx, int gy, int gz)
 {
     spawnDestructionParticles(gx, gy, gz);
+    // A chest that is blown up scatters its contents rather than swallowing them.
+    if(getBLOCK(getBlock(gx, gy, gz)) == BLOCK_CHEST)
+        breakChestAt(gx, gy, gz);
     changeBlock(gx, gy, gz, BLOCK_AIR);
 
     const int dist = 3;
@@ -1134,6 +1145,8 @@ void World::explosionTNT(int gx, int gy, int gz)
                 else if(block != BLOCK_BEDROCK && block != BLOCK_AIR)
                 {
                     spawnDestructionParticles(nx, ny, nz);
+                    if(block == BLOCK_CHEST)
+                        breakChestAt(nx, ny, nz);
                     changeBlock(nx, ny, nz, BLOCK_AIR);
                 }
             }

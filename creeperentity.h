@@ -26,6 +26,11 @@ struct CreeperEntity
     bool on_ground;
     bool loot_spawned;
 
+    /** Ticks the creeper is on fire for (Fire Aspect); 0 when it is not. */
+    int fire_ticks;
+    /** Looting level of the weapon that last hit it, rolled into the drop at death. */
+    int8_t killing_looting;
+
     /** >0 while charging explosion; 0 when idle or after blast. */
     int fuse_timer;
     bool died_by_explosion;
@@ -39,7 +44,13 @@ struct CreeperEntity
     CreeperEntity(GLFix x, GLFix y, GLFix z);
 
     void update();
-    void applyMeleeDamage(int amount, GLFix attacker_yaw);
+    /**
+     * Player melee, with the weapon's enchantments: `knockback_steps` throws it
+     * further, `looting` is remembered for the drop at death and `set_fire_ticks`
+     * is Fire Aspect's burning time. All default to "a plain hit".
+     */
+    void applyMeleeDamage(int amount, GLFix attacker_yaw, int knockback_steps = 0,
+                          int looting = 0, int set_fire_ticks = 0);
     bool isAliveMob() const { return health > 0; }
 
     void render() const;

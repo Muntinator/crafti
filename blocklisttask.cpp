@@ -55,6 +55,8 @@ static const BLOCK_WDATA user_selectable[] = {
     BLOCK_TNT,
     BLOCK_SPONGE,
     BLOCK_FURNACE,
+    BLOCK_CHEST,
+    BLOCK_BED,
     BLOCK_CRAFTING_TABLE,
     BLOCK_BOOKSHELF,
     BLOCK_PUMPKIN,
@@ -72,7 +74,13 @@ static const BLOCK_WDATA user_selectable[] = {
     BLOCK_REDSTONE_SWITCH,
     BLOCK_PRESSURE_PLATE,
     BLOCK_REDSTONE_WIRE,
-    BLOCK_REDSTONE_TORCH
+    BLOCK_REDSTONE_TORCH,
+    // Snow is the one block in here that appears on its own: the weather puts it
+    // on the ground and melts it again (snowcover.h). It is listed so a layer can
+    // also be put down and taken up by hand, and it sits at the end because the
+    // page only draws the first fields_x * fields_y entries -- inserting it in
+    // the middle would push a block that is visible today off the page.
+    BLOCK_SNOW
 };
 
 static const BLOCK_WDATA user_items_page_1[] = {

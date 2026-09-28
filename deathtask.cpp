@@ -68,6 +68,12 @@ void DeathTask::render()
 
     drawStringCenter("You Died", 0xFFFF, *screen, SCREEN_WIDTH / 2, 30);
 
+    // Where the player is going back to. A bed that was slept in is easy to
+    // forget about, so saying it here is what stops "the bed is my respawn point"
+    // from being a rule the player has to have read about.
+    drawStringCenter(world_task.bedSpawn().valid ? "You will respawn at your bed" : "You will respawn at the world spawn",
+                     0x8410, *screen, SCREEN_WIDTH / 2, 44);
+
     const char *items[DEATH_ITEM_MAX] = { "Respawn", "Quit to Title" };
 
     int start_y = 60;
