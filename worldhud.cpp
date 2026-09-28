@@ -16,6 +16,7 @@
 #include "inventory.h"
 #include "settingstask.h"
 #include "survival.h"
+#include "weather.h"
 
 #include "textures/icons.h"
 #include "textures/inventory.h"
@@ -257,7 +258,12 @@ void WorldTask::renderHud()
     #ifdef FPS_COUNTER
         if(message_timeout == 0 && settings_task.getValue(SettingsTask::SHOW_FPS))
         {
-            snprintf(this->message, sizeof(this->message), "FPS: %u", fps);
+            // The closest thing the game has to a debug line, so the weather
+            // rides along with it rather than adding another overlay.
+            if(weather.state == Weather::Clear)
+                snprintf(this->message, sizeof(this->message), "FPS: %u", fps);
+            else
+                snprintf(this->message, sizeof(this->message), "FPS: %u %s", fps, Weather::stateName(weather.state));
             message_timeout = 20;
         }
     #endif

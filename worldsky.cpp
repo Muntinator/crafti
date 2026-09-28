@@ -13,7 +13,25 @@
 #include "worldtask.h"
 
 #include "settingstask.h"
+#include "weather.h"
 #include "worldclock.h"
+
+namespace
+{
+    /**
+     * Applies the weather's darkening to a sky colour. Rain and cloud dim the
+     * background out of step with the terrain tint on purpose: the tint is
+     * clamped so the world stays readable, while a darker sky is what makes the
+     * rain visible against it.
+     */
+    float darken(float channel, int darkness)
+    {
+        if(darkness <= 0)
+            return channel;
+        return channel * static_cast<float>(Weather::MaxIntensity - darkness)
+            / static_cast<float>(Weather::MaxIntensity);
+    }
+}
 
 void WorldTask::skyPixel(int x, int y, unsigned short color)
 {
@@ -58,7 +76,7 @@ void WorldTask::renderSky()
     }
 
     const WorldClock::SkyColor sky = WorldClock::skyColor();
-    glColor3f(sky.r, sky.g, sky.b);
+    glColor3f(darken(sky.r, weather_darkness), darken(sky.g, weather_darkness), darken(sky.b, weather_darkness));
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // A graph is a plot, not a place: it gets the time-of-day background colour

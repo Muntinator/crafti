@@ -91,6 +91,9 @@ public:
 private:
     //Terrain generation
     void makeTree(unsigned int x, unsigned int y, unsigned int z);
+    // Carves the caves and ravines out of the chunk. `column_height` holds the
+    // surface height of every column, sampled during terrain generation.
+    void carveUnderground(unsigned int world_seed, const int column_height[SIZE][SIZE]);
     void generateOreVeins(); // Generate ore veins with Minecraft-like distribution
     void generateSingleOreVein(const OreDistribution &ore_dist, int center_x, int center_y, int center_z, unsigned int seed);
 

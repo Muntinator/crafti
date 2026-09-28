@@ -388,6 +388,8 @@ void WorldTask::logic(GLFix dt)
     const bool graph_mode = world.worldType() == World::WorldType::Graph;
 
     updateClock(dt);
+    // After the clock: the weather is derived from the time of day it just moved.
+    updateWeather(dt);
 #ifndef _TINSPIRE
     const Uint8 *desktop_keys = SDL_GetKeyState(nullptr);
     const bool desktop_t_held = desktop_keys[SDLK_t] != 0;
@@ -1111,9 +1113,14 @@ void WorldTask::render()
     // left at full brightness so a plot stays readable at midnight, and at full
     // daylight the shade stays neutral, which costs nothing per pixel.
     const bool day_night = !graph_mode && settings_task.getValue(SettingsTask::DAY_NIGHT) != 0;
-    const unsigned int global_shade = day_night
+    unsigned int global_shade = day_night
         ? static_cast<unsigned int>(WorldClock::skyLightFactor() * 256.0f + 0.5f)
         : 256u;
+    // Rain and cloud darken the world on top of the time of day. A lightning
+    // flash is an overlay in renderWeather() instead: this factor is a ceiling
+    // of 256 and pushing it past that would overflow into the colour channels.
+    if(weather_darkness > 0)
+        global_shade = (global_shade * static_cast<unsigned int>(256 - weather_darkness)) >> 8;
     nglSetGlobalShade(global_shade);
 
     glPushMatrix();
@@ -1284,6 +1291,9 @@ void WorldTask::render()
     crosshairPixel(2, 0);
     crosshairPixel(0, 1);
     crosshairPixel(0, 2);
+
+    // In front of the world, behind the HUD: rain must not obscure the bars.
+    renderWeather();
 
     renderHud();
 

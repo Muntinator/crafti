@@ -6,6 +6,7 @@
 #include "gl.h"
 #include "aabb.h"
 #include "survival.h"
+#include "weather.h"
 
 class WorldTask : public Task
 {
@@ -51,6 +52,21 @@ private:
 
     /** Advances the day/night clock by the frame's real elapsed time. */
     void updateClock(GLFix dt);
+
+    // --- Weather ----------------------------------------------------------
+
+    /**
+     * Asks weather.h what the weather is now, announces a change, and advances
+     * the rain's fall. Called once per logic step; the rules module is a pure
+     * function of the world clock, so this holds no weather state of its own.
+     */
+    void updateWeather(GLFix dt);
+    /**
+     * Draws the rain streaks and a lightning flash straight into the framebuffer,
+     * after the 3D scene and before the HUD. Nothing is drawn when it is clear or
+     * when the player is under a roof.
+     */
+    void renderWeather();
 
     // --- Survival ---------------------------------------------------------
 
@@ -191,6 +207,20 @@ private:
     unsigned int ambience_timer = 0;
     /** Ambience bed currently requested (0 = none), so it is not restarted. */
     unsigned int current_ambience = 0;
+
+    // --- weather ---
+    /** The spell weather.h resolved for this frame (its last state is compared). */
+    Weather::Spell weather;
+    /** Sky darkening from the weather, 0..Weather::MaxIntensity. */
+    int weather_darkness = 0;
+    /** Rain strength, 0..Weather::MaxIntensity. */
+    int weather_rain = 0;
+    /** True while a thunder flash is lit. */
+    bool weather_lightning = false;
+    /** False when there is a block between the player's head and the sky. */
+    bool weather_outdoors = true;
+    /** Falling offset of the rain in screen pixels, so it moves with real time. */
+    int rain_offset = 0;
 };
 
 extern WorldTask world_task;

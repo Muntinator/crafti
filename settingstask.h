@@ -36,6 +36,7 @@ public:
         VILLAGE_FREQUENCY,
         DAY_NIGHT,
         DAY_LENGTH,
+        WEATHER,
     };
 
     SettingsTask();

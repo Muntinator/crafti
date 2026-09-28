@@ -85,6 +85,9 @@ SettingsTask::SettingsTask()
     // How long one in-game day lasts in real time. Only affects how fast the
     // clock runs, never the save file.
     settings.push_back({"Day length", day_length_values, 3, day_length_default, 0, 1});
+    // Rain and thunderstorms. They are derived from the day/night clock, so this
+    // only applies while that cycle is on.
+    settings.push_back({"Weather", fastmode_values, 2, 1, 0, 1});
 
     background = newTexture(background_width, background_height, 0, false);
 }

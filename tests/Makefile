@@ -17,7 +17,7 @@ BINS := build/audio_pack_test build/audio_gpio4_test \
         build/audio_manager_test build/audio_output_test \
         build/livestock_test build/villagegen_test \
         build/worldclock_test build/survival_test \
-        build/blockdata_test
+        build/blockdata_test build/biomegen_test build/weather_test
 
 .PHONY: all run clean
 
@@ -64,6 +64,16 @@ build/survival_test: survival_test.cc $(ROOT)/survival.cpp $(ROOT)/survival.h | 
 # inventory, the item icons and the block renderers all depend on.
 build/blockdata_test: blockdata_test.cc $(ROOT)/terrain.h $(ROOT)/textures/items.h | build
 	$(CXX) $(COMMON) -I$(ROOT)/nGL -o $@ blockdata_test.cc
+
+# World generation (biomes, mountains, rivers, caves, ravines) is engine-free by
+# design, so the whole module is tested without nGL or the block tables.
+build/biomegen_test: biomegen_test.cc $(ROOT)/biomegen.cpp $(ROOT)/biomegen.h | build
+	$(CXX) $(COMMON) -o $@ biomegen_test.cc $(ROOT)/biomegen.cpp
+
+# The weather is a pure function of the world seed and the world clock's ticks,
+# so it needs no engine sources either.
+build/weather_test: weather_test.cc $(ROOT)/weather.cpp $(ROOT)/weather.h | build
+	$(CXX) $(COMMON) -o $@ weather_test.cc $(ROOT)/weather.cpp
 
 clean:
 	rm -rf build

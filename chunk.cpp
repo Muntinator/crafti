@@ -5,6 +5,7 @@
 
 #include "world.h"
 #include "chunk.h"
+#include "biomegen.h"
 #include "fastmath.h"
 #include "blockrenderer.h"
 #include "oregeneration.h"
@@ -67,12 +68,21 @@ static unsigned int nextGenerationRandom(unsigned int &seed)
     return seed;
 }
 
-// Surface height of a terrain column, shared by terrain generation and village
-// site selection so both always agree on where the ground is. `world_x` and
-// `world_z` are world block coordinates, the result is a world block Y.
-static int terrainSurfaceHeight(const PerlinNoise &noise, int world_x, int world_z)
+// Surface height and surface materials of a terrain column, shared by terrain
+// generation and village site selection so both always agree on where the
+// ground is and what it is made of. `world_x` and `world_z` are world block
+// coordinates, the result describes one world column.
+//
+// The Perlin base below is unchanged from the original generator; biomegen.h
+// then adds the mountain lift, carves any river bed and picks the two surface
+// blocks. Keeping that split means the biome layer is testable on the host
+// (tests/biomegen_test.cc) while the terrain keeps its familiar shape.
+static BiomeGen::Column terrainColumn(const PerlinNoise &noise, unsigned int world_seed, int world_x, int world_z)
 {
     static_assert(Chunk::SIZE == 8, "Update the noise scale accordingly!");
+    static_assert(BiomeGen::MaxHeight == World::HEIGHT * Chunk::SIZE - 3,
+                  "biomegen.h and World::HEIGHT disagree on how tall the world is!");
+    static_assert(BiomeGen::MinHeight == 4, "biomegen.h moved the floor of the world!");
 
     // Equivalent to (local/Chunk::SIZE + chunk)/4 of the original inline code.
     const GLFix nx = GLFix(world_x) / (Chunk::SIZE * 4);
@@ -87,9 +97,18 @@ static int terrainSurfaceHeight(const PerlinNoise &noise, int world_x, int world
     // Push valleys down and peaks up for less flat terrain.
     noise_val = (noise_val + noise_val * noise_val) / 2;
 
-    constexpr int world_gen_min = 4;
-    const int world_gen_max = World::HEIGHT * Chunk::SIZE - 3;
-    return world_gen_min + (noise_val * (world_gen_max - world_gen_min)).round();
+    constexpr int world_gen_min = BiomeGen::MinHeight;
+    constexpr int world_gen_max = BiomeGen::MaxHeight;
+    const int base_height = world_gen_min + (noise_val * (world_gen_max - world_gen_min)).round();
+
+    BiomeGen::Column column;
+    BiomeGen::columnAt(world_seed, world_x, world_z, base_height, column);
+    return column;
+}
+
+static int terrainSurfaceHeight(const PerlinNoise &noise, unsigned int world_seed, int world_x, int world_z)
+{
+    return terrainColumn(noise, world_seed, world_x, world_z).height;
 }
 
 // Integer division rounding towards negative infinity, needed because chunks to
@@ -122,14 +141,14 @@ namespace
     int village_plan_cache_cursor = 0;
 
     /** Rejects sites whose terrain is too uneven for the flat village layout. */
-    bool villageSiteIsFlat(const PerlinNoise &noise, int origin_x, int origin_z, int ground_y)
+    bool villageSiteIsFlat(const PerlinNoise &noise, unsigned int world_seed, int origin_x, int origin_z, int ground_y)
     {
         int lowest = ground_y;
         int highest = ground_y;
         for(int i = -1; i <= 1; ++i)
             for(int j = -1; j <= 1; ++j)
             {
-                const int sample = terrainSurfaceHeight(noise, origin_x + i * Village::Radius, origin_z + j * Village::Radius);
+                const int sample = terrainSurfaceHeight(noise, world_seed, origin_x + i * Village::Radius, origin_z + j * Village::Radius);
                 if(sample < lowest)
                     lowest = sample;
                 if(sample > highest)
@@ -162,10 +181,10 @@ namespace
                 int origin_x, origin_z;
                 Village::cellCandidate(world_seed, cell_x, cell_z, candidate, origin_x, origin_z);
 
-                const int ground_y = terrainSurfaceHeight(noise, origin_x, origin_z);
+                const int ground_y = terrainSurfaceHeight(noise, world_seed, origin_x, origin_z);
                 if(ground_y < Village::MinGroundY || ground_y > Village::MaxGroundY)
                     continue;
-                if(!villageSiteIsFlat(noise, origin_x, origin_z, ground_y))
+                if(!villageSiteIsFlat(noise, world_seed, origin_x, origin_z, ground_y))
                     continue;
 
                 has_plan = Village::planVillage(world_seed, cell_x, cell_z, candidate, ground_y, plan);
@@ -751,17 +770,30 @@ void Chunk::generate()
     }
 
     const PerlinNoise &noise = world.noiseGenerator();
+    const unsigned int world_seed = world.seedValue();
 
-    constexpr int max_trees = (Chunk::SIZE * Chunk::SIZE) / 45;
-    constexpr int sea_level = 12;
+    // A forest is far denser than the old uniform tree pass, so this cap has to
+    // leave room for one while still bounding how many canopies the CX has to
+    // build at once. The per-biome density does the real work.
+    constexpr int max_trees = (Chunk::SIZE * Chunk::SIZE) / 6;
+    constexpr int sea_level = BiomeGen::SeaLevel;
     int trees = 0;
-    unsigned int feature_rng = chunkGenerationSeed(world.seedValue(), this->x, this->y, this->z, 0x46544e52u);
+    unsigned int feature_rng = chunkGenerationSeed(world_seed, this->x, this->y, this->z, 0x46544e52u);
+
+    // Surface height of every column, kept for the cave/ravine pass below so the
+    // carving never has to sample the terrain noise a second time.
+    int column_height[SIZE][SIZE] = {};
 
     for(int x = 0; x < SIZE; x++)
         for(int z = 0; z < SIZE; z++)
         {
             // Shared with the village generator so both agree on the surface.
-            const int height = terrainSurfaceHeight(noise, this->x * SIZE + x, this->z * SIZE + z);
+            const int world_x = this->x * SIZE + x;
+            const int world_z = this->z * SIZE + z;
+            const BiomeGen::Column column = terrainColumn(noise, world_seed, world_x, world_z);
+            const int height = column.height;
+            column_height[x][z] = height;
+
             int height_left = height - this->y * Chunk::SIZE;
             int height_here = std::min(height_left, Chunk::SIZE);
 
@@ -780,19 +812,16 @@ void Chunk::generate()
                 {
                     blocks[x][y][z] = BLOCK_STONE;
                 }
-                else if(height > sea_level + 1)
+                else if(to_surface == 1)
                 {
-                    if(to_surface == 1)
-                    {
-                        blocks[x][y][z] = BLOCK_GRASS;
-                        if((nextGenerationRandom(feature_rng) & 0xFFu) == 0u)
-                            setGlobalBlockRelative(x, y + 1, z, getBLOCKWDATA(BLOCK_FLOWER, nextGenerationRandom(feature_rng) & 0x1u));
-                    }
-                    else
-                        blocks[x][y][z] = BLOCK_DIRT;
+                    // The biome decides what the top block is: grass, sand in a
+                    // desert, river bed or beach, bare stone on a high mountain.
+                    blocks[x][y][z] = column.surface;
+                    if(column.surface == BLOCK_GRASS && (nextGenerationRandom(feature_rng) & 0xFFu) == 0u)
+                        setGlobalBlockRelative(x, y + 1, z, getBLOCKWDATA(BLOCK_FLOWER, nextGenerationRandom(feature_rng) & 0x1u));
                 }
                 else
-                    blocks[x][y][z] = BLOCK_SAND;
+                    blocks[x][y][z] = column.subsurface;
             }
 
             const int local_sea_level = sea_level - this->y * Chunk::SIZE;
@@ -805,17 +834,25 @@ void Chunk::generate()
                     blocks[x][y][z] = getBLOCKWDATA(BLOCK_WATER_FAST, 0);
             }
 
+            // Trees are biome density, not a global noise threshold: a forest
+            // is a wood, a plain has a couple of trees and a desert has none.
+            const int tree_density = BiomeGen::treeDensityPercent(column.biome);
             if(trees < max_trees
+                && tree_density > 0
                 && height > sea_level + 1
                 && height_left > 0
                 && height_left <= Chunk::SIZE
                 && blocks[x][height_left - 1][z] == BLOCK_GRASS
-                && noise.noise(GLFix(x)/Chunk::SIZE + this->x, GLFix(z)/Chunk::SIZE + this->z, 25) < GLFix(0.3f))
+                && (nextGenerationRandom(feature_rng) % 100u) < static_cast<unsigned int>(tree_density))
             {
                 makeTree(x, height_here, z);
                 trees++;
             }
         }
+
+    // Caves and ravines, carved before the ores so a vein never ends up hanging
+    // in mid-air, and before the villages so a building is never hollowed out.
+    carveUnderground(world_seed, column_height);
 
     // Generate ore veins using Minecraft-like distribution
     generateOreVeins();
@@ -968,6 +1005,47 @@ void Chunk::generateSingleOreVein(const OreDistribution &ore_dist, int center_x,
         blocks[x][y][z] = ore_dist.ore_block;
         ++placed;
     }
+}
+
+// Carves the caves and ravines out of the chunk.
+//
+// Both are underground-only features: the top block of every column survives, so
+// neither can open the sky, drain a lake or leave a tree standing over a hole.
+// They are pure functions of the world seed and the world coordinates, so two
+// neighbouring chunks always carve the same tunnel across the border between
+// them and none of this needs any cross-chunk bookkeeping.
+void Chunk::carveUnderground(const unsigned int world_seed, const int column_height[SIZE][SIZE])
+{
+    for(int x = 0; x < SIZE; x++)
+        for(int z = 0; z < SIZE; z++)
+        {
+            const int world_x = this->x * SIZE + x;
+            const int world_z = this->z * SIZE + z;
+            const int height = column_height[x][z];
+
+            BiomeGen::Ravine ravine;
+            BiomeGen::ravineAt(world_seed, world_x, world_z, height, ravine);
+
+            for(int y = 0; y < SIZE; y++)
+            {
+                const int world_y = this->y * SIZE + y;
+
+                // Bedrock stays, and so does everything from one block below the
+                // surface up.
+                if(world_y <= 1 || world_y >= height - 1)
+                    continue;
+
+                const BLOCK type = getBLOCK(blocks[x][y][z]);
+                // Only real rock is carved. Water, air, anything already dug out
+                // (and anything a village left behind) stays exactly as it is.
+                if(type != BLOCK_STONE && type != BLOCK_DIRT && type != BLOCK_SAND)
+                    continue;
+
+                const bool in_ravine = ravine.present && world_y >= ravine.lowest && world_y <= ravine.highest;
+                if(in_ravine || BiomeGen::caveAt(world_seed, world_x, world_y, world_z))
+                    blocks[x][y][z] = BLOCK_AIR;
+            }
+        }
 }
 
 void Chunk::generateVillages()
