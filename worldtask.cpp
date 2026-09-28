@@ -6,6 +6,7 @@
 
 #include "worldtask.h"
 
+#include "audio_manager.h"
 #include "aabb.h"
 #include "blockrenderer.h"
 #include "blocklisttask.h"
@@ -19,27 +20,21 @@
 
 #include "textures/items.h"
 
+// The icon and inventory atlases are only needed by the overlay, which lives in
+// worldhud.cpp. Including them here would instantiate a second copy of each
+// (they are static arrays in the generated headers).
 #include "textures/blockselection.h"
-#include "textures/inventory.h"
-#include "textures/icons.h"
 
 #include "deathtask.h"
 #include "humanentity.h"
-#include "chickenentity.h"
+#include "livestockentity.h"
+#include "villagegen.h"
+#include "villagerentity.h"
+#include "worldclock.h"
 #include "creeperentity.h"
 #include "grounddrops.h"
 
 WorldTask world_task;
-
-extern unsigned char font_dat[];
-
-static unsigned int measureTextWidth(const char *str)
-{
-    unsigned int w = 0;
-    while(*str)
-        w += font_dat[17 + static_cast<unsigned char>(*str++)];
-    return w;
-}
 
 constexpr GLFix  WorldTask::player_width,  WorldTask::player_height,  WorldTask::eye_pos;
 
@@ -58,6 +53,11 @@ static BLOCK_WDATA inventoryDropItem(const BLOCK_WDATA block)
     if(getBLOCK(block) == BLOCK_WATER_FAST)
         return getBLOCKWDATA(BLOCK_WATER, RANGE_WATER);
 
+    // An item drops as itself, with its full id: re-packing it through
+    // getBLOCKDATA() would truncate an id of 128 or more.
+    if(getBLOCK(block) == BLOCK_ITEM)
+        return block;
+
     if(global_block_renderer.isOriented(block))
         return getBLOCK(block);
 
@@ -69,7 +69,7 @@ static int heldPickaxeTier(const BLOCK_WDATA held)
     if(getBLOCK(held) != BLOCK_ITEM)
         return 0;
 
-    switch(static_cast<ItemTexture>(getBLOCKDATA(held)))
+    switch(static_cast<ItemTexture>(getITEMDATA(held)))
     {
     case ItemTexture::WOODEN_PICKAXE:
         return 1;
@@ -118,17 +118,107 @@ static bool isPickaxeMinedBlock(const BLOCK block)
     return requiredPickaxeTierForDrop(block) > 0;
 }
 
-/** Left click / KEY_7 primary: punch nearest mob in crosshair if closer than block hit (MC melee). */
-static bool tryMeleeMob()
+/** Maps a block to the footstep/break material family used by the audio engine. */
+static GameAudio::Material materialForBlock(const BLOCK block)
+{
+    if(block >= BLOCK_WOOL_BLACK && block <= BLOCK_WOOL_ORANGE)
+        return GameAudio::MaterialCloth;
+
+    switch(block)
+    {
+    case BLOCK_GRASS:
+    case BLOCK_LEAVES:
+    case BLOCK_SPIDERWEB:
+        return GameAudio::MaterialGrass;
+
+    case BLOCK_WOOD:
+    case BLOCK_PLANKS_NORMAL:
+    case BLOCK_PLANKS_DARK:
+    case BLOCK_PLANKS_BRIGHT:
+    case BLOCK_CRAFTING_TABLE:
+    case BLOCK_BOOKSHELF:
+    case BLOCK_FURNACE:
+        return GameAudio::MaterialWood;
+
+    case BLOCK_SAND:
+        return GameAudio::MaterialSand;
+
+    case BLOCK_DIRT:
+        return GameAudio::MaterialGravel;
+
+    case BLOCK_WATER:
+    case BLOCK_WATER_FAST:
+        return GameAudio::MaterialWetGrass;
+
+    default:
+        return GameAudio::MaterialStone;
+    }
+}
+
+/** Normalised crosshair direction, shared by melee and mob interaction. */
+static void crosshairRay(GLFix &dx, GLFix &dy, GLFix &dz)
 {
     GLFix yr = world_task.yr;
     yr.normaliseAngle();
     GLFix xr = world_task.xr;
     xr.normaliseAngle();
 
-    GLFix dx = GLFix(fast_sin(yr)) * GLFix(fast_cos(xr));
-    GLFix dy = -GLFix(fast_sin(xr));
-    GLFix dz = GLFix(fast_cos(yr)) * GLFix(fast_cos(xr));
+    dx = GLFix(fast_sin(yr)) * GLFix(fast_cos(xr));
+    dy = -GLFix(fast_sin(xr));
+    dz = GLFix(fast_cos(yr)) * GLFix(fast_cos(xr));
+}
+
+/** Feeds a targeted animal to breed it; consumes the held food on success. */
+static bool tryInteractMob()
+{
+    const BLOCK_WDATA held = current_inventory.currentSlot();
+    if(getBLOCK(held) != BLOCK_ITEM)
+        return false;
+
+    GLFix dx, dy, dz;
+    crosshairRay(dx, dy, dz);
+
+    const GLFix eye_y = world_task.y + WorldTask::eye_pos;
+    if(livestockTryInteract(world_task.x, eye_y, world_task.z, dx, dy, dz, getITEMDATA(held)))
+    {
+        current_inventory.removeFromCurrentSlot();
+        world_task.setMessage("Animal fed");
+        return true;
+    }
+
+    // Bartering with a villager: consume the wanted item and hand over the offer.
+    uint16_t result_stack = 0;
+    unsigned int result_count = 0;
+    unsigned int consumed_count = 0;
+    const char *trade_message = nullptr;
+    const TradeResult trade = villagerTryTrade(world_task.x, eye_y, world_task.z, dx, dy, dz,
+                                               held, current_inventory.currentSlotCount(),
+                                               consumed_count, result_stack, result_count, &trade_message);
+    if(trade == TradeResult::Traded)
+    {
+        current_inventory.removeFromCurrentSlot(consumed_count);
+        current_inventory.addItem(result_stack, result_count);
+        if(trade_message != nullptr)
+            world_task.setMessage(trade_message);
+        return true;
+    }
+    if(trade == TradeResult::Busy || trade == TradeResult::NoOffer)
+    {
+        if(trade_message != nullptr)
+            world_task.setMessage(trade_message);
+        return true;
+    }
+
+    return false;
+}
+
+/** Left click / KEY_7 primary: punch nearest mob in crosshair if closer than block hit (MC melee). */
+static bool tryMeleeMob()
+{
+    GLFix dx, dy, dz;
+    crosshairRay(dx, dy, dz);
+    GLFix yr = world_task.yr;
+    yr.normaliseAngle();
     const GLFix eye_y = world_task.y + WorldTask::eye_pos;
 
     HumanEntity *hit_h = nullptr;
@@ -149,9 +239,9 @@ static bool tryMeleeMob()
         }
     }
 
-    ChickenEntity *hit_c = nullptr;
+    LivestockEntity *hit_c = nullptr;
     GLFix c_dist = GLFix::maxValue();
-    for(auto &c : chicken_entities)
+    for(auto &c : livestock_entities)
     {
         if(!c.isAliveMob())
             continue;
@@ -185,11 +275,29 @@ static bool tryMeleeMob()
         }
     }
 
-    if(hit_h == nullptr && hit_c == nullptr && hit_cr == nullptr)
+    VillagerEntity *hit_v = nullptr;
+    GLFix v_dist = GLFix::maxValue();
+    for(auto &v : villager_entities)
+    {
+        if(!v.isAliveMob())
+            continue;
+        GLFix dist;
+        if(v.aabb.intersectsRay(world_task.x, eye_y, world_task.z, dx, dy, dz, dist) == AABB::NONE)
+            continue;
+        if(dist < GLFix(0))
+            continue;
+        if(dist < v_dist)
+        {
+            v_dist = dist;
+            hit_v = &v;
+        }
+    }
+
+    if(hit_h == nullptr && hit_c == nullptr && hit_cr == nullptr && hit_v == nullptr)
         return false;
 
     GLFix best_dist = GLFix::maxValue();
-    int pick = -1; // 0 human, 1 chicken, 2 creeper
+    int pick = -1; // 0 human, 1 livestock, 2 creeper, 3 villager
     if(hit_h != nullptr && h_dist < best_dist)
     {
         best_dist = h_dist;
@@ -205,6 +313,11 @@ static bool tryMeleeMob()
         best_dist = cr_dist;
         pick = 2;
     }
+    if(hit_v != nullptr && v_dist < best_dist)
+    {
+        best_dist = v_dist;
+        pick = 3;
+    }
     if(pick < 0)
         return false;
 
@@ -219,32 +332,18 @@ static bool tryMeleeMob()
         hit_c->applyMeleeDamage(2, yr);
     else if(pick == 2)
         hit_cr->applyMeleeDamage(2, yr);
+    else if(pick == 3)
+        hit_v->applyMeleeDamage(2, yr);
     else
         hit_h->applyMeleeDamage(2, yr);
+    GameAudio::play(GameAudio::EventMobHit);
     return true;
-}
-
-void WorldTask::hurtPlayer(unsigned int dmg, const char *msg)
-{
-    if(dmg == 0)
-        return;
-    if(dmg >= hearts)
-        hearts = 0;
-    else
-        hearts -= dmg;
-
-    if(hearts == 0)
-    {
-        death_task.makeCurrent();
-        return;
-    }
-    if(msg && msg[0])
-        setMessage(msg);
 }
 
 void WorldTask::makeCurrent()
 {
     Task::background_saved = false;
+    GameAudio::startMusic();
 
     Task::makeCurrent();
 }
@@ -287,6 +386,8 @@ GLFix WorldTask::speed()
 void WorldTask::logic(GLFix dt)
 {
     const bool graph_mode = world.worldType() == World::WorldType::Graph;
+
+    updateClock(dt);
 #ifndef _TINSPIRE
     const Uint8 *desktop_keys = SDL_GetKeyState(nullptr);
     const bool desktop_t_held = desktop_keys[SDLK_t] != 0;
@@ -420,28 +521,18 @@ void WorldTask::logic(GLFix dt)
 
         if(landed_from_fall)
         {
+            GameAudio::play(GameAudio::EventLand);
             // Apply fall damage only when not in water, and never during the initial safe spawn.
             if(!safe_spawn_pending && !in_water)
             {
                 const int fall_blocks = fall_distance.toInteger<int>() / BLOCK_SIZE;
-                const int dmg = fall_blocks > 3 ? (fall_blocks - 3) : 0;
+                const int dmg = Survival::fallDamage(fall_blocks);
                 if(dmg > 0)
                 {
-                    if(static_cast<unsigned int>(dmg) >= hearts)
-                        hearts = 0;
-                    else
-                        hearts -= static_cast<unsigned int>(dmg);
-
-                    if(hearts == 0)
-                    {
-                        // Switch to death screen; the player can respawn from there.
-                        death_task.makeCurrent();
+                    // applyDamage switches to the death screen at zero health.
+                    applyDamage(dmg, Survival::Damage::Fall, "Ouch!");
+                    if(health <= 0)
                         return;
-                    }
-                    else
-                    {
-                        setMessage("Ouch!");
-                    }
                 }
             }
 
@@ -453,10 +544,101 @@ void WorldTask::logic(GLFix dt)
             can_jump = true;
     }
 
+    // Movement and jumping cost food, which is how hunger actually drains.
+    if(!graph_mode)
+    {
+        if(!exhaustion_tracking)
+        {
+            exhaustion_x = x;
+            exhaustion_z = z;
+            exhaustion_tracking = true;
+        }
+        GLFix travelled_x = x - exhaustion_x, travelled_z = z - exhaustion_z;
+        if(travelled_x < GLFix(0))
+            travelled_x = -travelled_x;
+        if(travelled_z < GLFix(0))
+            travelled_z = -travelled_z;
+        exhaustion_x = x;
+        exhaustion_z = z;
+
+        const GLFix travelled = travelled_x + travelled_z;
+        if(travelled > GLFix(0))
+        {
+            const float blocks = travelled.toFloat() / static_cast<float>(BLOCK_SIZE);
+            const float per_block = keyPressed(KEY_NSPIRE_CTRL) ? Survival::ExhaustionPerBlockSprinted
+                                                                : Survival::ExhaustionPerBlockWalked;
+            Survival::addExhaustion(hunger, blocks * per_block);
+        }
+    }
+
+    updateSurvival(dt);
+
+    // Lava sets the player alight, which keeps burning after they climb out.
+    if(!graph_mode)
+    {
+        const BLOCK_WDATA at_feet = world.getBlock((x / BLOCK_SIZE).floor(), (y / BLOCK_SIZE).floor(), (z / BLOCK_SIZE).floor());
+        const BLOCK feet_type = getBLOCK(at_feet);
+        if(feet_type == BLOCK_LAVA)
+        {
+            fire_ticks = Survival::FireTicksFromLava;
+            fire_timer = Survival::FireDamageInterval;
+        }
+    }
+
     if(!graph_mode && keyPressed(KEY_NSPIRE_5) && can_jump) //Jump
     {
         vy = 50;
         can_jump = false;
+        Survival::addExhaustion(hunger, Survival::ExhaustionPerJump);
+        GameAudio::play(GameAudio::EventJump);
+    }
+
+    // --- audio: footsteps, water/cave ambience --------------------------
+    if(!graph_mode)
+    {
+        if(!step_tracking)
+        {
+            last_step_x = x;
+            last_step_z = z;
+            step_tracking = true;
+        }
+
+        GLFix moved_x = x - last_step_x, moved_z = z - last_step_z;
+        last_step_x = x;
+        last_step_z = z;
+        if(moved_x < GLFix(0))
+            moved_x = -moved_x;
+        if(moved_z < GLFix(0))
+            moved_z = -moved_z;
+
+        if(can_jump && !in_water)
+        {
+            step_distance += moved_x + moved_z;
+            if(step_distance >= GLFix(BLOCK_SIZE))
+            {
+                step_distance = 0;
+                const BLOCK below = getBLOCK(world.getBlock((x / BLOCK_SIZE).floor(),
+                    ((y - GLFix(1)) / BLOCK_SIZE).floor(), (z / BLOCK_SIZE).floor()));
+                GameAudio::footstep(materialForBlock(below));
+            }
+        }
+        else
+            step_distance = 0;
+
+        const unsigned int wanted_ambience = in_water
+            ? static_cast<unsigned int>(GameAudio::Sound::AmbientUnderwaterUnderwaterAmbience) : 0u;
+        if(wanted_ambience != current_ambience)
+        {
+            current_ambience = wanted_ambience;
+            GameAudio::setAmbience(wanted_ambience);
+        }
+
+        if(++ambience_timer > 2600)
+        {
+            ambience_timer = 0;
+            if(y < GLFix(World::HEIGHT * Chunk::SIZE * BLOCK_SIZE / 2))
+                GameAudio::ambienceCue();
+        }
     }
 
 #ifndef _TINSPIRE
@@ -605,7 +787,7 @@ void WorldTask::logic(GLFix dt)
         key_held_down = true;
 
         // Melee first; do not return from logic() so mob updates still run this tick (avoids stale state / render glitches).
-        if(!tryMeleeMob())
+        if(!tryInteractMob() && !tryMeleeMob())
         {
             if(selection_side == AABB::NONE)
                 return;
@@ -632,6 +814,7 @@ void WorldTask::logic(GLFix dt)
             {
                 world.changeBlock(selection_pos.x, selection_pos.y, selection_pos.z, block_to_place);
                 current_inventory.removeFromCurrentSlot();
+                GameAudio::placeBlock(materialForBlock(getBLOCK(block_to_place)));
                 return;
             }
 
@@ -695,6 +878,7 @@ void WorldTask::logic(GLFix dt)
                     if(getBLOCK(block_to_place) == BLOCK_FURNACE)
                         inventory_task.ensureFurnaceTile(pos.x, pos.y, pos.z);
                     current_inventory.removeFromCurrentSlot();
+                    GameAudio::placeBlock(materialForBlock(getBLOCK(block_to_place)));
                 }
             }
         }
@@ -766,6 +950,7 @@ void WorldTask::logic(GLFix dt)
                     if(b_type == BLOCK_FURNACE)
                         inventory_task.removeFurnaceTile(selection_pos.x, selection_pos.y, selection_pos.z);
                     world.changeBlock(selection_pos.x, selection_pos.y, selection_pos.z, BLOCK_AIR);
+                    GameAudio::digBlock(materialForBlock(b_type));
                     mining_progress = 0;
                     mining_tick_accum = 0;
                     break;
@@ -906,7 +1091,8 @@ void WorldTask::logic(GLFix dt)
         sim_tick_accum -= GLFix(1);
         inventory_task.tickFurnaces(world);
         updateHumanEntities();
-        updateChickenEntities();
+        updateLivestockEntities();
+        updateVillagerEntities();
         updateCreeperEntities();
         updateGroundDrops();
         ++sim_steps;
@@ -919,8 +1105,16 @@ void WorldTask::render()
     aabb = {x - player_width/2, y, z - player_width/2, x + player_width/2, y + player_height, z + player_width/2};
     //printf("X: %f Y: %f Z: %f XR: %d YR: %d\n", x.toFloat(), y.toFloat(), z.toFloat(), xr.toInt(), yr.toInt());
 
-    glColor3f(0.75f, 0.85f, 1.0f); //c0d8ff background
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    renderSky();
+
+    // Time-of-day light for everything textured drawn below. The graph view is
+    // left at full brightness so a plot stays readable at midnight, and at full
+    // daylight the shade stays neutral, which costs nothing per pixel.
+    const bool day_night = !graph_mode && settings_task.getValue(SettingsTask::DAY_NIGHT) != 0;
+    const unsigned int global_shade = day_night
+        ? static_cast<unsigned int>(WorldClock::skyLightFactor() * 256.0f + 0.5f)
+        : 256u;
+    nglSetGlobalShade(global_shade);
 
     glPushMatrix();
 
@@ -938,7 +1132,8 @@ void WorldTask::render()
     if(!graph_mode)
     {
         renderHumanEntities();
-        renderChickenEntities();
+        renderLivestockEntities();
+        renderVillagerEntities();
         renderCreeperEntities();
         renderGroundDrops();
     }
@@ -1078,6 +1273,8 @@ void WorldTask::render()
 
     glPopMatrix();
 
+    nglSetGlobalShade(256);
+
     crosshairPixel(0, 0);
     crosshairPixel(-1, 0);
     crosshairPixel(-2, 0);
@@ -1088,169 +1285,7 @@ void WorldTask::render()
     crosshairPixel(0, 1);
     crosshairPixel(0, 2);
 
-    // HUD from textures/gui/icons.png (MCP Gui.field_110324_m) — health, hunger, XP (GuiIngame 1.4.x+ layout).
-    {
-        constexpr int hotbar_src_width = 22 * 9;
-        const int hud_scale = SCREEN_WIDTH >= hotbar_src_width * 2 ? 2 : 1;
-        constexpr int sp = 9;
-        const int row_y = SCREEN_HEIGHT - 39 * hud_scale;
-        const int hud_left = SCREEN_WIDTH / 2 - 91 * hud_scale;
-        const int hud_right = SCREEN_WIDTH / 2 + 91 * hud_scale;
-        const int icon_s = sp * hud_scale;
-
-        for (unsigned int i = 0; i < max_hearts; ++i)
-        {
-            const int hx = hud_left + static_cast<int>(i) * 8 * hud_scale;
-            drawTexture(icons, *screen, 16, 0, sp, sp, hx, row_y, icon_s, icon_s);
-            if (i < hearts)
-                drawTexture(icons, *screen, 52, 0, sp, sp, hx, row_y, icon_s, icon_s);
-        }
-
-        for (unsigned int i = 0; i < max_food; ++i)
-        {
-            const int fx = hud_right - static_cast<int>(i) * 8 * hud_scale - sp * hud_scale;
-            drawTexture(icons, *screen, 16, 27, sp, sp, fx, row_y, icon_s, icon_s);
-            if (i < food)
-                drawTexture(icons, *screen, 52, 27, sp, sp, fx, row_y, icon_s, icon_s);
-        }
-
-        if (xp_level > 0 || xp_bar > 0.001f)
-        {
-            const int bar_x = SCREEN_WIDTH / 2 - 91 * hud_scale;
-            const int bar_y = SCREEN_HEIGHT - 29 * hud_scale;
-            constexpr int bar_w = 182;
-            constexpr int bar_h = 5;
-            drawTexture(icons, *screen, 0, 64, bar_w, bar_h,
-                        bar_x, bar_y, bar_w * hud_scale, bar_h * hud_scale);
-            int fill = static_cast<int>(xp_bar * 183.0f);
-            if (fill > bar_w)
-                fill = bar_w;
-            if (fill > 0)
-                drawTexture(icons, *screen, 0, 69, fill, bar_h,
-                            bar_x, bar_y, fill * hud_scale, bar_h * hud_scale);
-        }
-
-        if (xp_level > 0)
-        {
-            char lvl[12];
-            snprintf(lvl, sizeof(lvl), "%u", xp_level);
-            drawStringCenter(lvl, 0x87E0, *screen, SCREEN_WIDTH / 2,
-                             static_cast<unsigned int>(SCREEN_HEIGHT - 35 * hud_scale));
-        }
-    }
-
-    //Don't draw the inventory when drawing the background for BlockListTask
-    if(draw_inventory)
-    {
-        const BLOCK_WDATA current_slot = current_inventory.currentSlot();
-        current_inventory.draw(*screen);
-        drawStringCenter(current_inventory.currentSlotCount() == 0 ? "Empty" : global_block_renderer.getName(current_slot), 0xFFFF, *screen, SCREEN_WIDTH / 2, SCREEN_HEIGHT - current_inventory.height() - fontHeight());
-        
-        // Draw selection indicator using inventory texture at (1,23) to (2,44)
-        constexpr int hotbar_src_width = 22 * 9; // 22 * hotbar_slot_count
-        constexpr int hotbar_src_height = 22;
-        constexpr int hotbar_slot_src_left = 3;
-        constexpr int hotbar_slot_src_pitch = 20;
-        
-        const int hotbar_scale = SCREEN_WIDTH >= hotbar_src_width * 2 ? 2 : 1;
-        const int hotbar_draw_width = hotbar_src_width * hotbar_scale;
-        const int hotbar_draw_height = hotbar_src_height * hotbar_scale;
-        const int hotbar_slot_pitch = hotbar_slot_src_pitch * hotbar_scale;
-        const int hotbar_slots_left = hotbar_slot_src_left * hotbar_scale;
-        const int hotbar_slots_top = 3 * hotbar_scale;
-        
-        const int inventory_x = (SCREEN_WIDTH - hotbar_draw_width) / 2;
-        const int inventory_y = SCREEN_HEIGHT - hotbar_draw_height - 3;
-        
-        // Selector: 22x22 from inventory.png at (1,23) to (22,44)
-        constexpr int selector_src_x = 1;
-        constexpr int selector_src_y = 23;
-        constexpr int selector_src_w = 22;
-        constexpr int selector_src_h = 22;
-        
-        const int slot_offset = current_inventory.currentSlotIndex() * hotbar_slot_pitch;
-        const int draw_x = inventory_x + hotbar_slots_left + slot_offset - 2 * hotbar_scale;
-        const int draw_y = inventory_y + hotbar_slots_top - 2 * hotbar_scale;
-        
-        drawTexture(inventory, *screen,
-                    selector_src_x, selector_src_y, selector_src_w, selector_src_h,
-                    draw_x, draw_y,
-                    selector_src_w * hotbar_scale, selector_src_h * hotbar_scale);
-    }
-
-    if(message_timeout > 0)
-    {
-        const int message_y = graph_mode ? static_cast<int>(fontHeight()) + 7 : 5;
-        drawString(message, 0xFFFF, *screen, 2, message_y);
-        --message_timeout;
-    }
-
-    if(graph_mode)
-    {
-        char bounds_msg[64];
-        const int zoom = world.graphZoomPercent();
-        const int range = world.graphRange();
-        if(world.graphUnbounded())
-            snprintf(bounds_msg, sizeof(bounds_msg), "Graph zoom:%d%% n:%d x,y:[-inf,+inf]", zoom, world.graphFillDepth());
-        else
-        {
-            const int bound_times_100 = (range * 10000) / zoom;
-            const int bound_int = bound_times_100 / 100;
-            const int bound_frac = bound_times_100 % 100;
-            snprintf(bounds_msg, sizeof(bounds_msg), "Graph zoom:%d%% n:%d x,y:[-%d.%02d,%d.%02d]",
-                     zoom, world.graphFillDepth(), bound_int, bound_frac, bound_int, bound_frac);
-        }
-        drawString(bounds_msg, 0xFFFF, *screen, 2, 5);
-
-        char expr_msg[72];
-        snprintf(expr_msg, sizeof(expr_msg), "z=%s", world.graphExpression());
-        const unsigned int expr_w = measureTextWidth(expr_msg);
-        const int expr_x = std::max(2, static_cast<int>(SCREEN_WIDTH - expr_w - 2));
-        drawString(expr_msg, 0xFFFF, *screen, expr_x, 5);
-    }
-
-    if(selection_side != AABB::NONE && settings_task.getValue(SettingsTask::COORD_INDICATOR))
-    {
-        char pos_msg[64];
-        const int bx = selection_pos.x.toInteger<int>();
-        const int by = selection_pos.y.toInteger<int>();
-        const int bz = selection_pos.z.toInteger<int>();
-
-        if(graph_mode && world.graphMode() == World::GraphMode::Complex)
-        {
-            const int zoom = world.graphZoomPercent();
-            const int rx100 = (bx * 10000) / zoom;
-            const int iz100 = (bz * 10000) / zoom;
-
-            const int rx_sign = rx100 < 0 ? -1 : 1;
-            const int iz_sign = iz100 < 0 ? -1 : 1;
-            const int rx_abs = rx100 * rx_sign;
-            const int iz_abs = iz100 * iz_sign;
-
-            snprintf(pos_msg, sizeof(pos_msg), "z=%s%d.%02d%s%d.%02di",
-                     rx_sign < 0 ? "-" : "",
-                     rx_abs / 100,
-                     rx_abs % 100,
-                     iz_sign < 0 ? "-" : "+",
-                     iz_abs / 100,
-                     iz_abs % 100);
-        }
-        else
-        {
-            snprintf(pos_msg, sizeof(pos_msg), "Block (%d,%d,%d)", bx, by, bz);
-        }
-
-        const int y_pos = graph_mode ? static_cast<int>(fontHeight()) + 7 : 5;
-        drawString(pos_msg, 0xFFFF, *screen, 2, y_pos);
-    }
-
-    #ifdef FPS_COUNTER
-        if(message_timeout == 0 && settings_task.getValue(SettingsTask::SHOW_FPS))
-        {
-            snprintf(this->message, sizeof(this->message), "FPS: %u", fps);
-            message_timeout = 20;
-        }
-    #endif
+    renderHud();
 
     frame_counter++;
 }
@@ -1264,25 +1299,30 @@ void WorldTask::resetWorld()
     if(world.worldType() != World::WorldType::Graph)
     {
         initHumanEntities();
-        initChickenEntities();
+        initLivestockEntities();
+        initVillagerEntities();
         initCreeperEntities();
     }
     else
     {
         human_entities.clear();
-        chicken_entities.clear();
+        clearLivestockEntities();
+        clearVillagerEntities();
         creeper_entities.clear();
     }
+    // Villages are derived from the seed, so the registry starts empty and is
+    // repopulated as the new world's chunks generate.
+    Village::clearRegisteredPlans();
+    // A brand new world starts at sunrise on day 0, so the same seed always
+    // begins under the same sky.
+    WorldClock::reset();
     clearGroundDrops();
     world.clear();
     current_inventory.reset();
     inventory_task.reset();
     block_list_task.current_selection = 1;
 
-    hearts = max_hearts;
-    food = max_food;
-    xp_level = 0;
-    xp_bar = 0.f;
+    resetSurvivalState();
     fall_distance = 0;
     safe_spawn_pending = world.worldType() != World::WorldType::Graph;
 
@@ -1296,15 +1336,17 @@ void WorldTask::resetWorld()
     sim_tick_accum = 0;
     graph_line_tick_accum = 0;
     message_timeout = 0;
+    step_tracking = false;
+    step_distance = 0;
+    ambience_timer = 0;
+    GameAudio::setAmbience(0);
+    current_ambience = 0;
 }
 
 void WorldTask::respawnPlayer()
 {
     // Respawn without wiping the world.
-    hearts = max_hearts;
-    food = max_food;
-    xp_level = 0;
-    xp_bar = 0.f;
+    resetSurvivalState();
     vy = 0;
     fall_distance = 0;
     safe_spawn_pending = world.worldType() != World::WorldType::Graph;

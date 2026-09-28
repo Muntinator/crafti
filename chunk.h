@@ -94,6 +94,15 @@ private:
     void generateOreVeins(); // Generate ore veins with Minecraft-like distribution
     void generateSingleOreVein(const OreDistribution &ore_dist, int center_x, int center_y, int center_z, unsigned int seed);
 
+    //Procedural villages: writes only the blocks of overlapping villages that fall in this chunk.
+    void generateVillages();
+    struct VillageWriteContext
+    {
+        Chunk *chunk;
+        int base_x, base_y, base_z; // chunk origin in world block coordinates
+    };
+    static void villageWriteBlock(void *context, int world_x, int world_y, int world_z, uint16_t block);
+
     //Data
     unsigned int getPosition(unsigned int x, unsigned int y, unsigned int z);
 
@@ -130,5 +139,12 @@ private:
 
 //Doesn't really belong here, but still more than everywhere else
 void drawLoadingtext(const int i);
+
+/**
+ * Resolves and registers the village plans whose cell could overlap the given
+ * block column. Chunks loaded from a save file never run generate(), so the
+ * villager spawner calls this once to repopulate the plan registry.
+ */
+void registerVillagesNearColumn(int world_x, int world_z);
 
 #endif // CHUNK_H

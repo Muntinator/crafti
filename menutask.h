@@ -13,6 +13,7 @@ public:
         SETTINGS,
         HELP,
         SAVE_WORLD,
+        AUDIO_TEST,
         QUIT_TO_TITLE,
         MENU_ITEM_MAX
     };

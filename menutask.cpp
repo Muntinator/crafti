@@ -1,5 +1,8 @@
 #include "menutask.h"
 
+#include "audio_manager.h"
+#include "audiotesttask.h"
+
 #include "texturetools.h"
 #include "worldtask.h"
 #include "helptask.h"
@@ -19,6 +22,7 @@ MenuTask::~MenuTask()
 
 void MenuTask::makeCurrent()
 {
+    GameAudio::stopMusic();
     menu_selected_item = RESUME;
 
     if(!background_saved)
@@ -69,7 +73,7 @@ void MenuTask::render()
 
     drawStringCenter("Game Menu", 0xFFFF, *screen, SCREEN_WIDTH / 2, 30);
 
-    const char *items[MENU_ITEM_MAX] = { "Back to Game", "Settings", "Help", "Save World", "Quit to Title" };
+    const char *items[MENU_ITEM_MAX] = { "Back to Game", "Settings", "Help", "Save World", "Audio Test", "Quit to Title" };
 
     int start_y = 60;
     int button_w = 200;
@@ -119,6 +123,7 @@ void MenuTask::logic(GLFix /*dt*/)
     }
     else if(keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_CLICK))
     {
+        GameAudio::play(GameAudio::EventMenuSelect);
         switch(menu_selected_item)
         {
         case RESUME:
@@ -139,6 +144,10 @@ void MenuTask::logic(GLFix /*dt*/)
             else
                 world_task.setMessage("Failed to save world.");
             world_task.makeCurrent();
+            break;
+
+        case AUDIO_TEST:
+            audio_test_task.openFrom(this);
             break;
 
         case QUIT_TO_TITLE:

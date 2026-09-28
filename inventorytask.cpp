@@ -227,14 +227,14 @@ bool blockMatchesRecipeMat(BLOCK_WDATA block, unsigned int count, RecipeMat mat)
     case RecipeMat::Cobble:
         return b == BLOCK_COBBLESTONE;
     case RecipeMat::StickItem:
-        return b == BLOCK_ITEM && getBLOCKDATA(block) == static_cast<uint8_t>(ItemTexture::STICK);
+        return b == BLOCK_ITEM && getITEMDATA(block) == static_cast<uint8_t>(ItemTexture::STICK);
     case RecipeMat::CoalItem:
         if(b != BLOCK_ITEM)
             return false;
-        return getBLOCKDATA(block) == static_cast<uint8_t>(ItemTexture::COAL) ||
-               getBLOCKDATA(block) == static_cast<uint8_t>(ItemTexture::CHARCOAL);
+        return getITEMDATA(block) == static_cast<uint8_t>(ItemTexture::COAL) ||
+               getITEMDATA(block) == static_cast<uint8_t>(ItemTexture::CHARCOAL);
     case RecipeMat::RedstoneDustItem:
-        return b == BLOCK_ITEM && getBLOCKDATA(block) == static_cast<uint8_t>(ItemTexture::REDSTONE_DUST);
+        return b == BLOCK_ITEM && getITEMDATA(block) == static_cast<uint8_t>(ItemTexture::REDSTONE_DUST);
     case RecipeMat::RedstoneTorchBlock:
         return b == BLOCK_REDSTONE_TORCH;
     case RecipeMat::WheatCrop:
@@ -492,7 +492,7 @@ BLOCK_WDATA furnaceSmeltingResult(BLOCK_WDATA in)
     if(b != BLOCK_ITEM)
         return BLOCK_AIR;
 
-    switch(static_cast<ItemTexture>(getBLOCKDATA(in)))
+    switch(static_cast<ItemTexture>(getITEMDATA(in)))
     {
     case ItemTexture::RAW_PORKCHOP:
         return getBLOCKWDATA(BLOCK_ITEM, static_cast<uint8_t>(ItemTexture::COOKED_PORKCHOP));
@@ -547,7 +547,7 @@ int furnaceFuelBurnTicks(BLOCK_WDATA stack)
     if(b != BLOCK_ITEM)
         return 0;
 
-    switch(static_cast<ItemTexture>(getBLOCKDATA(stack)))
+    switch(static_cast<ItemTexture>(getITEMDATA(stack)))
     {
     case ItemTexture::STICK:
         return 100;

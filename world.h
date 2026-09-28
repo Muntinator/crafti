@@ -57,6 +57,7 @@ public:
     bool intersect(AABB &other) const;
     bool intersectsRay(GLFix x, GLFix y, GLFix z, GLFix dx, GLFix dy, GLFix dz, VECTOR3 &result, AABB::SIDE &side, GLFix &dist, bool ignore_water) const;
     const PerlinNoise &noiseGenerator() const;
+    unsigned int seedValue() const { return seed; }
     void clear();
     void setDirty();
     bool loadFromFile(gzFile file);
@@ -111,7 +112,9 @@ private:
     bool loaded = false;
     int cen_x = 0, cen_y = 0, cen_z = 0;
 #ifdef _TINSPIRE
-    int field_of_view = 120;
+    // Keep the CX default small; the former 120-chunk default could allocate
+    // an enormous world before the first frame (and chunks are not unloaded).
+    int field_of_view = 2;
 #else
     int field_of_view = 15;
 #endif

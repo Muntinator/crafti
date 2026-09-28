@@ -84,6 +84,20 @@ constexpr uint8_t RANGE_LAVA = 3;
 
 constexpr BLOCK getBLOCK(BLOCK_WDATA bd) { return bd & 0xFF; }
 constexpr uint8_t getBLOCKDATA(BLOCK_WDATA bd) { return (bd >> 8) & 0x7F; }
+/**
+ * The data byte read as an item id, with bit 15 taken as data rather than as the
+ * redstone power flag. Item stacks keep their atlas id in this byte and 49 of
+ * the 177 item ids are 128 or more (every hoe, BOW_PULLING_3, IRON_INGOT,
+ * COOKED_SALMON, ROTTEN_FLESH, SPIDER_EYE, the dyes, BONE_MEAL...), which
+ * getBLOCKDATA() would truncate into a different, low-id item: an iron ingot
+ * arrived as an iron helmet.
+ *
+ * Only meaningful when getBLOCK() is BLOCK_ITEM. For the blocks that do use the
+ * power flag (wire, pressure plate, switch, furnace) bit 15 really is part of the
+ * data, so those must keep using getBLOCKDATA()/getPOWERSTATE().
+ * tests/blockdata_test.cc pins both readings down.
+ */
+constexpr uint8_t getITEMDATA(BLOCK_WDATA bd) { return (bd >> 8) & 0xFF; }
 constexpr bool getPOWERSTATE(BLOCK_WDATA bd) { return bd & (1 << 15); }
 constexpr BLOCK_WDATA getBLOCKWDATAPower(BLOCK b, uint8_t data, bool powering) { return (data << 8) | b | (powering ? 1 << 15 : 0); }
 constexpr BLOCK_WDATA getBLOCKWDATA(BLOCK b, uint8_t data) { return (data << 8) | b; }

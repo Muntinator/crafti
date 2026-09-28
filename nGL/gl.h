@@ -158,6 +158,17 @@ void glColor3f(const GLFix r, const GLFix g, const GLFix b);
 /** Multiply sampled texture RGB by (r,g,b) until nglResetTextureModulate(). Default (1,1,1). */
 void nglSetTextureModulate(const GLFix r, const GLFix g, const GLFix b);
 void nglResetTextureModulate();
+/**
+ * Global brightness applied to every textured pixel, on top of any per-vertex
+ * shade. 256 is neutral (the default) and 0 is black; the renderer costs one
+ * integer multiply per pixel while it is not neutral, and nothing at all while
+ * it is, which is what makes it affordable for a day/night cycle on the CX.
+ *
+ * This is deliberately a single scalar rather than a colour: the sky already
+ * carries the time-of-day colour, so the terrain only has to get darker.
+ */
+void nglSetGlobalShade(const unsigned int shade);
+unsigned int nglGlobalShade();
 void glVertex3f(const GLFix x, const GLFix y, const GLFix z);
 void glScale3f(const GLFix x, const GLFix y, const GLFix z);
 void glPushMatrix();

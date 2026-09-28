@@ -9,6 +9,7 @@
 #include "blocklisttask.h"
 #include "worldtask.h"
 #include "settingstask.h"
+#include "worldclock.h"
 #include "inventory.h"
 
 //The values have to stay somewhere
@@ -158,8 +159,9 @@ void Task::drawBackground()
  *                       gzip compression introduced shortly afterwards
  * Version 7: Inventory stacks now store per-slot item counts
  * Version 8: Inventory expanded to 36 slots (9 hotbar + 27 storage)
+ * Version 9: Day/night clock (time of day and day counter) is saved
  */
-static constexpr int savefile_version = 8;
+static constexpr int savefile_version = 9;
 
 #define LOAD_FROM_FILE(var) if(gzfread(&var, sizeof(var), 1, file) != 1) { gzclose(file); return false; }
 #define SAVE_TO_FILE(var) if(gzfwrite(&var, sizeof(var), 1, file) != 1) { gzclose(file); return false; }
@@ -176,9 +178,9 @@ bool Task::load()
     int version;
     LOAD_FROM_FILE(version);
 
-    static_assert(savefile_version == 8, "Adjust loading code for backward compatibility");
+    static_assert(savefile_version == 9, "Adjust loading code for backward compatibility");
 
-    if(version < 4 || version > 8)
+    if(version < 4 || version > savefile_version)
     {
         printf("Save file version %d not supported!\n", version);
         gzclose(file);
@@ -245,6 +247,17 @@ bool Task::load()
 
     LOAD_FROM_FILE(block_list_task.current_selection)
 
+    // Version 9: a world remembers what time of day it was left at. Loading an
+    // older file leaves the clock where the previous world left it, which is
+    // harmless because the clock is not part of world generation.
+    if(version >= 9)
+    {
+        unsigned int clock_time, clock_days;
+        LOAD_FROM_FILE(clock_time)
+        LOAD_FROM_FILE(clock_days)
+        WorldClock::restore(clock_time, clock_days);
+    }
+
     const bool ret = world.loadFromFile(file);
 
     gzclose(file);
@@ -275,6 +288,13 @@ bool Task::save()
     SAVE_TO_FILE(world_task.z)
     SAVE_TO_FILE(current_inventory.current_slot)
     SAVE_TO_FILE(block_list_task.current_selection)
+
+    // Written before the world data on purpose: the world's own section is a
+    // chunk list terminated by end of file, so nothing may follow it.
+    const unsigned int clock_time = WorldClock::time();
+    SAVE_TO_FILE(clock_time)
+    const unsigned int clock_days = WorldClock::dayCount();
+    SAVE_TO_FILE(clock_days)
 
     const bool ret = world.saveToFile(file);
 

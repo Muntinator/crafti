@@ -18,7 +18,9 @@ void drawItemIcon(BLOCK_WDATA block, TEXTURE &dest, int x, int y, int size)
     if(size <= 0)
         return;
 
-    const int item_index = static_cast<int>(getBLOCKDATA(block));
+    // getITEMDATA, not getBLOCKDATA: an item stack's id is the full byte, so ids
+    // at or above 128 draw the right tile instead of a truncated one.
+    const int item_index = static_cast<int>(getITEMDATA(block));
     const int src_x = (item_index % item_atlas_cols) * item_tile_size;
     const int src_y = (item_index / item_atlas_cols) * item_tile_size;
 
@@ -53,7 +55,7 @@ TextureAtlasEntry itemIconAtlasUV(BLOCK_WDATA block)
     if(getBLOCK(block) != BLOCK_ITEM)
         return e;
 
-    const int item_index = static_cast<int>(getBLOCKDATA(block));
+    const int item_index = static_cast<int>(getITEMDATA(block));
     const int src_x = (item_index % item_atlas_cols) * item_tile_size;
     const int src_y = (item_index / item_atlas_cols) * item_tile_size;
 
@@ -77,7 +79,7 @@ const char *getItemName(BLOCK_WDATA block)
     if(getBLOCK(block) != BLOCK_ITEM)
         return nullptr;
 
-    switch(static_cast<ItemTexture>(getBLOCKDATA(block)))
+    switch(static_cast<ItemTexture>(getITEMDATA(block)))
     {
     case ItemTexture::COAL:
         return "Coal";

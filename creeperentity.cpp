@@ -9,6 +9,7 @@
 #include "fastmath.h"
 #include "grounddrops.h"
 #include "worldtask.h"
+#include "audio_manager.h"
 
 #include "textures/creeper.h"
 #include "textures/items.h"
@@ -17,6 +18,19 @@ const GLFix CreeperEntity::WIDTH = GLFix(70);
 const GLFix CreeperEntity::HEIGHT = GLFix(208);
 
 std::vector<CreeperEntity> creeper_entities;
+
+/** Chebyshev distance to the player in blocks, for sound attenuation. */
+static int blocksToPlayer(const GLFix ax, const GLFix az)
+{
+    GLFix dx = ax - world_task.x, dz = az - world_task.z;
+    if(dx < GLFix(0))
+        dx = -dx;
+    if(dz < GLFix(0))
+        dz = -dz;
+    const int bx = dx.toInteger<int>() / BLOCK_SIZE;
+    const int bz = dz.toInteger<int>() / BLOCK_SIZE;
+    return bx > bz ? bx : bz;
+}
 
 static constexpr int fuse_trigger_ticks = 55;
 static const GLFix attract_radius = GLFix(BLOCK_SIZE) * GLFix(4);
@@ -284,6 +298,8 @@ void CreeperEntity::applyMeleeDamage(int amount, GLFix attacker_yaw)
     health -= amount;
     hurt_time = 10;
     hurt_resistant = 10;
+
+    GameAudio::mobSound(GameAudio::MobCreeper, true, blocksToPlayer(x, z));
 
     GLFix ay = attacker_yaw;
     ay.normaliseAngle();

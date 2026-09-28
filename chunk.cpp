@@ -8,6 +8,7 @@
 #include "fastmath.h"
 #include "blockrenderer.h"
 #include "oregeneration.h"
+#include "villagegen.h"
 
 //Texture with "Loading" written on it
 #include "textures/loadingtext.h"
@@ -19,6 +20,7 @@
 #endif
 
 constexpr const int Chunk::SIZE;
+static_assert(Village::ChunkBlocks == Chunk::SIZE, "villagegen.h and Chunk::SIZE disagree on the chunk size!");
 int Chunk::pos_indices[SIZE + 1][SIZE + 1][SIZE + 1];
 
 Chunk::Chunk(int x, int y, int z)
@@ -40,6 +42,154 @@ static constexpr int chunkFromGlobal(const int global)
 {
     static_assert(Chunk::SIZE == 8, "Update the bit operations accordingly!");
     return global >> 3;
+}
+
+// Generation randomness must be a function of world seed and chunk coordinates,
+// not the order in which streaming happens to generate chunks.
+static unsigned int chunkGenerationSeed(unsigned int world_seed, int x, int y, int z, unsigned int salt)
+{
+    unsigned int seed = world_seed
+        ^ (static_cast<unsigned int>(x) * 73856093u)
+        ^ (static_cast<unsigned int>(y) * 19349663u)
+        ^ (static_cast<unsigned int>(z) * 83492791u)
+        ^ salt;
+    seed ^= seed >> 16;
+    seed *= 0x7feb352du;
+    seed ^= seed >> 15;
+    seed *= 0x846ca68bu;
+    seed ^= seed >> 16;
+    return seed;
+}
+
+static unsigned int nextGenerationRandom(unsigned int &seed)
+{
+    seed = seed * 1664525u + 1013904223u;
+    return seed;
+}
+
+// Surface height of a terrain column, shared by terrain generation and village
+// site selection so both always agree on where the ground is. `world_x` and
+// `world_z` are world block coordinates, the result is a world block Y.
+static int terrainSurfaceHeight(const PerlinNoise &noise, int world_x, int world_z)
+{
+    static_assert(Chunk::SIZE == 8, "Update the noise scale accordingly!");
+
+    // Equivalent to (local/Chunk::SIZE + chunk)/4 of the original inline code.
+    const GLFix nx = GLFix(world_x) / (Chunk::SIZE * 4);
+    const GLFix nz = GLFix(world_z) / (Chunk::SIZE * 4);
+
+    const GLFix e1 = noise.noise(nx, nz, 10);
+    const GLFix e2 = noise.noise(nx * 2, nz * 2, 20) * GLFix(0.65f);
+    const GLFix e3 = noise.noise(nx * 4, nz * 4, 30) * GLFix(0.35f);
+    const GLFix e4 = noise.noise(nx * 8, nz * 8, 40) * GLFix(0.20f);
+
+    GLFix noise_val = (e1 + e2 + e3 + e4) / GLFix(2.20f);
+    // Push valleys down and peaks up for less flat terrain.
+    noise_val = (noise_val + noise_val * noise_val) / 2;
+
+    constexpr int world_gen_min = 4;
+    const int world_gen_max = World::HEIGHT * Chunk::SIZE - 3;
+    return world_gen_min + (noise_val * (world_gen_max - world_gen_min)).round();
+}
+
+// Integer division rounding towards negative infinity, needed because chunks to
+// the north/west have negative coordinates.
+static int floorDiv(int value, int divisor)
+{
+    int quotient = value / divisor;
+    if((value % divisor) != 0 && ((value < 0) != (divisor < 0)))
+        --quotient;
+    return quotient;
+}
+
+namespace
+{
+    // Village plans are a pure function of (seed, frequency, cell), but every
+    // chunk of a cell asks for the same plan while streaming. A handful of
+    // entries is enough to turn the site search into a one-time cost per cell.
+    struct VillagePlanCacheEntry
+    {
+        bool used = false;
+        unsigned int seed = 0;
+        int frequency = 0;
+        int cell_x = 0, cell_z = 0;
+        bool has_plan = false;
+        Village::Plan plan;
+    };
+
+    constexpr int VillagePlanCacheSize = 8;
+    VillagePlanCacheEntry village_plan_cache[VillagePlanCacheSize];
+    int village_plan_cache_cursor = 0;
+
+    /** Rejects sites whose terrain is too uneven for the flat village layout. */
+    bool villageSiteIsFlat(const PerlinNoise &noise, int origin_x, int origin_z, int ground_y)
+    {
+        int lowest = ground_y;
+        int highest = ground_y;
+        for(int i = -1; i <= 1; ++i)
+            for(int j = -1; j <= 1; ++j)
+            {
+                const int sample = terrainSurfaceHeight(noise, origin_x + i * Village::Radius, origin_z + j * Village::Radius);
+                if(sample < lowest)
+                    lowest = sample;
+                if(sample > highest)
+                    highest = sample;
+            }
+        return highest - lowest <= Village::FlatnessTolerance;
+    }
+
+    /** Picks the first candidate in a cell that sits on flat, dry ground. */
+    bool resolveVillagePlan(unsigned int world_seed, int frequency, int cell_x, int cell_z, const PerlinNoise &noise, Village::Plan &out)
+    {
+        for(int i = 0; i < VillagePlanCacheSize; ++i)
+        {
+            const VillagePlanCacheEntry &entry = village_plan_cache[i];
+            if(entry.used && entry.seed == world_seed && entry.frequency == frequency
+                && entry.cell_x == cell_x && entry.cell_z == cell_z)
+            {
+                if(entry.has_plan)
+                    out = entry.plan;
+                return entry.has_plan;
+            }
+        }
+
+        bool has_plan = false;
+        Village::Plan plan;
+        if(Village::cellHasVillage(world_seed, cell_x, cell_z, frequency))
+        {
+            for(int candidate = 0; candidate < Village::CandidateCount && !has_plan; ++candidate)
+            {
+                int origin_x, origin_z;
+                Village::cellCandidate(world_seed, cell_x, cell_z, candidate, origin_x, origin_z);
+
+                const int ground_y = terrainSurfaceHeight(noise, origin_x, origin_z);
+                if(ground_y < Village::MinGroundY || ground_y > Village::MaxGroundY)
+                    continue;
+                if(!villageSiteIsFlat(noise, origin_x, origin_z, ground_y))
+                    continue;
+
+                has_plan = Village::planVillage(world_seed, cell_x, cell_z, candidate, ground_y, plan);
+            }
+        }
+
+        // Publish accepted plans so villagers can find the real villages.
+        if(has_plan)
+            Village::registerPlan(plan);
+
+        VillagePlanCacheEntry &entry = village_plan_cache[village_plan_cache_cursor];
+        village_plan_cache_cursor = (village_plan_cache_cursor + 1) % VillagePlanCacheSize;
+        entry.used = true;
+        entry.seed = world_seed;
+        entry.frequency = frequency;
+        entry.cell_x = cell_x;
+        entry.cell_z = cell_z;
+        entry.has_plan = has_plan;
+        entry.plan = plan;
+
+        if(has_plan)
+            out = plan;
+        return has_plan;
+    }
 }
 
 unsigned int Chunk::getPosition(unsigned int x, unsigned int y, unsigned int z)
@@ -605,24 +755,13 @@ void Chunk::generate()
     constexpr int max_trees = (Chunk::SIZE * Chunk::SIZE) / 45;
     constexpr int sea_level = 12;
     int trees = 0;
+    unsigned int feature_rng = chunkGenerationSeed(world.seedValue(), this->x, this->y, this->z, 0x46544e52u);
 
     for(int x = 0; x < SIZE; x++)
         for(int z = 0; z < SIZE; z++)
         {
-            GLFix nx = (GLFix(x)/Chunk::SIZE + this->x)/4;
-            GLFix nz = (GLFix(z)/Chunk::SIZE + this->z)/4;
-
-            GLFix e1 = noise.noise(nx, nz, 10);
-            GLFix e2 = noise.noise(nx * 2, nz * 2, 20) * GLFix(0.65f);
-            GLFix e3 = noise.noise(nx * 4, nz * 4, 30) * GLFix(0.35f);
-            GLFix e4 = noise.noise(nx * 8, nz * 8, 40) * GLFix(0.20f);
-
-            GLFix noise_val = (e1 + e2 + e3 + e4) / GLFix(2.20f);
-            // Push valleys down and peaks up for less flat terrain.
-            noise_val = (noise_val + noise_val * noise_val) / 2;
-
-            int world_gen_min = 4, world_gen_max = World::HEIGHT * Chunk::SIZE - 3;
-            int height = world_gen_min + (noise_val * (world_gen_max - world_gen_min)).round();
+            // Shared with the village generator so both agree on the surface.
+            const int height = terrainSurfaceHeight(noise, this->x * SIZE + x, this->z * SIZE + z);
             int height_left = height - this->y * Chunk::SIZE;
             int height_here = std::min(height_left, Chunk::SIZE);
 
@@ -646,8 +785,8 @@ void Chunk::generate()
                     if(to_surface == 1)
                     {
                         blocks[x][y][z] = BLOCK_GRASS;
-                        if((rand() & 0xFF) == 0x0)
-                            setGlobalBlockRelative(x, y + 1, z, getBLOCKWDATA(BLOCK_FLOWER, rand() & 0x1));
+                        if((nextGenerationRandom(feature_rng) & 0xFFu) == 0u)
+                            setGlobalBlockRelative(x, y + 1, z, getBLOCKWDATA(BLOCK_FLOWER, nextGenerationRandom(feature_rng) & 0x1u));
                     }
                     else
                         blocks[x][y][z] = BLOCK_DIRT;
@@ -680,6 +819,8 @@ void Chunk::generate()
 
     // Generate ore veins using Minecraft-like distribution
     generateOreVeins();
+
+    generateVillages();
 
     debug("Done!\n");
 }
@@ -759,10 +900,11 @@ void Chunk::generateOreVeins()
 
         for(int vein_attempt = 0; vein_attempt < ore_dist.veins_per_chunk; ++vein_attempt)
         {
-            unsigned int seed = (x * 73856093u) ^ (y * 19349663u) ^ (z * 83492791u) ^ (ore_idx * 2654435761u) ^ vein_attempt;
+            unsigned int seed = chunkGenerationSeed(
+                world.seedValue(), x, y, z,
+                static_cast<unsigned int>(ore_idx) * 2654435761u ^ static_cast<unsigned int>(vein_attempt));
             auto nextRand = [&seed]() {
-                seed = seed * 1664525u + 1013904223u;
-                return seed;
+                return nextGenerationRandom(seed);
             };
 
             const int y_range = ore_dist.y_max - ore_dist.y_min;
@@ -801,8 +943,7 @@ void Chunk::generateOreVeins()
 void Chunk::generateSingleOreVein(const OreDistribution &ore_dist, int center_x, int center_y, int center_z, unsigned int seed)
 {
     auto nextRand = [&seed]() {
-        seed = seed * 1664525u + 1013904223u;
-        return seed;
+        return nextGenerationRandom(seed);
     };
 
     int x = center_x;
@@ -827,6 +968,87 @@ void Chunk::generateSingleOreVein(const OreDistribution &ore_dist, int center_x,
         blocks[x][y][z] = ore_dist.ore_block;
         ++placed;
     }
+}
+
+void Chunk::generateVillages()
+{
+    const int freq = Village::frequency();
+    if(freq <= Village::FrequencyOff)
+        return;
+
+    const unsigned int world_seed = world.seedValue();
+    const PerlinNoise &noise = world.noiseGenerator();
+
+    const int base_x = this->x * SIZE;
+    const int base_z = this->z * SIZE;
+
+    // A village reaches at most CellJitter + Radius + 2 blocks from its cell
+    // centre, so a chunk near a cell border can be touched by a neighbouring
+    // cell's village. Visit every cell that could overlap this chunk.
+    const int reach = Village::CellJitter + Village::Radius + 2;
+    const int cell_x_min = floorDiv(base_x - reach, Village::CellBlocks);
+    const int cell_x_max = floorDiv(base_x + SIZE - 1 + reach, Village::CellBlocks);
+    const int cell_z_min = floorDiv(base_z - reach, Village::CellBlocks);
+    const int cell_z_max = floorDiv(base_z + SIZE - 1 + reach, Village::CellBlocks);
+
+    VillageWriteContext context;
+    context.chunk = this;
+    context.base_x = base_x;
+    context.base_y = this->y * SIZE;
+    context.base_z = base_z;
+
+    for(int cell_z = cell_z_min; cell_z <= cell_z_max; ++cell_z)
+        for(int cell_x = cell_x_min; cell_x <= cell_x_max; ++cell_x)
+        {
+            Village::Plan plan;
+            if(!resolveVillagePlan(world_seed, freq, cell_x, cell_z, noise, plan))
+                continue;
+
+            Village::emitChunk(plan, this->x, this->y, this->z, &Chunk::villageWriteBlock, &context);
+        }
+}
+
+// Re-resolves the villages around a block column. Uses the same cache and site
+// search as generation, so the plan it registers is byte-identical to the one
+// the terrain was generated with.
+void registerVillagesNearColumn(int world_x, int world_z)
+{
+    const int freq = Village::frequency();
+    if(freq <= Village::FrequencyOff)
+        return;
+
+    const unsigned int world_seed = world.seedValue();
+    const PerlinNoise &noise = world.noiseGenerator();
+
+    const int reach = Village::CellJitter + Village::Radius + 2;
+    const int cell_x_min = floorDiv(world_x - reach, Village::CellBlocks);
+    const int cell_x_max = floorDiv(world_x + reach, Village::CellBlocks);
+    const int cell_z_min = floorDiv(world_z - reach, Village::CellBlocks);
+    const int cell_z_max = floorDiv(world_z + reach, Village::CellBlocks);
+
+    for(int cell_z = cell_z_min; cell_z <= cell_z_max; ++cell_z)
+        for(int cell_x = cell_x_min; cell_x <= cell_x_max; ++cell_x)
+        {
+            Village::Plan plan;
+            resolveVillagePlan(world_seed, freq, cell_x, cell_z, noise, plan);
+        }
+}
+
+// Emits one village block into this chunk. The generator clips to the chunk
+// bounds before calling, so this only has to place the block in the grid.
+void Chunk::villageWriteBlock(void *context, int world_x, int world_y, int world_z, uint16_t block)
+{
+    VillageWriteContext *ctx = static_cast<VillageWriteContext *>(context);
+    if(ctx == nullptr || ctx->chunk == nullptr)
+        return;
+
+    const int local_x = world_x - ctx->base_x;
+    const int local_y = world_y - ctx->base_y;
+    const int local_z = world_z - ctx->base_z;
+    if(!inBounds(local_x, local_y, local_z))
+        return;
+
+    ctx->chunk->blocks[local_x][local_y][local_z] = block;
 }
 
 void Chunk::makeTree(unsigned int x, unsigned int y, unsigned int z)

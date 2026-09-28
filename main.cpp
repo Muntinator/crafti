@@ -12,6 +12,8 @@
 #include "terrain.h"
 #include "worldtask.h"
 #include "starttask.h"
+#include "audio_manager.h"
+#include "audio_output.h"
 
 #include "textures/loading.h"
 
@@ -71,6 +73,11 @@ int main(int argc, char *argv[])
         return 0;
     }
 
+    // Open the audio pack and pick an output backend. On the calculator this
+    // leaves GPIO4 off; it is opt-in from the audio settings or test screen.
+    GameAudio::initialize();
+    GameAudioOutput::initialize();
+
     //If crafti has been started by the file extension association, use the first argument as savefile path
     Task::initializeGlobals(argc > 1 ? argv[1] : "/documents/ndless/crafti.map.tns");
 
@@ -88,12 +95,10 @@ int main(int argc, char *argv[])
     //Start with StartTask as current task so we can choose flat/terrain.
     start_task.makeCurrent();
 
-    #ifdef _TINSPIRE
-    constexpr uint32_t tick_ms = 300; // Calculator fixed simulation tick
-    #else
-    constexpr uint32_t tick_ms = 33; // Fixed simulation tick (~30 Hz)
-    #endif
-    // dt = frame_time / tick_ms so one "unit" matches the old single logic() call per tick.
+    // dt = frame_time / simulation_tick_ms so one "unit" matches the old single
+    // logic() call per tick. The same constant is what world_task uses to turn dt
+    // back into elapsed milliseconds for the day/night clock.
+    constexpr uint32_t tick_ms = simulation_tick_ms;
     constexpr uint32_t max_frame_ms = 500; // Clamp wall-clock gap (pause / debugger) so one frame does not simulate many seconds.
     uint32_t prev_ticks = nowMs();
 
@@ -113,6 +118,10 @@ int main(int argc, char *argv[])
 
         Task::current_task->logic(dt);
 
+        // Keep the audio engine fed. This only refills stream buffers; sample
+        // timing is owned by the output backend's clock, not by the frame rate.
+        GameAudio::pump();
+
         //Reset "loading" message
         drawLoadingtext(-1);
 
@@ -125,6 +134,11 @@ int main(int argc, char *argv[])
         SDL_Delay(1);
 #endif
     }
+
+    // Stop audio first: the GPIO4 backend restores its registers and the
+    // interrupt vector while the rest of the program is still intact.
+    GameAudioOutput::shutdown();
+    GameAudio::shutdown();
 
 #ifndef _TINSPIRE
     // 1. Clear world first (may use textures/graphics for loading text)

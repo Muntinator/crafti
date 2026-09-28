@@ -20,6 +20,8 @@ const GLFix HumanEntity::HEIGHT = GLFix(230); // ~1.8 * BLOCK_SIZE(128)
 // ─── globals ─────────────────────────────────────────────────────────────────
 std::vector<HumanEntity> human_entities;
 
+const TEXTURE *humanSkinTexture() { return &steve_tex; }
+
 // ─── UV helpers ──────────────────────────────────────────────────────────────
 // Pixel-absolute UV coordinates into the 64×64 steve skin.
 static inline TextureAtlasEntry skinArea(int u, int v, int w, int h)

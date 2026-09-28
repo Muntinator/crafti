@@ -313,8 +313,17 @@
 #ifdef TRANSPARENCY
                             if (c != 0x0000) {
 #endif
+                            // A vertex either carries an explicit shade (0 = none
+                            // given, which means neutral) or nothing at all; the
+                            // global shade then scales it for the whole scene, so
+                            // the day/night cycle costs one multiply per pixel
+                            // instead of a per-texel colour conversion.
                             unsigned int light_shade = low->c & 0x00FF;
-                            if (light_shade > 0 && light_shade != 128) {
+                            if (light_shade == 0)
+                                light_shade = 128; // neutral
+                            if (ngl_global_shade != 256)
+                                light_shade = (light_shade * ngl_global_shade) >> 8;
+                            if (light_shade != 128) {
                                 unsigned int r_shade = (c >> 11) & 0x1F;
                                 unsigned int g_shade = (c >> 5) & 0x3F;
                                 unsigned int b_shade = c & 0x1F;
@@ -531,8 +540,17 @@
 #ifdef TRANSPARENCY
                             if (c != 0x0000) {
 #endif
+                            // A vertex either carries an explicit shade (0 = none
+                            // given, which means neutral) or nothing at all; the
+                            // global shade then scales it for the whole scene, so
+                            // the day/night cycle costs one multiply per pixel
+                            // instead of a per-texel colour conversion.
                             unsigned int light_shade = low->c & 0x00FF;
-                            if (light_shade > 0 && light_shade != 128) {
+                            if (light_shade == 0)
+                                light_shade = 128; // neutral
+                            if (ngl_global_shade != 256)
+                                light_shade = (light_shade * ngl_global_shade) >> 8;
+                            if (light_shade != 128) {
                                 unsigned int r_shade = (c >> 11) & 0x1F;
                                 unsigned int g_shade = (c >> 5) & 0x3F;
                                 unsigned int b_shade = c & 0x1F;

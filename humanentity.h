@@ -69,4 +69,7 @@ void initHumanEntities();     // spawn initial humans (call on world reset)
 void updateHumanEntities();   // call every logic tick
 void renderHumanEntities();   // call inside world render pass
 
+/** The shared 64x64 humanoid skin, so other humanoid mobs need no second copy. */
+const TEXTURE *humanSkinTexture();
+
 #endif // HUMANENTITY_H

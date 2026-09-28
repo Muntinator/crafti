@@ -11,6 +11,7 @@ public:
         NEW_FLAT,
         NEW_TERRAIN,
         NEW_GRAPH,
+        AUDIO_TEST,
         EXIT,
         START_ITEM_MAX
     };
@@ -27,6 +28,7 @@ public:
 private:
     int selected_item = NEW_TERRAIN;
     bool has_saved_world = false;
+    const char *audio_status = nullptr;
 };
 
 extern StartTask start_task;

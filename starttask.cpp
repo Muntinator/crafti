@@ -1,5 +1,8 @@
 #include "starttask.h"
 
+#include "audio_manager.h"
+#include "audiotesttask.h"
+
 #include "font.h"
 #include "worldtask.h"
 #include "graphtask.h"
@@ -24,6 +27,7 @@ StartTask::~StartTask()
 void StartTask::makeCurrent()
 {
     selected_item = NEW_TERRAIN;
+    GameAudio::stopMusic();
     Task::makeCurrent();
 }
 
@@ -125,7 +129,7 @@ void StartTask::render()
     // Subtitle
     drawStringCenter("Select world type", 0xFFFF, *screen, SCREEN_WIDTH / 2, 28);
 
-    const char *items[START_ITEM_MAX] = { "Continue Saved World", "New Flat World", "New Terrain World", "Graphing Mode", "Exit" };
+    const char *items[START_ITEM_MAX] = { "Continue Saved World", "New Flat World", "New Terrain World", "Graphing Mode", "Audio Test", "Exit" };
 
     int menu_height = START_ITEM_MAX * 24 - 4;
     int start_y = (SCREEN_HEIGHT / 2) - menu_height / 2;
@@ -155,7 +159,8 @@ void StartTask::render()
         drawStringCenter(items[i], label_color, *screen, SCREEN_WIDTH / 2, y + 4);
     }
 
-    drawStringCenter("Use 8/2 or Up/Down to move; 5 or Return to select", 0xFFFF, *screen, SCREEN_WIDTH / 2, SCREEN_HEIGHT - 16);
+    drawStringCenter("Use 8/2 or Up/Down to move; 5 or Return to select", 0xFFFF, *screen, SCREEN_WIDTH / 2, SCREEN_HEIGHT - 24);
+    drawStringCenter(audio_status ? audio_status : GameAudio::packStatus(), 0xFFFF, *screen, SCREEN_WIDTH / 2, SCREEN_HEIGHT - 12);
 }
 
 void StartTask::logic(GLFix /*dt*/)
@@ -178,6 +183,7 @@ void StartTask::logic(GLFix /*dt*/)
     }
     else if(keyPressed(KEY_NSPIRE_5))
     {
+        GameAudio::play(GameAudio::EventMenuSelect);
         switch(selected_item)
         {
         case CONTINUE:
@@ -196,6 +202,9 @@ void StartTask::logic(GLFix /*dt*/)
             break;
         case NEW_GRAPH:
             graph_task.makeCurrent();
+            break;
+        case AUDIO_TEST:
+            audio_test_task.openFrom(this);
             break;
         case EXIT:
             running = false;

@@ -381,6 +381,18 @@ void nglResetTextureModulate()
     ngl_tex_mod_r = ngl_tex_mod_g = ngl_tex_mod_b = GLFix(1);
 }
 
+static unsigned int ngl_global_shade = 256;
+
+void nglSetGlobalShade(const unsigned int shade)
+{
+    ngl_global_shade = shade > 256 ? 256 : shade;
+}
+
+unsigned int nglGlobalShade()
+{
+    return ngl_global_shade;
+}
+
 static COLOR ngl_modulate_texel(COLOR c)
 {
     if(ngl_tex_mod_r == GLFix(1) && ngl_tex_mod_g == GLFix(1) && ngl_tex_mod_b == GLFix(1))

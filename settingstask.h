@@ -28,6 +28,14 @@ public:
         SHOW_FPS,
         BLOCK_INDICATOR,
         COORD_INDICATOR,
+        AUDIO_MASTER,
+        AUDIO_MUSIC,
+        AUDIO_EFFECTS,
+        AUDIO_AMBIENCE,
+        AUDIO_GPIO4,
+        VILLAGE_FREQUENCY,
+        DAY_NIGHT,
+        DAY_LENGTH,
     };
 
     SettingsTask();
@@ -44,6 +52,11 @@ public:
     bool saveToFile(gzFile file);
 
 private:
+    /** Volume rows are shown as percentages; other rows show their value name. */
+    bool isVolumeEntry(unsigned int entry) const;
+    void applyAudioSettings();
+    void applyGameplaySettings();
+
     std::vector<SettingsEntry> settings;
     static constexpr int background_width = SCREEN_WIDTH - 50, background_height = SCREEN_HEIGHT - 50;
     TEXTURE *background;

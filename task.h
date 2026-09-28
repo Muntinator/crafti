@@ -5,6 +5,19 @@
 
 #include <libndls.h>
 
+/**
+ * Nominal wall-clock length of one `dt` unit, in milliseconds. The main loop
+ * divides the frame time by this to get `dt`, and anything that must run on real
+ * time rather than on frames (the day/night clock) multiplies by it again to
+ * recover elapsed milliseconds. Keeping it in one place stops the two from
+ * drifting apart.
+ */
+#ifdef _TINSPIRE
+constexpr unsigned int simulation_tick_ms = 300; // Calculator fixed simulation tick
+#else
+constexpr unsigned int simulation_tick_ms = 33; // Fixed simulation tick (~30 Hz)
+#endif
+
 class Task
 {
 public:

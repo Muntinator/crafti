@@ -996,7 +996,9 @@ bool World::loadFromFile(gzFile file)
     if(gzfread(pending_block_changes.data(), sizeof(BLOCK_CHANGE), block_changes, file) != block_changes)
         return false;
 
-    LOAD_FROM_FILE(field_of_view);
+    int loaded_field_of_view;
+    LOAD_FROM_FILE(loaded_field_of_view);
+    setFieldOfView(loaded_field_of_view);
 
     for(;;)
     {
@@ -1176,6 +1178,15 @@ Chunk* World::generateChunk(int x, int y, int z)
 
 
 void World::setFieldOfView(int fov) {
+    if(fov < 1)
+        fov = 1;
+#ifdef _TINSPIRE
+    // Settings expose distance 1..9 (10 is the exclusive value-count bound).
+    // Also clamp values read from old saves before building the visible sphere.
+    if(fov > 9)
+        fov = 9;
+#endif
+
     field_of_view = fov;
     loaded = false;
     

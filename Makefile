@@ -2,15 +2,22 @@ GCC = nspire-gcc
 GPP = nspire-g++
 LD = nspire-ld
 GENZEHN = genzehn
+MAKEPRG = make-prg
 OPTIMIZE ?= fast
 NDLSSDK ?=
+ZLIB_PREFIX ?=
 NDLESS_INCLUDES =
+NDLESS_LIBS =
 ifneq ($(strip $(NDLSSDK)),)
 NDLESS_INCLUDES += -I$(NDLSSDK)/include -I$(NDLSSDK)/include/freetype2
 endif
+ifneq ($(strip $(ZLIB_PREFIX)),)
+NDLESS_INCLUDES += -I$(ZLIB_PREFIX)/include
+NDLESS_LIBS += -L$(ZLIB_PREFIX)/lib
+endif
 CFLAGS = -O$(OPTIMIZE) -I nGL -I . $(NDLESS_INCLUDES) -Wall -W -marm -ffast-math -mcpu=arm926ej-s -fno-math-errno -fomit-frame-pointer -flto -fgcse-sm -fgcse-las -funsafe-loop-optimizations -fno-fat-lto-objects -frename-registers -fprefetch-loop-arrays -mno-thumb-interwork -ffunction-sections -fdata-sections -DNDEBUG -D_TINSPIRE
 GCCFLAGS = -O$(OPTIMIZE) -I nGL -I . $(NDLESS_INCLUDES) -Wall -W -marm -ffast-math -mcpu=arm926ej-s -fno-math-errno -fomit-frame-pointer -flto -fno-rtti -fgcse-sm -fgcse-las -funsafe-loop-optimizations -fno-fat-lto-objects -frename-registers -fprefetch-loop-arrays -Wold-style-cast -mno-thumb-interwork -ffunction-sections -fdata-sections -fno-exceptions -DNDEBUG -D_TINSPIRE
-LDFLAGS = -lm -lz -Wl,--gc-sections
+LDFLAGS = $(NDLESS_LIBS) -lm -lz -Wl,--gc-sections
 ZEHNFLAGS = --name "Crafti" --version 13 --author "Fabian Vogt" --notice "3D Minecraft" --compress
 EXE = crafti
 OBJS = $(patsubst %.c, %.o, $(shell find . -name \*.c))
@@ -33,7 +40,7 @@ $(EXE).elf: $(OBJS)
 
 $(EXE).tns: $(EXE).elf
 	+$(GENZEHN) --input $^ --output $@.zehn $(ZEHNFLAGS)
-	+make-prg $@.zehn $@
+	+$(MAKEPRG) $@.zehn $@
 	+latest_tns=$$(ls -t $(EXE)*.tns 2>/dev/null | head -n1); \
 	if [ -n "$$latest_tns" ] && [ "$$latest_tns" != "$@" ]; then mv -f "$$latest_tns" "$@"; fi
 	+rm $@.zehn
