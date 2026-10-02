@@ -550,13 +550,19 @@ void InventoryTask::renderChestPanel()
                 static_cast<uint16_t>(draw_w),
                 static_cast<uint16_t>(player_h));
 
-    // "Chest" or "Large Chest", centred on the window's top edge, which is where
-    // vanilla draws a container's title.
+    // ContainerScreen inherits AbstractContainerScreen.renderLabels unchanged,
+    // so the chest's title sits at (8, 6) -- left-aligned, not centred, the way
+    // vanilla's own chest screen draws it -- and the player's "Inventory" label
+    // goes at (8, imageHeight - 94), where imageHeight is 114 + rows * 18.
     const char *title = chestSlotCount() > ChestStore::SlotCount ? "Large Chest" : "Chest";
-    const int title_w = static_cast<int>(measureString(title));
     drawString(title, 0x4208, *screen,
-               panel_x + (draw_w - title_w) / 2,
+               panel_x + slot_src_x * inv_draw_scale,
                panel_y + armor_title_src_y * inv_draw_scale);
+
+    const int image_height = 114 + rows * inv_src_pitch;
+    drawString("Inventory", 0x4208, *screen,
+               panel_x + slot_src_x * inv_draw_scale,
+               panel_y + (image_height - 94) * inv_draw_scale);
 
     const int slot_count = chestSlotCount();
 

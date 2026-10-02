@@ -171,8 +171,8 @@ A CX boots its OS in a couple of virtual seconds; give it 30-60.
   colour and text rather than by overall brightness. Reading text out of a
   320x240 capture works: upscale it (`ffmpeg -i shot.png -vf scale=1280:960`) and
   run `tesseract` over the result.
-* **Audio is not emulated.** `audio_gpio4_hw.h` drives GPIO4 directly, which
-  only exists on real hardware; sound can only be checked on a calculator.
+* **Audio is not emulated.** `audio_tx_hw.h` drives the dock UART directly,
+  which only exists on real hardware; sound can only be checked on a calculator.
 * The emulator cannot tell you about speed. Use `--realtime` to see whether the
   OS keeps up, but CX timings still need hardware.
 * File transfers are exercised here (that is how `crafti.tns` gets onto the

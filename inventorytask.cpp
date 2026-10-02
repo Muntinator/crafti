@@ -14,6 +14,7 @@
 #include "inventory.h"
 #include "itemicons.h"
 #include "itemrules.h"
+#include "menuui.h"
 #include "playermodel.h"
 #include "world.h"
 #include "worldtask.h"
@@ -71,6 +72,14 @@ constexpr int table_output_src_y = 35;
 
 constexpr int crafting_cols = 2;
 constexpr int crafting_rows = 2;
+
+// AbstractContainerScreen.renderLabels draws the container's own title at
+// (titleLabelX, 6) and the player's "Inventory" at (8, imageHeight - 94), both in
+// 0x404040. The player's own window is the exception: InventoryScreen overrides
+// renderLabels to draw only its title, so it has no "Inventory" line.
+constexpr int title_label_src_y = 6;
+constexpr int inventory_label_src_y = window_src_height - 94; // 166 - 94 = 72
+constexpr COLOR container_label_color = 0x4208;               // 0x404040 in RGB565
 
 int inventoryOriginX()
 {
@@ -1626,6 +1635,14 @@ void InventoryTask::render()
 {
     drawBackground();
 
+    // Vanilla's AbstractContainerScreen renders through Screen.renderBackground,
+    // which washes the frozen world in the same `0xC0101010`..`0xD0101010`
+    // gradient the pause screen uses, not the dirt the standalone menus tile.
+    // The background texture is the world frame every menu shares, so opening
+    // this from the pause menu re-washes the same frame rather than darkening an
+    // already-dimmed one.
+    MenuUI::drawPauseOverlay(*screen);
+
     // The chest screen is laid out by inventorychest.cpp: a variable number of
     // rows, so none of the fixed offsets below apply to it.
     if(chest_mode)
@@ -1702,6 +1719,18 @@ void InventoryTask::render()
                         static_cast<uint16_t>(vx(79)), static_cast<uint16_t>(vy(34)),
                         static_cast<uint16_t>(vw(sw)), static_cast<uint16_t>(vh(16)));
         }
+
+        // AbstractFurnaceScreen centres its title: titleLabelX is
+        // (imageWidth - font.width(title)) / 2. The measurement is taken at the
+        // window's own scale, so the label is centred the way vanilla frames it.
+        const char *furnace_title = "Furnace";
+        const int furnace_title_w = static_cast<int>(measureString(furnace_title));
+        drawString(furnace_title, container_label_color, *screen,
+                   panel_x + (panel_w - furnace_title_w) / 2,
+                   panel_y + title_label_src_y * inv_draw_scale);
+        drawString("Inventory", container_label_color, *screen,
+                   panel_x + 8 * inv_draw_scale,
+                   panel_y + inventory_label_src_y * inv_draw_scale);
     }
     else if(crafting_table_mode)
     {
@@ -1712,6 +1741,13 @@ void InventoryTask::render()
                         inv_x, inv_y,
                         window_src_width * inv_draw_scale, window_src_height * inv_draw_scale);
         }
+
+        // CraftingScreen indents its title to titleLabelX 29 (not 8), and every
+        // container carries the player's "Inventory" label as well.
+        drawString("Crafting", container_label_color, *screen,
+                   inv_x + 29 * inv_draw_scale, inv_y + title_label_src_y * inv_draw_scale);
+        drawString("Inventory", container_label_color, *screen,
+                   inv_x + 8 * inv_draw_scale, inv_y + inventory_label_src_y * inv_draw_scale);
     }
 
     // The player's own model fills the right half of the player window, exactly

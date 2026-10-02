@@ -1,7 +1,7 @@
-#include "audio_nspire_gpio4.h"
+#include "audio_nspire_tx.h"
 
-#include "audio_gpio4_hw.h"
 #include "audio_manager.h"
+#include "audio_tx_hw.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -10,9 +10,9 @@
 #include <libndls.h>
 #endif
 
-namespace GameAudioGpio4
+namespace GameAudioTx
 {
-using namespace Gpio4Hw;
+using namespace UartTxHw;
 
 namespace
 {
@@ -21,6 +21,10 @@ namespace
 	const uint32_t BusyLoopCyclesPerMicrosecond = 150;
 	/** Longest blocking diagnostic so the user can never hang the calculator. */
 	const uint32_t MaxPolledMilliseconds = 4000;
+	/** Ceiling on how much one FIFO refill may push, so a bad FR cannot spin. */
+	const uint32_t MaxBytesPerRefill = TxFifoDepth * 4;
+	/** Fastest square wave a byte-paced pin can honestly produce. */
+	const uint32_t MaxPolledHz = 4000;
 
 	int16_t pcm_ring[RingFrames];
 	volatile uint32_t ring_head = 0;
@@ -29,8 +33,6 @@ namespace
 	volatile uint32_t frames_consumed = 0;
 
 	int32_t sd_acc = 0;
-	int32_t sd_level = 0;
-	uint32_t carrier_tick = 0;
 
 	bool enabled_ = false;
 	VectorTable table_ = VectorNone;
@@ -60,21 +62,13 @@ namespace
 	void writeReg(uint32_t address, uint32_t value) { Sim::write(address, value); }
 #endif
 
-	void setPinLevel(bool high)
-	{
-		const uint32_t current = readReg(Gpio4OutputAddress);
-		writeReg(Gpio4OutputAddress, high ? (current | Gpio4Mask) : (current & ~Gpio4Mask));
-	}
-
 	void resetRing()
 	{
 		ring_head = 0;
 		ring_tail = 0;
 		underrun_count = 0;
 		frames_consumed = 0;
-		carrier_tick = 0;
 		sd_acc = 0;
-		sd_level = 0;
 	}
 
 	uint32_t irqSave()
@@ -140,14 +134,13 @@ namespace
 	}
 
 	/**
-	 * Installs the classic `ldr pc, [pc, #-4]` / address pair.
-	 *
-	 * A plain branch can only reach +/-32 MiB, which is not enough if the OS
-	 * keeps its handlers in a vector page far away from program memory, so the
-	 * two word stub is the portable option. It is only ever written to a decoded
-	 * branch target inside a handler, never to a vector entry itself (that would
-	 * clobber the following vector).
-	 */	bool writeHookStub(uint32_t address, uint32_t target)
+	 * Installs the classic `ldr pc, [pc, #-4]` / address pair. A plain branch can
+	 * only reach +/-32 MiB, which is not enough if the OS keeps its handlers in a
+	 * page far from program memory, so the two word stub is the portable option.
+	 * It is only written to a decoded branch target inside a handler, never to a
+	 * vector entry itself (that would clobber the following vector).
+	 */
+	bool writeHookStub(uint32_t address, uint32_t target)
 	{
 		const uint32_t first = 0xE51FF004u; // ldr pc, [pc, #-4]
 		const uint32_t original0 = readReg(address);
@@ -172,20 +165,20 @@ namespace
 	}
 
 #ifdef _TINSPIRE
-	extern "C" void gpio4IsrTrampoline() __attribute__((naked));
-	extern "C" void gpio4IsrTrampoline()
+	extern "C" void txIsrTrampoline() __attribute__((naked));
+	extern "C" void txIsrTrampoline()
 	{
 		// A naked body: save what the C handler may clobber, run it, then return
 		// from the interrupt. Masking every other VIC source means the only IRQ
-		// that can land here is the fast timer, so no chaining is needed.
+		// that can land here is the UART, so no chaining is needed.
 		__asm__ volatile(
 			"stmfd sp!, {r0-r3, r12, lr}\n"
-			"bl gpio4IsrBody\n"
+			"bl txIsrBody\n"
 			"ldmfd sp!, {r0-r3, r12, lr}\n"
 			"subs pc, lr, #4\n");
 	}
 #else
-	extern "C" void gpio4IsrTrampoline() {}
+	extern "C" void txIsrTrampoline() {}
 #endif
 
 	/** Address handed to the interrupt branch. On the host this is a plausible
@@ -194,7 +187,7 @@ namespace
 	uint32_t trampolineAddress()
 	{
 #ifdef _TINSPIRE
-		return reinterpret_cast<uint32_t>(&gpio4IsrTrampoline);
+		return reinterpret_cast<uint32_t>(&txIsrTrampoline);
 #else
 		return 0x10002000u;
 #endif
@@ -207,7 +200,9 @@ namespace
 		while(spins != 0)
 			--spins;
 #else
-		(void)microseconds;
+		// On the host the wait is the UART's own bit clock: the simulated wire
+		// advances by however many byte-periods those microseconds cover.
+		Sim::advanceCarrierTicks((microseconds * CarrierBaud) / 1000000u);
 #endif
 	}
 
@@ -216,8 +211,97 @@ namespace
 #ifdef _TINSPIRE
 		msleep(1);
 #else
-		Sim::advanceCarrierTicks(CarrierHz / 1000);
+		Sim::advanceCarrierTicks(MixerRateHz / 1000);
 #endif
+	}
+
+	/** Reads the UART registers the backend is about to disturb. */
+	void captureRegisters(RegisterSnapshot &s)
+	{
+		s.uart_cr = readReg(UartBase + UartCr);
+		s.uart_lcr_h = readReg(UartBase + UartLcrH);
+		s.uart_ibrd = readReg(UartBase + UartIbrd);
+		s.uart_fbrd = readReg(UartBase + UartFbrd);
+		s.uart_ifls = readReg(UartBase + UartIfLs);
+		s.uart_imsc = readReg(UartBase + UartImsc);
+		s.power_disable = readReg(PowerBase + PowerPeripheralDisable);
+		s.valid = true;
+	}
+
+	/** Brings the transmitter up for 8N1 at the carrier baud, interrupts quiet. */
+	void applyTxConfig()
+	{
+		writeReg(UartBase + UartCr, 0); // stand the UART down while it is changed
+		writeReg(UartBase + UartIbrd, Ibrd);
+		writeReg(UartBase + UartFbrd, Fbrd);
+		writeReg(UartBase + UartLcrH, LineFifoEnable | LineEightDataBits);
+		writeReg(UartBase + UartIfLs, IfLsTxHalf);
+		writeReg(UartBase + UartIcr, InterruptTx | InterruptRx);
+		writeReg(UartBase + UartImsc, 0);
+		writeReg(UartBase + UartCr, ControlUartEnable | ControlTxEnable);
+	}
+
+	void restoreRegisters(const RegisterSnapshot &s)
+	{
+		writeReg(UartBase + UartImsc, 0);
+		writeReg(UartBase + UartCr, 0);
+		writeReg(UartBase + UartIbrd, s.uart_ibrd);
+		writeReg(UartBase + UartFbrd, s.uart_fbrd);
+		writeReg(UartBase + UartLcrH, s.uart_lcr_h);
+		writeReg(UartBase + UartIfLs, s.uart_ifls);
+		writeReg(UartBase + UartCr, s.uart_cr);
+		writeReg(UartBase + UartImsc, s.uart_imsc);
+		writeReg(PowerBase + PowerPeripheralDisable, s.power_disable);
+	}
+
+	/**
+	 * Turns one mixer sample into the eight data bits of one UART byte with a
+	 * first-order sigma-delta modulator: the density of ones in the byte is what
+	 * the far end averages back into the sample.
+	 */
+	void emitByte()
+	{
+		int32_t level;
+		if(ring_tail != ring_head)
+		{
+			level = static_cast<int32_t>(pcm_ring[ring_tail & (RingFrames - 1)]);
+			++ring_tail;
+			++frames_consumed;
+		}
+		else
+		{
+			level = 0;
+			++underrun_count;
+		}
+
+		uint32_t byte = 0;
+		for(uint32_t b = 0; b < BitsPerSample; ++b)
+		{
+			sd_acc += level;
+			if(sd_acc >= 0)
+			{
+				sd_acc -= 32767;
+				byte |= 1u << b;
+			}
+			else
+			{
+				sd_acc += 32768;
+			}
+		}
+
+		writeReg(UartBase + UartDr, byte);
+	}
+
+	void fillTxFifo()
+	{
+		uint32_t written = 0;
+		while(written < MaxBytesPerRefill)
+		{
+			if((readReg(UartBase + UartFr) & FlagTxFifoFull) != 0)
+				break;
+			emitByte();
+			++written;
+		}
 	}
 }
 
@@ -225,46 +309,24 @@ namespace
 // simulation, so the modulator and the register sequence are the same code.
 // `externally_visible` matters under LTO: the only references from this file are
 // assembler strings in the trampoline, which link-time optimisation cannot see.
-extern "C" void gpio4IsrBody() __attribute__((used, externally_visible));
-extern "C" void gpio4IsrBody()
+extern "C" void txIsrBody() __attribute__((used, externally_visible));
+extern "C" void txIsrBody()
 {
 	// PL190 acknowledgement sequence (Hackspire, "Handling Interrupts").
 	const uint32_t irq = readReg(VicBase + VicIrqVector);
 	const uint32_t previous_priority = readReg(VicBase + VicIrqAcknowledge);
 
-	if(irq == FastTimerIrqNumber)
+	if(irq == UartIrqNumber)
 	{
-		writeReg(TimerBase + Timer1InterruptClear, 1);
-
-		if(++carrier_tick >= OversamplingRatio)
+		const uint32_t pending = readReg(UartBase + UartMis);
+		if((pending & InterruptTx) != 0)
 		{
-			carrier_tick = 0;
-			if(ring_tail != ring_head)
-			{
-				sd_level = static_cast<int32_t>(pcm_ring[ring_tail & (RingFrames - 1)]);
-				++ring_tail;
-				++frames_consumed;
-			}
-			else
-			{
-				sd_level = 0;
-				++underrun_count;
-			}
+			writeReg(UartBase + UartIcr, InterruptTx);
+			fillTxFifo();
 		}
-
-		// First order sigma-delta: the 16-bit sample becomes a 1-bit stream
-		// whose average tracks the sample, which is all a single digital pin
-		// can reproduce.
-		sd_acc += sd_level;
-		if(sd_acc >= 0)
+		else if(pending != 0)
 		{
-			sd_acc -= 32767;
-			setPinLevel(true);
-		}
-		else
-		{
-			sd_acc += 32768;
-			setPinLevel(false);
+			writeReg(UartBase + UartIcr, pending);
 		}
 	}
 
@@ -332,6 +394,7 @@ namespace
 bool supported()
 {
 #ifdef _TINSPIRE
+	// The PL011 is the CX's UART; the classic machines use a different layout.
 	return !is_classic;
 #else
 	return true;
@@ -346,13 +409,8 @@ bool enable()
 	error_ = nullptr;
 	resetRing();
 
-	snapshot_.timer_control = readReg(TimerBase + Timer1Control);
-	snapshot_.timer_load = readReg(TimerBase + Timer1Load);
-	snapshot_.timer_clock_select = readReg(TimerBase + TimerClockSelect);
+	captureRegisters(snapshot_);
 	snapshot_.vic_mask = readReg(VicBase + VicIntEnable);
-	snapshot_.gpio_direction = readReg(Gpio4DirectionAddress);
-	snapshot_.gpio_output = readReg(Gpio4OutputAddress);
-	snapshot_.valid = true;
 
 	saved_cpsr = irqSave();
 	irqMask();
@@ -366,20 +424,16 @@ bool enable()
 		return false;
 	}
 
-	// GPIO4 as an output, idle low.
-	writeReg(Gpio4DirectionAddress, readReg(Gpio4DirectionAddress) & ~Gpio4Mask);
-	setPinLevel(false);
+	// Power management gates the UART's bus, so open it before touching the UART.
+	writeReg(PowerBase + PowerPeripheralDisable, snapshot_.power_disable & ~PowerUartBusDisable);
 
-	// Fast timer: periodic, 32-bit, interrupt every carrier period.
-	writeReg(TimerBase + TimerClockSelect, TimerClockSelect10MHz);
-	writeReg(TimerBase + Timer1Load, TimerReload);
-	writeReg(TimerBase + Timer1Control,
-		TimerControlEnable | TimerControlPeriodic | TimerControlInterruptEnable | TimerControl32Bit);
-	writeReg(TimerBase + Timer1InterruptClear, 1);
+	applyTxConfig();
+	writeReg(UartBase + UartImsc, InterruptTx);
+	fillTxFifo();
 
-	// Only the fast timer may interrupt while audio owns the vector.
+	// Only the UART may interrupt while audio owns the vector.
 	writeReg(VicBase + VicIntDisable, VicAllIrqs);
-	writeReg(VicBase + VicIntEnable, 1u << FastTimerIrqNumber);
+	writeReg(VicBase + VicIntEnable, 1u << UartIrqNumber);
 	(void)readReg(VicBase + VicIrqAcknowledge);
 
 	enabled_ = true;
@@ -396,20 +450,16 @@ void disable()
 	saved_cpsr = irqSave();
 	irqMask();
 
-	writeReg(TimerBase + Timer1Control, 0);
-	writeReg(TimerBase + Timer1InterruptClear, 1);
+	// Silence the source first, then take the vector back.
+	writeReg(UartBase + UartImsc, 0);
+	writeReg(UartBase + UartIcr, InterruptTx | InterruptRx);
+	writeReg(UartBase + UartCr, 0);
 
 	writeReg(VicBase + VicIntDisable, VicAllIrqs);
+	restoreVector();
+	restoreRegisters(snapshot_);
 	writeReg(VicBase + VicIntEnable, snapshot_.vic_mask);
 	(void)readReg(VicBase + VicIrqAcknowledge);
-
-	restoreVector();
-
-	writeReg(Gpio4DirectionAddress, snapshot_.gpio_direction);
-	writeReg(Gpio4OutputAddress, snapshot_.gpio_output);
-	writeReg(TimerBase + TimerClockSelect, snapshot_.timer_clock_select);
-	writeReg(TimerBase + Timer1Load, snapshot_.timer_load);
-	writeReg(TimerBase + Timer1Control, snapshot_.timer_control);
 
 	resetRing();
 	enabled_ = false;
@@ -468,7 +518,7 @@ const char *status()
 	}
 
 	snprintf(status_buffer, sizeof(status_buffer),
-		"GPIO4 dock pin 6: %s, %u Hz carrier, vector %s, %u underruns",
+		"UART dock pin 4: %s, %u Hz carrier, vector %s, %u underruns",
 		enabled_ ? "on" : "off", static_cast<unsigned int>(CarrierHz), vector_name,
 		static_cast<unsigned int>(underrun_count));
 	return status_buffer;
@@ -478,35 +528,43 @@ int testPolled(uint32_t frequency_hz, uint32_t duration_ms)
 {
 	if(frequency_hz == 0 || duration_ms == 0)
 		return -1;
-	if(frequency_hz > 20000)
-		frequency_hz = 20000;
+	if(frequency_hz > MaxPolledHz)
+		frequency_hz = MaxPolledHz;
 	if(duration_ms > MaxPolledMilliseconds)
 		duration_ms = MaxPolledMilliseconds;
-	if(!supported())
+	if(!supported() || enabled_)
 		return -1;
 
-	const uint32_t direction = readReg(Gpio4DirectionAddress);
-	const uint32_t output = readReg(Gpio4OutputAddress);
+	saved_cpsr = irqSave();
+	irqMask();
 
-	writeReg(Gpio4DirectionAddress, direction & ~Gpio4Mask);
+	RegisterSnapshot snapshot = {};
+	captureRegisters(snapshot);
+	writeReg(PowerBase + PowerPeripheralDisable, snapshot.power_disable & ~PowerUartBusDisable);
+	applyTxConfig();
 
+	// One frame is a fixed 10 bit-times, so the pin only has byte granularity;
+	// the wave is built from alternating all-ones and all-zeros frames.
 	const uint32_t half_period_us = 500000u / frequency_hz;
 	const uint32_t periods = (frequency_hz * duration_ms) / 1000u;
 
 	for(uint32_t i = 0; i < periods; ++i)
 	{
-		writeReg(Gpio4OutputAddress, readReg(Gpio4OutputAddress) | Gpio4Mask);
+		writeReg(UartBase + UartDr, 0xFF);
 		busyWaitMicroseconds(half_period_us);
-		writeReg(Gpio4OutputAddress, readReg(Gpio4OutputAddress) & ~Gpio4Mask);
+		writeReg(UartBase + UartDr, 0x00);
 		busyWaitMicroseconds(half_period_us);
 	}
 
-	writeReg(Gpio4DirectionAddress, direction);
-	writeReg(Gpio4OutputAddress, output);
+	// Let the last frames leave before handing the UART back.
+	busyWaitMicroseconds(FrameBits * 1000000u / CarrierBaud);
+
+	restoreRegisters(snapshot);
+	irqRestore(saved_cpsr);
 	return static_cast<int>(periods);
 }
 
-int testTimer(uint32_t duration_ms)
+int testSweep(uint32_t duration_ms)
 {
 	if(duration_ms == 0)
 		return -1;
@@ -536,7 +594,7 @@ int testTimer(uint32_t duration_ms)
 		waitOneMillisecond();
 	}
 
-	// Let the ring drain before tearing the timer down.
+	// Let the ring drain before tearing the transmitter down.
 	while(ring_head != ring_tail)
 		waitOneMillisecond();
 
@@ -547,14 +605,18 @@ int testTimer(uint32_t duration_ms)
 
 #ifndef _TINSPIRE
 // ---------------------------------------------------------------------------
-// Host simulation: a sparse register file plus a hand driven carrier tick, so
-// the exact register sequence above can be exercised in unit tests. Writing to
-// an unknown address is a no-op and reading it returns 0, standing in for the
-// unwritten parts of the memory map.
+// Host simulation: a sparse register file plus a hand driven byte clock. Writing
+// UARTDR pushes a byte into the transmit FIFO; advanceCarrierTicks() hands one
+// byte to the wire (framed as start bit, eight data bits, stop bit) and then runs
+// the same interrupt body the device would. Writing to an unknown address is a
+// no-op and reading it returns 0, standing in for the unwritten parts of the map.
 namespace Sim
 {
 namespace
 {
+	const unsigned int RegisterCount = 48;
+	const unsigned int TxLogCapacity = 20000;
+
 	struct RegisterPair
 	{
 		uint32_t address;
@@ -562,14 +624,20 @@ namespace
 		bool present;
 	};
 
-	const unsigned int RegisterCount = 48;
 	RegisterPair registers[RegisterCount];
 
-	uint32_t pin_transitions = 0;
-	uint32_t pin_high_count = 0;
-	uint32_t pin_low_count = 0;
+	uint8_t fifo[TxFifoDepth];
+	uint32_t fifo_count = 0;
+
+	uint8_t tx_log[TxLogCapacity];
+	uint32_t tx_log_count = 0;
+
+	uint32_t line_transitions = 0;
+	uint32_t line_high_count = 0;
+	uint32_t line_low_count = 0;
+	uint32_t last_line_level = 0;
+	uint32_t bytes_written_to_wire = 0;
 	uint32_t carrier_ticks = 0;
-	uint32_t last_pin = 0;
 	uint32_t vic_max_priority = 8;
 
 	RegisterPair *find(uint32_t address)
@@ -598,16 +666,36 @@ namespace
 		return nullptr;
 	}
 
-	void observePin(uint32_t value)
+	uint32_t maskedInterrupts()
 	{
-		const uint32_t level = value & Gpio4Mask ? 1u : 0u;
-		if(level != last_pin)
-			++pin_transitions;
+		const uint32_t raw = fifo_count <= TxTriggerLevel ? InterruptTx : 0u;
+		return raw & read(UartBase + UartImsc);
+	}
+
+	void observeLevel(uint32_t level)
+	{
+		level &= 1u;
+		if(level != last_line_level)
+			++line_transitions;
 		if(level)
-			++pin_high_count;
+			++line_high_count;
 		else
-			++pin_low_count;
-		last_pin = level;
+			++line_low_count;
+		last_line_level = level;
+	}
+
+	void observeByte(uint8_t byte)
+	{
+		// A UART frame on the wire: start bit low, eight data bits LSB first,
+		// stop bit high.
+		observeLevel(0);
+		for(unsigned int b = 0; b < DataBitsPerByte; ++b)
+			observeLevel((byte >> b) & 1u);
+		observeLevel(1);
+
+		++bytes_written_to_wire;
+		if(tx_log_count < TxLogCapacity)
+			tx_log[tx_log_count++] = byte;
 	}
 }
 
@@ -620,15 +708,19 @@ void reset()
 		registers[i].value = 0;
 	}
 
-	pin_transitions = 0;
-	pin_high_count = 0;
-	pin_low_count = 0;
+	fifo_count = 0;
+	tx_log_count = 0;
+	line_transitions = 0;
+	line_high_count = 0;
+	line_low_count = 0;
+	last_line_level = 0;
+	bytes_written_to_wire = 0;
 	carrier_ticks = 0;
-	last_pin = 0;
 	vic_max_priority = 8;
 
-	// A plausible boot state: the low IRQ vector branches into RAM, GPIO4 is an
-	// input, no IRQs are unmasked, and the timer is stopped.
+	// A plausible boot state: the low IRQ vector is not a branch (ROM), the high
+	// table branches into an OS handler, the UART is up at 115200 for RS232, the
+	// UART bus is open, and no IRQs beyond the keypad are unmasked.
 	auto seed = [](uint32_t address, uint32_t value)
 	{
 		RegisterPair *pair = store(address);
@@ -636,36 +728,51 @@ void reset()
 			pair->value = value;
 	};
 
-	// The low table sits in ROM, so its IRQ entry is a plain branch to a handler
-	// that is out of branch range for the program: patching it cannot work. The
-	// high table holds the writable handler the backend is expected to patch.
 	seed(LowIrqVectorAddress, 0xE59FF018u); // ldr pc, [pc, #24], not a branch
 	seed(LowIrqVectorAddress + 4, 0xEAFFFFFEu);
 	seed(HighIrqVectorAddress, 0x0A000038u); // b 0xFFFF0100
 	seed(HighIrqVectorAddress + 4, 0xEAFFFFFEu);
 	seed(0xFFFF0100u, 0xE1A00000u); // the OS handler this build patches
 	seed(0xFFFF0104u, 0xE1A00000u);
-	seed(Gpio4DirectionAddress, Gpio4Mask); // input
-	seed(Gpio4OutputAddress, 0);
-	seed(VicBase + VicIrqCurrent, FastTimerIrqNumber);
-	seed(VicBase + VicIrqVector, FastTimerIrqNumber);
+	seed(PowerBase + PowerPeripheralDisable, 0);
+	seed(UartBase + UartCr, ControlUartEnable | ControlTxEnable | (1u << 9));
+	seed(UartBase + UartLcrH, LineFifoEnable | LineEightDataBits);
+	seed(UartBase + UartIbrd, 12);
+	seed(UartBase + UartFbrd, 13);
+	seed(UartBase + UartIfLs, 0);
+	seed(UartBase + UartImsc, InterruptRx);
+	seed(VicBase + VicIrqCurrent, UartIrqNumber);
+	seed(VicBase + VicIrqVector, UartIrqNumber);
 	seed(VicBase + VicIrqAcknowledge, vic_max_priority);
 	seed(VicBase + VicIrqMaxPriority, vic_max_priority);
-	seed(VicBase + VicIntEnable, 0x00000003u); // keypad and timer sources, say
-	seed(TimerBase + Timer1Control, 0);
-	seed(TimerBase + Timer1Load, 0);
-	seed(TimerBase + TimerClockSelect, 0);
+	seed(VicBase + VicIntEnable, 0x00000003u); // keypad and UART, say
 }
 
 uint32_t read(uint32_t address)
 {
+	if(address == UartBase + UartFr)
+	{
+		uint32_t flags = 0;
+		if(fifo_count >= TxFifoDepth)
+			flags |= FlagTxFifoFull;
+		if(fifo_count == 0)
+			flags |= FlagTxFifoEmpty;
+		return flags;
+	}
+	if(address == UartBase + UartMis)
+		return maskedInterrupts();
+	if(address == UartBase + UartRis)
+		return fifo_count <= TxTriggerLevel ? InterruptTx : 0u;
+	if(address == UartBase + UartDr)
+		return 0;
+
 	const RegisterPair *pair = find(address);
 	if(pair == nullptr)
 		return 0;
 	if(address == VicBase + VicIrqAcknowledge)
 		return vic_max_priority;
 	if(address == VicBase + VicIrqVector)
-		return FastTimerIrqNumber;
+		return UartIrqNumber;
 	if(address == VicBase + VicIntDisable)
 	{
 		// Both mask addresses read back the same register on real hardware.
@@ -677,6 +784,15 @@ uint32_t read(uint32_t address)
 
 void write(uint32_t address, uint32_t value)
 {
+	if(address == UartBase + UartDr)
+	{
+		if(fifo_count < TxFifoDepth)
+			fifo[fifo_count++] = static_cast<uint8_t>(value & 0xFFu);
+		return;
+	}
+	if(address == UartBase + UartIcr)
+		return; // the simulated TX interrupt is level based; nothing to latch
+
 	// On the PL190 the enable and disable addresses are two views of one mask
 	// register, so they must not be modelled as separate storage.
 	if(address == VicBase + VicIntEnable || address == VicBase + VicIntDisable)
@@ -699,9 +815,6 @@ void write(uint32_t address, uint32_t value)
 		vic_max_priority = value;
 	else
 		pair->value = value;
-
-	if(address == Gpio4OutputAddress)
-		observePin(pair->value);
 }
 
 void advanceCarrierTicks(uint32_t ticks)
@@ -709,20 +822,26 @@ void advanceCarrierTicks(uint32_t ticks)
 	for(uint32_t i = 0; i < ticks; ++i)
 	{
 		++carrier_ticks;
-		gpio4IsrBody();
+
+		if(fifo_count > 0)
+		{
+			const uint8_t byte = fifo[0];
+			for(uint32_t j = 1; j < fifo_count; ++j)
+				fifo[j - 1] = fifo[j];
+			--fifo_count;
+			observeByte(byte);
+		}
+
+		// The FIFO falling to the trigger level raises the UART's IRQ 1.
+		txIsrBody();
 	}
 }
 
-uint32_t pinTransitions() { return pin_transitions; }
-uint32_t pinHighCount() { return pin_high_count; }
-uint32_t pinLowCount() { return pin_low_count; }
+uint32_t lineTransitions() { return line_transitions; }
+uint32_t lineHighCount() { return line_high_count; }
+uint32_t lineLowCount() { return line_low_count; }
 uint32_t carrierTickCount() { return carrier_ticks; }
-
-uint32_t timerReloadValue()
-{
-	const RegisterPair *pair = find(TimerBase + Timer1Load);
-	return pair != nullptr ? pair->value : 0;
-}
+uint32_t bytesTransmitted() { return bytes_written_to_wire; }
 
 bool vectorInstalled()
 {
@@ -732,7 +851,6 @@ bool vectorInstalled()
 		&& first->value == 0xE51FF004u && second->value == 0x10002000u;
 }
 
-/** True when the handler slot still holds its original instruction. */
 bool vectorRestored()
 {
 	const RegisterPair *pair = find(0xFFFF0100u);
@@ -756,11 +874,43 @@ bool writeWav(const char *path, uint32_t milliseconds)
 		return false;
 
 	const uint32_t frames = (MixerRateHz * milliseconds) / 1000u;
+	if(frames == 0 || frames + TxFifoDepth * 2 > TxLogCapacity)
+		return false;
+
+	disable(); // start from a clean, torn-down state
+	reset();
+	if(!enable())
+		return false;
+
+	// Push a known 440 Hz tone through the real modulator.
+	uint32_t phase = 0;
+	for(uint32_t frame = 0; frame < frames; ++frame)
+	{
+		phase += static_cast<uint32_t>((static_cast<uint64_t>(440) << 16) / MixerRateHz);
+		const int32_t sample = (phase & 0x8000u) ? 12000 : -12000;
+		pcm_ring[ring_head & (RingFrames - 1)] = static_cast<int16_t>(sample);
+		++ring_head;
+	}
+
+	// Run the wire until every tone byte has been frames ahead of the priming
+	// silence the enable pushed into the FIFO.
+	uint32_t guard = 0;
+	const uint32_t wanted = TxFifoDepth + frames;
+	while(tx_log_count < wanted && guard < frames * 4 + 1000)
+	{
+		advanceCarrierTicks(1);
+		++guard;
+	}
+
+	// Hand the UART back before building the file.
+	disable();
+
+	if(tx_log_count < wanted)
+		return false;
+
 	FILE *file = fopen(path, "wb");
 	if(file == nullptr)
 		return false;
-
-	resetRing();
 
 	const uint32_t data_bytes = frames * 2;
 	const uint32_t riff_size = 36 + data_bytes;
@@ -791,27 +941,16 @@ bool writeWav(const char *path, uint32_t milliseconds)
 	header[43] = static_cast<uint8_t>(data_bytes >> 24);
 	fwrite(header, 1, sizeof(header), file);
 
-	// Push a known 440 Hz tone through the real modulator and reconstruct the
-	// audio by averaging each oversampling window, which is what the 1-bit
-	// stream means once it leaves the pin.
-	uint32_t phase = 0;
+	// Reconstruct each tone byte by the density of ones in its eight data bits,
+	// which is exactly what the far end's low-pass filter sees.
 	for(uint32_t frame = 0; frame < frames; ++frame)
 	{
-		phase += static_cast<uint32_t>((static_cast<uint64_t>(440) << 16) / MixerRateHz);
-		const int32_t sample = (phase & 0x8000u) ? 12000 : -12000;
-
-		pcm_ring[ring_head & (RingFrames - 1)] = static_cast<int16_t>(sample);
-		++ring_head;
-
+		const uint8_t byte = tx_log[TxFifoDepth + frame];
 		uint32_t high = 0;
-		for(uint32_t i = 0; i < OversamplingRatio; ++i)
-		{
-			advanceCarrierTicks(1);
-			if((read(Gpio4OutputAddress) & Gpio4Mask) != 0)
-				++high;
-		}
+		for(unsigned int b = 0; b < DataBitsPerByte; ++b)
+			high += (byte >> b) & 1u;
 
-		int32_t value = static_cast<int32_t>((high * 65535u) / OversamplingRatio) - 32768;
+		int32_t value = static_cast<int32_t>((high * 65535u) / DataBitsPerByte) - 32768;
 		if(value > 32767) value = 32767;
 		if(value < -32768) value = -32768;
 		const uint16_t raw = static_cast<uint16_t>(static_cast<int16_t>(value));

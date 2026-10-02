@@ -392,6 +392,11 @@ void BlockListTask::render()
 {
     drawBackground();
 
+    // CreativeModeInventoryScreen is an AbstractContainerScreen, so the world
+    // behind it is washed in the same gradient the other in-game containers use
+    // (Screen.renderBackground) rather than left at full brightness.
+    MenuUI::drawPauseOverlay(*screen);
+
     const Layout l = layout();
     const Page &page = selectable_pages[current_page];
     const int scale = l.scale;

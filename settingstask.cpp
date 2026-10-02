@@ -71,8 +71,8 @@ SettingsTask::SettingsTask()
     settings.push_back({"Effects volume", nullptr, 101, 70, 0, 10});
     settings.push_back({"Ambience volume", nullptr, 101, 70, 0, 10});
     // Appended last so older save files keep loading (see the comment above).
-    // GPIO4 audio takes over the interrupt vector, so it stays opt-in.
-    settings.push_back({"GPIO4 audio", fastmode_values, 2, 0, 0, 1});
+    // The dock UART output takes over the interrupt vector, so it stays opt-in.
+    settings.push_back({"UART audio", fastmode_values, 2, 0, 0, 1});
     // How often the infinite world places a village. Only chunks generated
     // after a change pick up the new value; already loaded terrain keeps the
     // village it was generated with.
@@ -110,12 +110,12 @@ bool SettingsTask::isToggleEntry(unsigned int entry) const
 
 bool SettingsTask::isVolumeEntry(unsigned int entry) const
 {
-    return entry >= AUDIO_MASTER && entry < AUDIO_GPIO4;
+    return entry >= AUDIO_MASTER && entry < AUDIO_UART;
 }
 
 bool SettingsTask::isAudioEntry(unsigned int entry) const
 {
-    return entry >= AUDIO_MASTER && entry <= AUDIO_GPIO4;
+    return entry >= AUDIO_MASTER && entry <= AUDIO_UART;
 }
 
 void SettingsTask::formatValue(unsigned int entry, char *out, unsigned int size) const
@@ -414,10 +414,10 @@ void SettingsTask::applyAudioSettings()
     GameAudio::setCategoryVolume(GameAudio::CategoryAmbience, ambience);
     GameAudio::setCategoryVolume(GameAudio::CategoryWeather, ambience);
 
-    if(settings[AUDIO_GPIO4].current_value != 0)
-        GameAudioOutput::enableGpio4();
+    if(settings[AUDIO_UART].current_value != 0)
+        GameAudioOutput::enableUartTx();
     else
-        GameAudioOutput::disableGpio4();
+        GameAudioOutput::disableUartTx();
 }
 
 unsigned int SettingsTask::getValue(unsigned int entry) const

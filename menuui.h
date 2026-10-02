@@ -36,8 +36,14 @@ namespace MenuUI
     constexpr COLOR Text = rgb(255, 255, 255);
     constexpr COLOR TextShadow = rgb(63, 63, 63);
     constexpr COLOR TextDisabled = rgb(160, 160, 160);
-    constexpr COLOR Outline = rgb(30, 30, 30);
-    constexpr COLOR Splash = rgb(255, 255, 60);
+    /** Vanilla's splash is pure yellow, 0xFFFF00. */
+    constexpr COLOR Splash = rgb(255, 255, 0);
+    /**
+     * The shadow vanilla gives the splash: `(0xFFFF00 & 0xFCFCFC) >> 2`, the
+     * dark-yellow the font derives for a shadowed line. The button labels and the
+     * headings use the white text's shadow, 0x3F3F3F, which is TextShadow.
+     */
+    constexpr COLOR SplashShadow = rgb(63, 63, 0);
 
     // Vanilla's own numbers, at GUI scale 1. The title screen is laid out from
     // these, which is what makes it match the real one rather than merely
@@ -62,11 +68,13 @@ namespace MenuUI
      * the 274-pixel image (two 155-pixel halves joined) comes out centred -- and
      * the `Java Edition` strip at `width / 2 - 49`, 67 pixels down, over the lower
      * band of the wordmark where vanilla keeps it. The splash is centred at
-     * `width / 2 + 90`, its centre line 70 pixels down, and tilted 20 degrees.
+     * `width / 2 + 90` and tilted 20 degrees, with its text centre 66 pixels down:
+     * vanilla translates to y 70 and then draws the line with its top at local
+     * y -8, so the 8-pixel line occupies 62..70 and is centred on 66.
      */
     constexpr int TitleEditionTop = 67;
     constexpr int TitleSplashOffsetX = 90;
-    constexpr int TitleSplashCentreY = 70;
+    constexpr int TitleSplashCentreY = 66;
     constexpr int TitleSmallPrintBottom = 10; ///< both bottom lines sit this far up
     constexpr int HeadingTop = 15;         ///< where a screen's title sits, at scale 1
 

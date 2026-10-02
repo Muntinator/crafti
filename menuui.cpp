@@ -66,7 +66,7 @@ namespace MenuUI
     // The front-end's own strings. The tasks draw these and nothing else, so the
     // labels and the splashes are in one place and a host test can measure them
     // against the boxes they are drawn in.
-    const char *const versionText = "Muntcraft 1.8.9";
+    const char *const versionText = "Muntcraft 1.9.0";
     const char *const creditText = "Copyright Munt. Do not distribute!";
     const char *const pauseHeading = "Game Menu";
 
@@ -381,18 +381,20 @@ namespace MenuUI
 
     void drawSplash(const char *text, TEXTURE &tex, int x, int y)
     {
-        // Outlined rather than shadowed: the splash sits on the panorama, where a
-        // single shadow is not enough to keep yellow readable.
-        drawString(text, Outline, tex, x - 1, y);
-        drawString(text, Outline, tex, x + 1, y);
-        drawString(text, Outline, tex, x, y - 1);
-        drawString(text, Outline, tex, x, y + 1);
+        // Vanilla draws the splash with the font's ordinary shadow, not an
+        // outline: the same glyphs one pixel down and right in the shadow colour
+        // vanilla derives for a shadowed line (a dark yellow for the yellow
+        // text), with the yellow itself on top. The caller leaves a pixel of
+        // margin, which is where the shadow lands.
+        drawString(text, SplashShadow, tex, x + 1, y + 1);
         drawString(text, Splash, tex, x, y);
     }
 
     void drawSmallPrint(const char *text, TEXTURE &tex, int x, int y)
     {
-        drawString(text, Outline, tex, x + 1, y + 1);
+        // The version and the credits are plain white text: vanilla draws them
+        // with `drawString`, which has no shadow, unlike the centred headings and
+        // the button labels.
         drawString(text, Text, tex, x, y);
     }
 
@@ -547,8 +549,8 @@ namespace MenuUI
 
         // The "Java Edition" strip is centred like the wordmark and sits at
         // vanilla's own y, over the wordmark's lower band; the splash is centred
-        // at (width/2 + 90, 70), which is where vanilla translates to before it
-        // rotates the line 20 degrees.
+        // at (width/2 + 90, 66), which is where vanilla's translated-and-rotated
+        // line (its top at local y -8 under a y-70 origin) actually sits.
         layout.edition_w = edition.width * s;
         layout.edition_h = edition.height * s;
         layout.edition_x = (SCREEN_WIDTH - layout.edition_w) / 2;

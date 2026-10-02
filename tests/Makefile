@@ -1,7 +1,7 @@
 # Host tests for the Crafti audio engine.
 #
 # These compile the same sources the calculator target uses. Only the output
-# backend differs: the GPIO4 code runs against its simulated register file, so
+# backend differs: the UART code runs against its simulated register file, so
 # its register sequence, modulator and teardown are exercised on the host.
 #
 #   make -C tests        build and run everything
@@ -11,9 +11,9 @@ CXX ?= g++
 ROOT := ..
 COMMON := -std=c++11 -O1 -g -I$(ROOT) -I. -Wall -W
 AUDIO_SOURCES := $(ROOT)/audio_manager.cpp $(ROOT)/audio_pack.cpp \
-                 $(ROOT)/audio_nspire_gpio4.cpp $(ROOT)/audio_output.cpp
+                 $(ROOT)/audio_nspire_tx.cpp $(ROOT)/audio_output.cpp
 
-BINS := build/audio_pack_test build/audio_gpio4_test \
+BINS := build/audio_pack_test build/audio_tx_test \
         build/audio_manager_test build/audio_output_test \
         build/livestock_test build/villagegen_test \
         build/worldclock_test build/survival_test \
@@ -37,8 +37,8 @@ build:
 build/audio_pack_test: audio_pack_test.cc $(AUDIO_SOURCES) | build
 	$(CXX) $(COMMON) -DCRAFTI_NO_SDL -o $@ audio_pack_test.cc $(AUDIO_SOURCES)
 
-build/audio_gpio4_test: audio_gpio4_test.cc $(AUDIO_SOURCES) | build
-	$(CXX) $(COMMON) -DCRAFTI_NO_SDL -o $@ audio_gpio4_test.cc $(AUDIO_SOURCES)
+build/audio_tx_test: audio_tx_test.cc $(AUDIO_SOURCES) | build
+	$(CXX) $(COMMON) -DCRAFTI_NO_SDL -o $@ audio_tx_test.cc $(AUDIO_SOURCES)
 
 build/audio_manager_test: audio_manager_test.cc $(AUDIO_SOURCES) | build
 	$(CXX) $(COMMON) -DCRAFTI_NO_SDL -o $@ audio_manager_test.cc $(AUDIO_SOURCES)

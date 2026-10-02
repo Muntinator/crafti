@@ -3,7 +3,7 @@
 #include <stdio.h>
 
 #include "audio_manager.h"
-#include "audio_nspire_gpio4.h"
+#include "audio_nspire_tx.h"
 #include "audio_output.h"
 #include "font.h"
 #include "menuui.h"
@@ -22,8 +22,8 @@ namespace
 		"Weather (thunder)",
 		"Start music",
 		"Stop music",
-		"GPIO4 test: polled tone",
-		"GPIO4 test: timer sweep",
+		"UART test: polled tone",
+		"UART test: sweep",
 		"Back"
 	};
 
@@ -102,43 +102,43 @@ void AudioTestTask::runItem(unsigned int item)
 		setStatus("Music stopped");
 		break;
 
-	case ITEM_GPIO4_POLLED:
+	case ITEM_UART_POLLED:
 	{
-		// Only the pin is driven: no timer, no interrupts, fully reversible.
-		const int periods = GameAudioGpio4::testPolled(1000, 800);
+		// Only the pin is driven: no interrupts, fully reversible.
+		const int periods = GameAudioTx::testPolled(1000, 800);
 		if(periods > 0)
 			snprintf(buffer, sizeof(buffer), "Polled 1 kHz tone, %d periods", periods);
 		else
-			snprintf(buffer, sizeof(buffer), "Polled test failed: %s", GameAudioGpio4::lastError());
+			snprintf(buffer, sizeof(buffer), "Polled test failed: %s", GameAudioTx::lastError());
 		setStatus(buffer);
 		break;
 	}
 
-	case ITEM_GPIO4_TIMER:
-		if(!GameAudioGpio4::supported())
+	case ITEM_UART_SWEEP:
+		if(!GameAudioTx::supported())
 		{
-			setStatus("GPIO4 output requires an original CX");
+			setStatus("UART output requires an original CX");
 			break;
 		}
-		if(!GameAudioOutput::enableGpio4())
+		if(!GameAudioOutput::enableUartTx())
 		{
-			snprintf(buffer, sizeof(buffer), "Timer test failed: %s",
-				GameAudioGpio4::lastError() != nullptr ? GameAudioGpio4::lastError() : "unavailable");
+			snprintf(buffer, sizeof(buffer), "Sweep failed: %s",
+				GameAudioTx::lastError() != nullptr ? GameAudioTx::lastError() : "unavailable");
 			setStatus(buffer);
 			break;
 		}
 		else
 		{
-			const int result = GameAudioGpio4::testTimer(2000);
-			GameAudioOutput::disableGpio4();
+			const int result = GameAudioTx::testSweep(2000);
+			GameAudioOutput::disableUartTx();
 			if(result == 0)
-				snprintf(buffer, sizeof(buffer), "Timer sweep done, %u Hz carrier",
-					static_cast<unsigned int>(GameAudioGpio4::carrierHz()));
+				snprintf(buffer, sizeof(buffer), "Sweep done, %u Hz carrier",
+					static_cast<unsigned int>(GameAudioTx::carrierHz()));
 			else if(result > 0)
-				snprintf(buffer, sizeof(buffer), "Timer sweep done, %d underruns", result);
+				snprintf(buffer, sizeof(buffer), "Sweep done, %d underruns", result);
 			else
-				snprintf(buffer, sizeof(buffer), "Timer sweep failed: %s",
-					GameAudioGpio4::lastError() != nullptr ? GameAudioGpio4::lastError() : "unavailable");
+				snprintf(buffer, sizeof(buffer), "Sweep failed: %s",
+					GameAudioTx::lastError() != nullptr ? GameAudioTx::lastError() : "unavailable");
 			setStatus(buffer);
 		}
 		break;
@@ -181,7 +181,7 @@ void AudioTestTask::render()
 	drawString(GameAudioOutput::backendName(), MenuUI::Text, *screen, 100, y);
 	y += fontHeight() + 2;
 
-	drawString(GameAudioGpio4::status(), MenuUI::Text, *screen, 8, y);
+	drawString(GameAudioTx::status(), MenuUI::Text, *screen, 8, y);
 	y += fontHeight() + 2;
 
 	if(status_timeout > 0)

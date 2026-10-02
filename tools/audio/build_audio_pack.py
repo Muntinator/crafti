@@ -9,7 +9,7 @@ Output  : a single streamable pack file (default `crafti.audp`) plus a generated
 
 On-device format
 ----------------
-GPIO4 is a single digital pin, so everything below is optimised for a 1-bit
+The dock output is a single digital pin, so everything below is optimised for a 1-bit
 output stage driven by a sigma-delta modulator.  The pack therefore stores
 8-bit unsigned mono PCM; the mixer converts that to 1-bit inside the output
 backend.  8-bit unsigned keeps the on-calculator decode trivial (a byte is a

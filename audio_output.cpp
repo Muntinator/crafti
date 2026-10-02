@@ -1,7 +1,7 @@
 #include "audio_output.h"
 
 #include "audio_manager.h"
-#include "audio_nspire_gpio4.h"
+#include "audio_nspire_tx.h"
 
 #ifdef _TINSPIRE
 #include <libndls.h>
@@ -58,8 +58,8 @@ namespace GameAudioOutput
 	bool initialize()
 	{
 #ifdef _TINSPIRE
-		// The calculator has no built-in output. GPIO4 stays off until the user
-		// enables it in the audio settings or runs the audio test.
+		// The calculator has no built-in output. The dock UART stays off until
+		// the user enables it in the audio settings or runs the audio test.
 		return false;
 #elif defined(CRAFTI_HAS_SDL)
 		if(sdl_open)
@@ -92,7 +92,7 @@ namespace GameAudioOutput
 
 	void shutdown()
 	{
-		disableGpio4();
+		disableUartTx();
 
 #ifdef CRAFTI_HAS_SDL
 		if(sdl_open)
@@ -106,34 +106,34 @@ namespace GameAudioOutput
 		active_backend = BackendNone;
 	}
 
-	bool enableGpio4()
+	bool enableUartTx()
 	{
 #ifdef _TINSPIRE
-		if(active_backend == BackendGpio4)
+		if(active_backend == BackendUartTx)
 			return true;
-		if(GameAudioGpio4::enable())
+		if(GameAudioTx::enable())
 		{
-			active_backend = BackendGpio4;
+			active_backend = BackendUartTx;
 			return true;
 		}
 #endif
 		return false;
 	}
 
-	void disableGpio4()
+	void disableUartTx()
 	{
 #ifdef _TINSPIRE
-		if(active_backend == BackendGpio4)
+		if(active_backend == BackendUartTx)
 		{
-			GameAudioGpio4::disable();
+			GameAudioTx::disable();
 			active_backend = BackendNone;
 		}
 #endif
 	}
 
-	bool gpio4Active()
+	bool uartTxActive()
 	{
-		return active_backend == BackendGpio4;
+		return active_backend == BackendUartTx;
 	}
 
 	Backend backend() { return active_backend; }
@@ -144,8 +144,8 @@ namespace GameAudioOutput
 		{
 		case BackendSdl:
 			return "SDL";
-		case BackendGpio4:
-			return "GPIO4";
+		case BackendUartTx:
+			return "UART";
 		default:
 			return "none";
 		}
@@ -157,11 +157,11 @@ namespace GameAudioOutput
 		{
 		case BackendSdl:
 			return "SDL audio callback active";
-		case BackendGpio4:
-			return GameAudioGpio4::status();
+		case BackendUartTx:
+			return GameAudioTx::status();
 		default:
 #ifdef _TINSPIRE
-			return GameAudioGpio4::active() ? GameAudioGpio4::status() : "Calculator audio off (GPIO4 disabled)";
+			return GameAudioTx::active() ? GameAudioTx::status() : "Calculator audio off (UART disabled)";
 #else
 			return "No desktop audio device";
 #endif
@@ -171,8 +171,8 @@ namespace GameAudioOutput
 	void pump()
 	{
 #ifdef _TINSPIRE
-		if(active_backend == BackendGpio4)
-			GameAudioGpio4::pump();
+		if(active_backend == BackendUartTx)
+			GameAudioTx::pump();
 #endif
 	}
 

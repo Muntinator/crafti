@@ -55,7 +55,7 @@ approximation" rather than "exact copy":
 * **Licensing**: the art is Mojang's. This tree commits the converted headers
   next to their source sheets, as it already does for the HUD, the font and the
   container windows; `crafti.audp` is the one asset kept out of the repo (see
-  `GPIO4_AUDIO_TEST.md`).
+  `AUDIO_OUTPUT_TEST.md`).
 
 ---
 
@@ -107,6 +107,23 @@ breath y=18, hunger y=27, xp bar y=64) and the hotbar from `widgets.png`
 
 `container/inventory.png`, `crafting_table.png`, `furnace.png` and
 `generic_54.png` crops, cut by `tools/textures/gen_gui_textures.py`.
+
+Every container now draws `AbstractContainerScreen.renderLabels` the way vanilla
+does: the screen's own title at `(titleLabelX, 6)` and the player's `Inventory`
+label at `(8, imageHeight - 94)`, both in `0x404040`. The title indent is the one
+vanilla gives each screen — `InventoryScreen` at 97, `CraftingScreen` at 29,
+`ContainerScreen` (the chest) at the default 8, and `AbstractFurnaceScreen`
+centred by `(imageWidth - font.width(title)) / 2`. The player's own window is the
+exception it is in vanilla: `InventoryScreen` overrides `renderLabels` to draw
+only its title, so it has no `Inventory` line.
+
+The screens are also washed the way vanilla washes an in-game container:
+`AbstractContainerScreen.render` reaches `Screen.renderBackground`, which lays
+the pause screen's `0xC0101010`..`0xD0101010` gradient over the frozen world (not
+the dirt the standalone menus tile). `InventoryTask::render()` and
+`BlockListTask::render()` call `MenuUI::drawPauseOverlay()` for exactly this; the
+background texture is the world frame every menu shares, so a container opened
+from the pause menu re-washes the same frame rather than double-darkening it.
 
 The player's own inventory also draws the **player model** in its right half,
 the way vanilla's `InventoryScreen` does: `playermodel.{h,cpp}` transcribes
@@ -391,4 +408,4 @@ only Phase 4's reference comparison remains.)*
 * This repository: `starttask.cpp`, `menutask.cpp`, `settingstask.cpp`,
   `menuui.{h,cpp}`, `font.cpp`, `worldhud.cpp`, `inventorytask.cpp`,
   `tools/textures/gen_gui_textures.py`, `textures/Makefile`, `MENU.md`,
-  `GPIO4_AUDIO_TEST.md`.
+  `AUDIO_OUTPUT_TEST.md`.

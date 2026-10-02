@@ -74,7 +74,7 @@ int main(int argc, char *argv[])
     }
 
     // Open the audio pack and pick an output backend. On the calculator this
-    // leaves GPIO4 off; it is opt-in from the audio settings or test screen.
+    // leaves the UART off; it is opt-in from the audio settings or test screen.
     GameAudio::initialize();
     GameAudioOutput::initialize();
 
@@ -135,7 +135,7 @@ int main(int argc, char *argv[])
 #endif
     }
 
-    // Stop audio first: the GPIO4 backend restores its registers and the
+    // Stop audio first: the UART backend restores its registers and the
     // interrupt vector while the rest of the program is still intact.
     GameAudioOutput::shutdown();
     GameAudio::shutdown();

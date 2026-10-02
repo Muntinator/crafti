@@ -167,7 +167,7 @@ static void test_title_layout()
     CHECK(layout.edition_y == TitleEditionTop * uiScale());
     CHECK(layout.edition_y + layout.edition_h <= layout.buttons.top);
 
-    // The splash is centred at vanilla's point (width/2 + 90, 70), tilted, and it
+    // The splash is centred at vanilla's point (width/2 + 90, 66), tilted, and it
     // has to fit on the screen: that is what the anchor is slid left for.
     CHECK(layout.splash_y == TitleSplashCentreY * uiScale());
     CHECK(layout.splash_y < layout.buttons.top);

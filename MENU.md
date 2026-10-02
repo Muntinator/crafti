@@ -200,7 +200,7 @@ uses too:
 | Row | Widget | Entries |
 | --- | --- | --- |
 | a number | a slider (`widgets.png` track + handle) | Distance, Near plane, the four volumes |
-| on/off | a button labelled "Name: On" with a `checkbox.png` tick at its right | Fast mode, Show FPS, Block indicator, Coord indicator, GPIO4 audio, Day/night, Weather |
+| on/off | a button labelled "Name: On" with a `checkbox.png` tick at its right | Fast mode, Show FPS, Block indicator, Coord indicator, UART audio, Day/night, Weather |
 | named values | a button that cycles its list | Leaves, Speed, World, Villages, Day length, GUI scale |
 
 The GUI scale is a new entry, appended last so old save files keep loading. It
@@ -278,7 +278,10 @@ top, and the `tabs` scrollbar handle beside the grid.
   it, and the cursor slot is ringed because nGL cannot blend the translucent
   hover fill;
 - the held entry's name is shown in a vanilla tooltip box under the window, the
-  keyboard's stand-in for the name a mouse would hover up.
+  keyboard's stand-in for the name a mouse would hover up;
+- the world behind the window is washed in the same gradient the other in-game
+  containers use, since `CreativeModeInventoryScreen` is an
+  `AbstractContainerScreen` too.
 
 ## The player inventory shows the player
 
@@ -302,6 +305,17 @@ half of it, and an empty offhand shows the shield outline the window draws for
 it. From the world, the desktop's `F` is vanilla's "swap items with offhand",
 trading the selected hotbar stack with the offhand one, wear and all. The stack
 is saved with the inventory (save format 14).
+
+Every container is also labelled and washed the way vanilla labels and washes it.
+The window carries `AbstractContainerScreen.renderLabels`' two lines in
+`0x404040` -- the screen's own title at `(titleLabelX, 6)`, indented where vanilla
+indents it (97 for the player's `Crafting`, 29 for the crafting table's, the
+default 8 for the chest's `Chest`/`Large Chest`, and centred for the furnace's
+`Furnace`), and the player's `Inventory` at `(8, imageHeight - 94)`. The player's
+own window draws only its title, which is what `InventoryScreen`'s override does.
+Behind every container the world is dimmed in the pause screen's own
+`0xC0101010`..`0xD0101010` gradient, because an in-game container reaches
+`Screen.renderBackground` rather than the dirt the standalone menus tile.
 
 ## Still to do
 

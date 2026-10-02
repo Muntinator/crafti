@@ -201,7 +201,7 @@ Copy the pack to the calculator next to the game:
 
 Without a pack the game still runs and falls back to procedural tones.
 `crafti.audp` is gitignored; the source asset licensing is unresolved, so do not
-redistribute it. See `GPIO4_AUDIO_TEST.md` for the format, the GPIO4 output
+redistribute it. See `AUDIO_OUTPUT_TEST.md` for the format, the UART output
 backend and the audio test mode.
 
 ---
@@ -212,9 +212,9 @@ Notes
 - `tests/` builds against SDL on the desktop and is not part of the CX target.
   The desktop build uses `Makefile.pc`. Run the host tests (audio, livestock,
   village generation) with `make -C tests`.
-- GPIO4 audio is opt-in because it takes over the interrupt vector and the fast
-  timer (Settings → GPIO4 audio, or the Audio Test screen). See
-  `GPIO4_AUDIO_TEST.md`; it still needs real CX hardware validation.
+- UART audio is opt-in because it takes over the interrupt vector and the UART
+  (Settings → UART audio, or the Audio Test screen). See
+  `AUDIO_OUTPUT_TEST.md`; it still needs real CX hardware validation.
 - `LIVESTOCK.md` covers the passive animals, `VILLAGE.md` the procedural
   villages and villagers. Village frequency is a setting (Settings → Villages)
   and, like terrain, is baked into chunk data, so it only affects chunks

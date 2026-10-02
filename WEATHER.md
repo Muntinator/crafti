@@ -234,7 +234,7 @@ playing over a clear sky.
 
 Each lightning strike fires `GameAudio::weatherThunder(distance)` — a one-shot cue
 at the distance to the bolt — on top of the bed. All of this needs the audio pack
-(`crafti.audp`, see GPIO4_AUDIO_TEST.md); without it these calls are no-ops and
+(`crafti.audp`, see AUDIO_OUTPUT_TEST.md); without it these calls are no-ops and
 the game is silent as before.
 
 ## The weather touching the world
