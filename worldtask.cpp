@@ -288,7 +288,8 @@ static bool tryMeleeMob()
         hit_cr->applyMeleeDamage(damage, yr, knockback, looting, fire_aspect);
     else
         hit_v->applyMeleeDamage(damage, yr, knockback, looting, fire_aspect);
-    GameAudio::play(GameAudio::EventMobHit);
+    // The swing is the heavier sample when the hit does more than a bare hand.
+    GameAudio::playerAttack(damage > 1);
 
     // Landing a hit is work: vanilla charges exhaustion for every attack.
     world_task.addExhaustion(Survival::ExhaustionPerAttack);
@@ -361,6 +362,7 @@ void WorldTask::logic(GLFix dt)
 #ifndef _TINSPIRE
     const Uint8 *desktop_keys = SDL_GetKeyState(nullptr);
     const bool desktop_t_held = desktop_keys[SDLK_t] != 0;
+    const bool desktop_f_held = desktop_keys[SDLK_f] != 0;
     const bool desktop_g_held = desktop_keys[SDLK_g] != 0;
     const bool desktop_j_held = desktop_keys[SDLK_j] != 0;
     const bool desktop_x_held = desktop_keys[SDLK_x] != 0;
@@ -369,6 +371,7 @@ void WorldTask::logic(GLFix dt)
     speed_multiplier_held = desktop_v_held;
 #else
     const bool desktop_t_held = false;
+    const bool desktop_f_held = false;
     const bool desktop_g_held = false;
     const bool desktop_j_held = false;
     const bool desktop_x_held = false;
@@ -491,11 +494,13 @@ void WorldTask::logic(GLFix dt)
 
         if(landed_from_fall)
         {
-            GameAudio::play(GameAudio::EventLand);
+            const int fall_blocks = fall_distance.toInteger<int>() / BLOCK_SIZE;
+            // Vanilla has a small and a big landing sound; the big one is the
+            // fall that is tall enough to start hurting.
+            GameAudio::playerFall(Survival::fallDamage(fall_blocks) > 0);
             // Apply fall damage only when not in water, and never during the initial safe spawn.
             if(!safe_spawn_pending && !in_water)
             {
-                const int fall_blocks = fall_distance.toInteger<int>() / BLOCK_SIZE;
                 int dmg = Survival::fallDamage(fall_blocks);
                 // Feather Falling is the boots' enchantment, and it takes its share
                 // off the fall before the armour ever sees it (vanilla applies it to
@@ -567,7 +572,7 @@ void WorldTask::logic(GLFix dt)
         vy = 50;
         can_jump = false;
         Survival::addExhaustion(hunger, Survival::ExhaustionPerJump);
-        GameAudio::play(GameAudio::EventJump);
+        // Vanilla has no jump sound; the landing is what is heard.
     }
 
     // --- audio: footsteps, water/cave ambience --------------------------
@@ -749,7 +754,7 @@ void WorldTask::logic(GLFix dt)
 
     if(key_held_down)
     {
-        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_7) || keyPressed(KEY_NSPIRE_1) || keyPressed(KEY_NSPIRE_3) || keyPressed(KEY_NSPIRE_PERIOD) || keyPressed(KEY_NSPIRE_MINUS) || keyPressed(KEY_NSPIRE_PLUS) || keyPressed(KEY_NSPIRE_MENU) || keyPressed(KEY_NSPIRE_A) || keyPressed(KEY_NSPIRE_DIVIDE) || desktop_t_held;
+        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_7) || keyPressed(KEY_NSPIRE_1) || keyPressed(KEY_NSPIRE_3) || keyPressed(KEY_NSPIRE_PERIOD) || keyPressed(KEY_NSPIRE_MINUS) || keyPressed(KEY_NSPIRE_PLUS) || keyPressed(KEY_NSPIRE_MENU) || keyPressed(KEY_NSPIRE_A) || keyPressed(KEY_NSPIRE_DIVIDE) || desktop_t_held || desktop_f_held;
         key_held_down = key_held_down || desktop_g_held || desktop_j_held || desktop_x_held || desktop_z_held;
     }
 
@@ -1146,6 +1151,13 @@ void WorldTask::logic(GLFix dt)
 
         key_held_down = true;
     }
+    // Vanilla's "swap items with offhand" key: F trades the selected hotbar
+    // stack with the offhand one, wear and all, without opening a window.
+    else if(desktop_f_held)
+    {
+        current_inventory.swapOffhandWithCurrentSlot();
+        key_held_down = true;
+    }
 #ifndef _TINSPIRE
     else
     {
@@ -1422,6 +1434,9 @@ void WorldTask::resetWorld()
     // clock imply rather than whatever the previous world was forced into. It has
     // no bed either, so the last world's is forgotten along with everything else.
     gamemode = 0;
+    // The score is the player's, not the world's: a respawn keeps it (vanilla
+    // keeps a player's score across death), but a new world has a new player.
+    player_score = 0;
     clearWeatherOverride();
     bed_spawn = Bed::SpawnPoint();
     sleeping = false;

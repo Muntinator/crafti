@@ -1,18 +1,17 @@
 #include "helptask.h"
 
 #include "font.h"
+#include "menuui.h"
 #include "worldtask.h"
 
 HelpTask help_task;
 
 HelpTask::HelpTask()
 {
-    background = newTexture(background_width, background_height, 0, false);
 }
 
 HelpTask::~HelpTask()
 {
-    deleteTexture(background);
 }
 
 void HelpTask::makeCurrent()
@@ -23,14 +22,34 @@ void HelpTask::makeCurrent()
     Task::makeCurrent();
 }
 
+void HelpTask::openFrom(Task *from)
+{
+    return_task = from;
+    makeCurrent();
+}
+
+void HelpTask::close()
+{
+    Task *back = return_task;
+    return_task = nullptr;
+
+    if(back != nullptr)
+        back->makeCurrent();
+    else
+        world_task.makeCurrent();
+}
+
 void HelpTask::render()
 {
-    drawBackground();
+    // The same dirt every vanilla menu sits on, with a vanilla heading, rather
+    // than the hand-drawn panel this screen used to be.
+    MenuUI::drawMenuBackground(*screen);
 
-    const unsigned int x = (SCREEN_WIDTH - background->width) / 2;
-    const unsigned int y = (SCREEN_HEIGHT - background->height) / 2;
-    drawTextureOverlay(*background, 0, 0, *screen, x, y, background->width, background->height);
-    drawString("Help for Muntcraft", 0xFFFF, *screen, x, y - fontHeight());
+    const int heading = MenuUI::headingY();
+    MenuUI::drawHeading("Help", *screen, heading);
+
+    const int x = 10 * MenuUI::uiScale();
+    const int y = heading + static_cast<int>(fontHeight()) + 8 * MenuUI::uiScale();
 
     drawString("8-4-6-2: Walk around\t5: Jump\n"
                "7: Put block down   \t9: Destroy block\n"
@@ -44,7 +63,7 @@ void HelpTask::render()
                "Ctrl+.: Take screenshot\n"
                "\n"
                "Programmed by Fabian Vogt\n"
-               "Textures from PureBDcraft by https://bdcraft.net", 0xFFFF, *screen, x + 10, y + 8);
+               "Textures from Minecraft 1.17.1 (Mojang)", MenuUI::Text, *screen, x, y);
 }
 
 void HelpTask::logic(GLFix /*dt*/)
@@ -53,7 +72,7 @@ void HelpTask::logic(GLFix /*dt*/)
         key_held_down = keyPressed(KEY_NSPIRE_ESC);
     else if(keyPressed(KEY_NSPIRE_ESC))
     {
-        world_task.makeCurrent();
+        close();
 
         key_held_down = true;
     }

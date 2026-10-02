@@ -859,6 +859,9 @@ namespace
         SummonPig,
         SummonSheep,
         SummonHorse,
+        SummonWolf,
+        SummonMooshroom,
+        SummonDonkey,
         SummonCreeper,
     };
 
@@ -874,6 +877,9 @@ namespace
         {"pig", SummonPig},
         {"sheep", SummonSheep},
         {"horse", SummonHorse},
+        {"wolf", SummonWolf},
+        {"mooshroom", SummonMooshroom},
+        {"donkey", SummonDonkey},
         {"creeper", SummonCreeper},
         // Villagers are bound to the village they belong to (their home, their
         // bed and their trade all hang off it), so they are deliberately not
@@ -974,6 +980,9 @@ namespace
         case SummonPig: species = Livestock::Species::Pig; break;
         case SummonSheep: species = Livestock::Species::Sheep; break;
         case SummonHorse: species = Livestock::Species::Horse; break;
+        case SummonWolf: species = Livestock::Species::Wolf; break;
+        case SummonMooshroom: species = Livestock::Species::Mooshroom; break;
+        case SummonDonkey: species = Livestock::Species::Donkey; break;
         default: break;
         }
 
@@ -1006,6 +1015,30 @@ namespace
         // The mode is part of the save file, so changing it changes the world.
         world.setDirty();
         setReply(reply, size, "Gamemode %s", Command::gamemodeName(mode));
+    }
+
+    /**
+     * The player's score, which the death screen shows. Bare, it reports the
+     * current value; with a number it sets one, which is the debug stand-in for
+     * vanilla's `/scoreboard players set`.
+     */
+    void commandScore(const Command::Parsed &parsed, char *reply, unsigned int size)
+    {
+        if(parsed.arg_count == 0)
+        {
+            setReply(reply, size, "Score: %d", world_task.score());
+            return;
+        }
+
+        int amount;
+        if(!Command::parseInt(parsed.args[0], amount))
+        {
+            setReply(reply, size, "Score must be a number");
+            return;
+        }
+
+        world_task.setScore(amount);
+        setReply(reply, size, "Score: %d", world_task.score());
     }
 }
 
@@ -1041,6 +1074,7 @@ void runCommand(const char *line, char *reply, unsigned int reply_size)
     case 8: commandSeed(reply, reply_size); break;
     case 9: commandGamemode(parsed, reply, reply_size); break;
     case 10: commandEnchant(parsed, reply, reply_size); break;
+    case 11: commandScore(parsed, reply, reply_size); break;
     default:
         setReply(reply, reply_size, "Unknown command: %s (/help)", parsed.name);
         break;

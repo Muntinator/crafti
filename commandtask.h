@@ -43,6 +43,12 @@ public:
 private:
     /** Filled rectangle straight into the framebuffer; the panel has no texture. */
     static void fillPanel(int x, int y, int width, int height, unsigned short color);
+    /**
+     * Dims a rectangle of the framebuffer in place by half. Vanilla's chat panel
+     * is a black box at about half opacity over the world; nGL cannot blend, so
+     * the same look is baked in by halving what is already there.
+     */
+    static void dimPanel(int x, int y, int width, int height);
     /** Width of a string in pixels, using the same metrics drawString() uses. */
     static unsigned int textWidth(const char *str);
 

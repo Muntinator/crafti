@@ -1,0 +1,171 @@
+# Muntcraft autoplay tour.
+#
+# Run it with `sh tools/pcsim/play.sh`. Times are seconds of *game* time, so the
+# tour reads the same however fast the machine renders; `step` is how much game
+# time one frame carries, and it is raised while waiting and lowered while
+# moving, because motion clips want smooth frames and waiting does not.
+#
+# Lines are:  <time> <command> [args]
+#
+#   step <ms>            game time per frame
+#   key <name> down|up|tap
+#   type <text>          types text, one character every other frame
+#   look <dx> <dy> [n]   per-frame mouse look rate, in pixels (3 px = 1 degree),
+#                        held for n frames and then let go -- which is how a turn
+#                        of a known number of degrees is asked for
+#   btn left|right down|up|tap
+#   caption <text>       what the gallery says about the captures that follow
+#   shot <label>         capture one frame
+#   clip <label> <n> [stride]   capture n frames, one every stride
+#   command <line>       run a console command through runCommand() directly
+#   probe [text] / scan [r]     print the game's state / a height map
+#   echo <text>          a marker in the run log
+#   end
+#
+# Console commands go through `command`, not through typing: runCommand() is the
+# same entry point the console uses, so the reply lands in the run log and no
+# keystroke can be dropped. One command is still typed at the end, on camera, to
+# show the console itself.
+#
+# Key names: esc tab enter space del ctrl shift, the arrows, and single
+# characters for the letters, digits and punctuation keys.
+#
+# Desktop bindings this tour relies on (task.cpp): w/a/s/d move, space jumps,
+# t opens the inventory, tab the menu, r or . the block list, / the console,
+# 1 and 3 step the hotbar, e and q are the two mouse buttons.
+
+0.0    step 120
+0.0    caption The loading screen: Muntcraft's own splash bitmap, drawn through nGL.
+0.0    shot 01-loading
+1.0    caption The title screen, over the pre-rendered 1.17 panorama.
+1.0    shot 02-title
+
+# --- a new terrain world --------------------------------------------------
+1.4    echo starting a new terrain world
+1.4    key space tap
+6.0    command gamemode creative
+6.1    command time set noon
+6.2    command weather clear
+6.4    probe spawned
+6.5    scan 5
+
+# --- the world ------------------------------------------------------------
+7.0    step 33
+7.0    caption A freshly generated seed at noon: a sandy shore, dunes rising away from the water behind the spawn point. The terrain, the sky and the sea are all drawn by the game itself, through nGL.
+7.6    shot 03-world-noon
+8.0    probe at spawn
+
+# A full turn on the spot. 27 captures every 5th frame is 135 frames, and 135
+# frames of 8 px of mouse per frame is exactly one 360 degree turn.
+8.2    echo --- panorama: a full turn on the spot
+8.2    caption The panorama clip: one full turn from the spawn point, played as an animation by the gallery.
+8.2    look 8 0 135
+8.2    clip 04-panorama 27 5
+13.4   caption The horizon at the end of the turn, with the sea behind the dunes.
+13.6   shot 05-horizon
+13.9   probe after the turn
+
+# Walk forward into the world.
+14.5   echo --- walking
+14.5   caption Walking forward: the camera bobs and the terrain scrolls past. This is the second clip the gallery plays.
+14.5   key w down
+14.6   clip 06-walk 16 4
+16.9   caption Standing still again: the walk ended on the slope above the shore.
+17.0   key w up
+17.2   shot 07-after-walk
+17.4   probe after walking
+
+# --- building -------------------------------------------------------------
+18.6   step 120
+18.6   echo --- flattening a plot, then placing blocks into it
+18.6   command fill -4 16 2 4 22 7 0
+18.7   command fill -4 15 2 4 15 7 sand
+18.8   command setblock -4 16 4 planks
+18.9   command setblock -3 16 4 cobblestone
+19.0   command setblock -2 16 4 bricks
+19.1   command setblock 2 16 4 "diamond block"
+19.2   command setblock 3 16 4 "gold block"
+19.3   command setblock 4 16 4 "iron block"
+19.4   command setblock -3 16 5 cobblestone
+19.5   command setblock -3 17 5 torch
+19.6   command setblock 2 16 5 chest
+19.7   command setblock 2 16 3 bed 0
+19.8   command setblock 2 16 2 bed 8
+19.9   command fill -4 16 7 4 18 7 bricks
+20.0   command setblock 0 16 7 door 0
+20.1   command setblock 0 17 7 door 8
+20.4   command give "diamond sword"
+20.5   command give "iron pickaxe"
+20.6   command give torch 64
+20.7   command give planks 64
+20.8   command give cobblestone 64
+20.9   command give bricks 64
+21.0   command give chest
+21.1   command give bed
+21.2   command give door
+21.3   command give "iron helmet"
+21.4   command give "diamond chestplate"
+21.5   command give "iron ingot" 64
+21.6   command give bread
+22.2   caption A building plot flattened with /fill and rebuilt with /setblock: a brick wall with a door, a chest, a bed, a torch on a pillar and a palette of blocks. The hotbar along the bottom shows what /give handed over.
+22.4   shot 08-built
+22.6   probe built
+
+# --- the inventory screen -------------------------------------------------
+23.4   echo --- the inventory screen
+23.4   caption The inventory: nine hotbar slots and twenty-seven storage slots, holding the tools, armour, blocks and food the console handed over.
+23.4   key t tap
+24.4   shot 09-inventory
+25.4   key t tap
+
+# --- mobs -----------------------------------------------------------------
+26.4   echo --- animals and a creeper
+26.4   command summon cow ~-1 ~ ~5
+26.6   command summon creeper ~1 ~ ~5
+27.6   caption A summoned cow and a creeper standing on the plot two blocks in front of the player.
+27.8   shot 10-mobs
+28.0   probe after summoning
+
+# --- night ----------------------------------------------------------------
+28.8   echo --- dusk, stars and a torch
+28.8   command time set night
+29.8   caption Night: the sun is gone, the sky has darkened and the terrain with it.
+30.0   shot 11-night
+30.4   look 0 -6 36
+31.8   caption Looking up: the stars come out once the sky is dark enough.
+32.0   shot 12-night-sky
+32.2   look 0 6 36
+33.0   probe night
+33.2   command weather snow
+
+# --- weather --------------------------------------------------------------
+34.0   echo --- snow
+35.4   caption Weather forced to snow from the console: flakes fall past the camera and the ground whitens as the snow settles.
+35.6   shot 13-snow
+
+# --- menus ----------------------------------------------------------------
+36.6   echo --- the pause menu and the block list
+36.6   key tab tap
+37.4   caption The pause menu, drawn over the dimmed world.
+37.6   shot 14-pause
+38.2   key esc tap
+38.8   key period tap
+39.6   caption The block list: every block the game has, as its texture atlas.
+39.8   shot 15-blocks
+40.6   key esc tap
+
+# --- the console, typed at ------------------------------------------------
+41.4   echo --- the console, typed at rather than run directly
+41.4   key slash tap
+42.0   type enchant
+44.4   key enter tap
+45.6   caption The debug console, with /enchant typed into it: the enchanting table's offers for the held diamond sword, and the game's reply underneath.
+45.8   shot 16-console
+46.8   key esc tap
+
+# --- home again -----------------------------------------------------------
+47.8   caption Back in the world, with the HUD along the bottom of the screen.
+48.0   shot 17-final
+48.4   probe the end
+48.8   echo --- tour finished
+49.2   end

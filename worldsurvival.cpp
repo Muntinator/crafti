@@ -171,7 +171,7 @@ void WorldTask::applyDamage(int amount, Survival::Damage source, const char *msg
     if(amount > 0)
         health -= amount;
 
-    GameAudio::play(GameAudio::EventPlayerDamage);
+    GameAudio::playerHurt();
 
     if(health <= 0)
     {
@@ -482,7 +482,7 @@ bool WorldTask::tryEat()
     if(food->extra.effect != Survival::NoEffect)
         addEffect(food->extra.effect, Survival::secondsToTicks(food->extra.seconds), food->extra.amplifier);
 
-    GameAudio::play(GameAudio::EventMenuSelect);
+    GameAudio::playerEat();
     return true;
 }
 
@@ -490,5 +490,11 @@ void WorldTask::addExperience(int amount)
 {
     if(amount <= 0)
         return;
+
+    const int level_before = Survival::levelFromTotalXp(total_xp);
     total_xp += amount;
+
+    // The jingle plays when the level itself crosses, not on every orb.
+    if(Survival::levelFromTotalXp(total_xp) > level_before)
+        GameAudio::playerLevelUp();
 }

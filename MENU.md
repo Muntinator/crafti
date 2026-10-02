@@ -1,58 +1,335 @@
-# The front-end: the title screen and the pause menu
+# The front-end: the title screen, the pause menu, the options and the loading screen
 
-Muntcraft's title screen is meant to be recognised as Minecraft's: dirt behind
-everything, a stone wordmark across the top, a yellow splash line tucked under it,
-grey bevel buttons with a white border on the one you are on, and the version and
-credits along the bottom. The pause menu is the same widgets over the world it
-paused, with no heading — vanilla's pause screen is buttons and nothing else.
+Muntcraft's title screen is meant to be recognised as Minecraft's, and it is now
+laid out with vanilla's own numbers: the panorama behind everything, the official
+wordmark image across the top with the "Java Edition" strip under it, a yellow
+splash line tilted up to the right and pulsing beside the wordmark, vanilla's
+button block (three 200-pixel buttons, then two 98-pixel ones sharing a row),
+and the version and credits along the bottom. The pause menu is vanilla's
+`PauseScreen`: the world it paused washed in the screen's dark gradient, headed
+"Game Menu" at y 40, with vanilla's own button grid -- a full-width button, three
+rows of two, then a full-width button -- carrying vanilla's entries in vanilla's
+order (this game's Help and Block List stand in for Advancements and Statistics).
+The options screen is vanilla's
+two-column widget grid on the official dirt, and the loading screen is the same
+dirt with the client's own "Loading terrain..." line and a progress bar.
 
-## Muntcraft
+Most of it is no longer painted in code: the background, the buttons and the
+wordmark are the real Minecraft 1.17.1 art, cut out of `textures/` by
+`tools/textures/gen_gui_textures.py` into headers the engine embeds. The splash is
+the one piece still drawn, because it is text, it is different every visit and it
+is rotated -- but the words are vanilla's, taken from the client's own
+`texts/splashes.txt` rather than written here (see below).
 
-The game is called Muntcraft everywhere a player can read the name: the title
-screen's wordmark, the version line (`Muntcraft 1.8.9`), the help heading and the
-file. The save file keeps the name `crafti.map.tns` it has always had, because that
-is the name the calculator's file association is registered under and renaming it
-would orphan every world that already exists.
+## Vanilla's geometry
+
+The title screen is built from the same numbers the real one is, so a change that
+moves something has to move it in `menuui.h` rather than in the screen:
+
+| Piece | Vanilla 1.17.1, at GUI scale 1 |
+| --- | --- |
+| button | 200x20, one 4-pixel gap, so a 24-pixel pitch |
+| title buttons | three full-width from `height / 4 + 48`, then two 98-wide on a shared row `72 + 12` below them, at `width/2 - 100` and `width/2 + 2` |
+| wordmark | `gui/title/minecraft.png`, its top at y 30, centred |
+| wordmark crop | the two 155x44 halves vanilla blits from `(0,0)` and `(0,45)`, joined into one 274x44 image (so it lands at `width/2 - 137`) |
+| edition strip | `gui/title/edition.png`, centred, its top at y 67 (over the wordmark's lower band, where vanilla puts it) |
+| splash | centred at `(width/2 + 90, 70)`, rotated -20 degrees, pulsing |
+| version / credits | both at `height - 10`, the version from x 2 and the credits ending 2 pixels inside the right edge |
+| background | the panorama, pre-rendered (see below) |
+
+`uiScale()` is the engine's GUI scale: 1 on the calculator's 320x240 and 2 on the
+desktop's 640x480, so every number above is doubled on a desktop, exactly as
+vanilla multiplies them by the GUI scale.
+
+The splash's scale is vanilla's too: a line is drawn at about
+`180% * 100 / (width + 32)`, which makes any line roughly the same size on the
+screen, and it pulses `0..10..0` (vanilla's `|sin| * 0.1`), twice a second. A
+320-pixel screen cannot hold a long line where vanilla centres it, so the anchor
+slides left until the line fits; vanilla's own centre is still what is asked for
+whenever there is room for it.
+
+## The splash, and where its words come from
+
+The lines are vanilla's. `texts/splashes.txt` holds 427 of them, which is more
+text than this front-end wants to carry, so `menuui.cpp` keeps a hundred of them
+verbatim and in the file's own order. Two things are dropped: the lines written
+in characters the font has no glyphs for (the atlas is one byte per glyph, so a
+UTF-8 accent would draw two), and the one-in-ten-thousand "Minceraft" easter egg,
+which in vanilla swaps the wordmark image as well as the line -- and this screen's
+wordmark is the plain 274x44 logo the sheet's first two halves make, with no such
+variant.
+
+## The font
+
+The game's own 16x14 bitmap font is gone. The front-end now draws with vanilla's
+8-pixel font (`font/ascii.png`, a 16x16 grid of 8x8 cells), sampled and advanced by
+the same cell-and-advance model, so `font.cpp`, the HUD, the console and the
+inventory all keep working unchanged:
+
+- `font_bmp.h` / `font_dat.h` are the atlas and its metrics, generated by
+  `tools/textures/gen_gui_textures.py`. The advances are derived by scanning each
+  cell for its rightmost opaque column -- vanilla's own rule -- so no hand-written
+  width table can drift away from the atlas.
+- The desktop runs the same front-end at twice the scale, so it gets the doubled
+  atlas and doubled advances (`font_bmp_wide.h` / `font_dat_wide.h`), which is what
+  vanilla does when the GUI scale goes up. `font.cpp` picks the pair by build.
+
+## The panorama
+
+Vanilla renders six cubemap faces every frame. A calculator cannot hold six
+1024x1024 faces, let alone project them, so the generator picks one face, crops the
+4:3 window through it whose horizon sits closest to the middle, brightens it (the
+1.17 panorama is a dim scene, and nGL has no blending to tint it with) and writes
+`textures/title_backdrop.h` at the calculator's 320x240. The desktop stretches it
+by two, like everything else on that screen.
 
 ## What is drawn, and where it lives
 
 | Piece | Where |
 | --- | --- |
-| the palette, the widgets, the wordmark, the splash, the layouts, and every string the front-end shows | `menuui.h` / `menuui.cpp` |
+| the widgets, the layouts and every string the front-end shows | `menuui.h` / `menuui.cpp` |
+| the official wordmark and edition strip | `textures/title_logo.h` (274x44, composed from the two source halves), `textures/edition.h` |
+| the button's three 200x20 states | `textures/menu_button.h` |
+| the pre-rendered panorama | `textures/title_backdrop.h` |
+| the font | `textures/font_bmp*.h`, `textures/font_dat*.h`, read by `font.cpp` |
 | the title screen: choosing a world, or quitting | `starttask.cpp`, drawing through MenuUI |
-| the pause menu: back to the game, the options, saving | `menutask.cpp`, drawing through MenuUI |
-| the scaled text the wordmark is made of | `drawStringScaled()` in `font.cpp` |
+| the pause menu: the gradient wash, the "Game Menu" heading and vanilla's button grid | `menutask.cpp`, drawing through MenuUI |
+| the options screen: the two-column widget grid | `settingstask.cpp`, drawing through MenuUI |
+| the loading screen: the dirt, the label and the bar | `MenuUI::drawLoadingScreen()`, called from `chunk.cpp` |
+| the death screen: the red fade, the doubled title and the two buttons | `deathtask.cpp`, drawing through MenuUI |
+| the block list: the vanilla creative inventory, tabs and all | `blocklisttask.cpp`, drawing the official `creative_inventory` art (`textures/creative_window.h`, `creative_tabs.h`, `creative_scroll.h`) |
+| the help, sound test and graph screens | `helptask.cpp`, `audiotesttask.cpp`, `graphtask.cpp`, drawing through MenuUI |
+| the scaled text the doubled title needs | `font.cpp` (`drawStringScaled()` and friends) |
+| the dirt backdrop every menu is tiled with | `textures/menu_background.h` |
+| the slider handle and the checkbox | `textures/slider_handle.h`, `textures/checkbox.h` |
 | the layout test | `tests/menuui_test.cc`, built at both screen sizes |
 
 The layout is deliberately in the module rather than in the two tasks: the strings
 and the boxes they have to fit in are decided together, which is what lets a host
-test check that every label fits its button, that the wordmark and its outline fit
-a 320-pixel screen, and that the column of buttons never reaches the small print
-at the bottom. That test is built twice — once for the calculator (320x240) and
-once for the desktop window (640x480), where the front-end scales by two.
+test check that every label fits its button, that the wordmark, the edition strip
+and the splash all fit a 320-pixel screen, that the first title button is at
+vanilla's own height and that the column never reaches the small print at the
+bottom. That test is built twice -- once for the calculator (320x240, an 8-pixel
+font) and once for the desktop window (640x480, a 16-pixel one).
+
+## Input
+
+The calculator drives the title screen with Up/Down and `5`, as before: the
+selection walks the button block, skipping any button that cannot be used. A
+desktop also has a mouse, so it gets the focus-by-hover vanilla has: the pointer
+picks the button and lights it, a click takes it, and a click cue plays as it does
+on the calculator. A disabled button -- "Continue" before a world has ever been
+saved -- is drawn in the widget sheet's greyed row and cannot take the highlight,
+which is exactly vanilla's rule.
+
+`tools/pcsim/titlemenu.txt` is the frame script for this screen: it captures the
+menu, a hover, the disabled button, the keyboard moving the selection, a click
+that opens the graph screen and a click that starts a world.
 
 ## Optimisations in this pass
 
-- **The backdrop is drawn once.** The dirt is tiled and dimmed into a screen-sized
-  texture the first time the title screen is shown and blitted from then on, so the
-  screen costs one copy per frame instead of two hundred and fifty-six scaled tile
-  draws plus a full-screen darkening pass.
-- **The wordmark is drawn once**, outlines, extrusion and bevel included, into a
-  texture that is then blitted with its transparent key. Redrawing it per frame
-  would be a few thousand pixel writes to say the same thing.
-- **The pause screen's dimming is a mask and a shift.** Halving every channel of a
-  565 pixel is `(c & 0xF7DE) >> 1`, which is the fast path `MenuUI::shadeRect()`
-  takes at 50% — the case the menus use.
+- **The backdrop is one blit.** The panorama is a pre-rendered frame, so the screen
+  costs a single stretched copy per frame rather than six projected faces.
+- **The wordmark is a texture**, like the buttons: blitted with its transparent
+  key, not spelled out of the font with an outline, an extrusion and a bevel.
+- **The splash is drawn once per visit.** It is the only thing the screen has to
+  build: text, tinted and outlined into a small texture, which is then blitted
+  tilted and scaled. A visit allocates it and leaving gives it back.
+- **The pause screen's dimming is one masked pass over the framebuffer.** Vanilla
+  blends a gradient `0xC0101010`..`0xD0101010` over the frozen world; nGL cannot
+  blend, so `MenuUI::drawPauseOverlay()` unpacks each 565 pixel, mixes it toward
+  the gradient's grey `0x10` by that row's own alpha and packs it back -- the
+  result vanilla's blend would produce, with no extra pass. `MenuUI::shadeRect()`
+  keeps the 50% fast path (`(c & 0xF7DE) >> 1`) for the screens that want a flat
+  half shade, like the command console's dimmed world.
 - **Text can no longer draw outside the screen.** The font used to write wherever
   an unsigned coordinate pointed, so a centred line wider than the screen corrupted
-  whatever followed the framebuffer. Both `drawString()` and `drawStringCenter()`
-  now clip.
+  whatever followed the framebuffer. `drawString()` clips, and a character whose
+  code is outside the atlas is clamped rather than read past it.
+
+## The pause menu
+
+`menutask.cpp` is vanilla's `PauseScreen`, geometry and all. It is drawn over the
+last world frame (saved once, when the menu opens), and everything below is
+vanilla's own number at GUI scale 1:
+
+| Piece | Vanilla 1.17.1, at GUI scale 1 |
+| --- | --- |
+| background | `Screen.renderBackground`'s vertical gradient, ARGB `0xC0101010` to `0xD0101010` (~75% to ~81% opacity), mixed into the framebuffer because nGL cannot blend |
+| heading | **"Game Menu"**, centred at y 40 |
+| first button | `height / 4 + 8`, on a 24-pixel pitch |
+| grid | a 204-wide button, three rows of two 98-wide buttons, then a 204-wide button |
+| columns | `width / 2 - 102` and `width / 2 + 4` |
+
+The eight entries are vanilla's own slots, in vanilla's own order -- `Back to
+Game`, then `Help` / `Block List`, `Save World` / `Sound Test...`, `Options...` /
+`Player Inventory`, then `Save and Quit to Title`. Where vanilla puts
+"Advancements", "Statistics", "Send Feedback", "Report Bugs" and "Share to LAN",
+this engine puts the screens it actually has: the two stand-ins above, and Save
+World, Sound Test and Player Inventory. The layout, the box every button is drawn
+in and the box a click is tested against all come from `MenuUI::pauseMenuLayout()`,
+so the drawing and the hit test cannot disagree; the host test pins the whole grid
+at both screen sizes.
+
+The screens opened from the pause menu are its **children**, as they are in
+vanilla: `Options...`, `Help` and `Block List` each take a `return_task`
+(`openFrom()`), so closing one comes back to the pause menu rather than dropping
+the player into the game. `Back to Game` and Esc return to the world; `Save and
+Quit to Title` writes the world and returns to the title screen. A desktop also
+gets vanilla's focus-by-hover: the pointer lights the button under it and a click
+takes it.
+
+`tools/pcsim/pausemenu.txt` is the frame script for this screen. It captures the
+menu over the world, the keyboard stepping the selection and the pointer hovering
+a button, `Options...` opening and closing back to the pause menu, `Player
+Inventory` opened the same way, `Back to Game` resuming the world -- the resumed
+frame is the same scene as the shot before the menu opened, within a few thousand
+pixels -- and `Save and Quit to Title` landing on the title screen.
+
+## The options screen
+
+`settingstask.cpp` no longer draws a text list. It now draws what vanilla draws:
+the dirt backdrop every menu is tiled with (dimmed to a quarter, baked in because
+nGL cannot blend), vanilla's two 150-pixel columns of widgets on a 24-pixel pitch
+starting at `height / 6 - 12`, and a wide "Done" button at the bottom. The grid
+scrolls with the selection, because a 320x240 screen shows seven of the ten rows.
+
+Each row picks its widget from the entry's own shape, which is the rule vanilla
+uses too:
+
+| Row | Widget | Entries |
+| --- | --- | --- |
+| a number | a slider (`widgets.png` track + handle) | Distance, Near plane, the four volumes |
+| on/off | a button labelled "Name: On" with a `checkbox.png` tick at its right | Fast mode, Show FPS, Block indicator, Coord indicator, GPIO4 audio, Day/night, Weather |
+| named values | a button that cycles its list | Leaves, Speed, World, Villages, Day length, GUI scale |
+
+The GUI scale is a new entry, appended last so old save files keep loading. It
+is vanilla's own list (Auto, 1x, 2x, 3x, 4x), and changing it moves the
+front-end immediately; on the calculator every choice above 1x collapses to the
+scale the screen can actually hold, which is what `MenuUI::uiScale()` reports.
+
+## The loading screen
+
+`chunk.cpp`'s `drawLoadingtext()` used to blit the game's own `loadingtext.png`
+straight to the calculator's framebuffer. It now draws vanilla's loading screen
+into the frame buffer: the same dirt, the client's own "Loading terrain..."
+label, and a progress bar. A blocking load cannot report how far along it is, so
+the bar is drawn full -- it spans the whole wait. The screen is flushed as soon as
+it is drawn, because the frame's own render fills over it before `nglDisplay()`
+would otherwise show it.
+
+## The death screen
+
+`deathtask.cpp` used to draw its own panel and hand-rolled buttons. It is now
+vanilla's `DeathScreen` end to end:
+
+- the red wash over the world, a vertical gradient from (alpha 0x60, red 0x50) to
+  (alpha 0xA0, red 0x80) -- vanilla's own two ends, mixed into the framebuffer
+  because nGL cannot blend (`MenuUI::drawDeathOverlay()`),
+- **"You Died!"** at twice the GUI scale (`MenuUI::drawHeadingScaled()`, which
+  reads the same 8-pixel atlas at 2x), centred at vanilla's y 60,
+- a line where vanilla puts the cause of death (this engine has no damage log, so
+  it says which spawn the player is returning to) and a `Score:` line under it,
+- two ordinary widget buttons from `height / 4 + 72`: **Respawn** and
+  **Title Screen**, the same 200x20 art in its plain and highlighted states and
+  the same 24-pixel pitch as every other menu.
+
+The strings are 1.17.1's own `deathScreen.*` values, kept in `menuui.cpp` beside
+the rest so the test measures what the task draws.
+
+## The screens vanilla does not have
+
+The help, sound test and graphing screens have no counterpart in
+vanilla, so they are not recreated from one -- but they now use the same front-end
+as the screens that do. Each is drawn on the dirt every vanilla menu is tiled with
+(`MenuUI::drawMenuBackground()`), heads itself with `MenuUI::drawHeading()`, and
+uses the official widget button instead of a hand-drawn box:
+
+- **help** lost its dark panel and its stale `PureBDcraft` texture credit, which
+  was wrong once the textures became vanilla's;
+- **sound test** draws its ten rows with the real button art (packed tighter than
+  the standard pitch, because ten rows do not fit a 240-pixel screen otherwise);
+- **graphing mode** draws its expression box the way vanilla draws a text field --
+  a black box inside a light grey border -- on the menu backdrop;
+- **the command console** is a vanilla chat-style panel: the world is dimmed by
+  half rather than covered with an opaque blue-grey, so white text reads over it
+  exactly as chat does.
+
+## The block list is the creative inventory
+
+The block list is not a no-counterpart screen any more: it *is* vanilla's creative
+inventory. It draws the official `gui/container/creative_inventory` art at
+vanilla's own coordinates -- the 195x136 `tab_items` window (whose 9x5 slot grid,
+hotbar and scrollbar track are baked into the sheet), the `tabs` strip along the
+top, and the `tabs` scrollbar handle beside the grid.
+
+- the window is centred and the grid sits at (9,18) on an 18-pixel pitch, exactly
+  where the real screen puts it;
+- a **tab** is a 28x32 cell of `tabs.png` at x = guiLeft + 29*i (i > 0; the first
+  is flush), 28 pixels above the window, and the selected tab is the same cell
+  from the sheet's lighter band -- vanilla's own two-band layout. A tab's icon is
+  its category item, drawn 6 pixels in and 9 down (the top row's own offset);
+- the three pages (`Blocks`, `Items`, `Tools`) are the three tabs, so 7/9 switch
+  tabs and switch pages at the same time;
+- a page taller than the five visible rows scrolls a row at a time to keep the
+  cursor on screen, and the scrollbar handle sweeps the track by
+  `(112 - 17)` pixels, vanilla's own travel;
+- the player's hotbar is drawn inside the window, where the creative screen keeps
+  it, and the cursor slot is ringed because nGL cannot blend the translucent
+  hover fill;
+- the held entry's name is shown in a vanilla tooltip box under the window, the
+  keyboard's stand-in for the name a mouse would hover up.
+
+## The player inventory shows the player
+
+The player's own inventory is not just the window and its slots: vanilla's
+`InventoryScreen` draws the player standing in the right half of it, turning to
+follow the pointer. That figure is `PlayerModel`, transcribed into the same Mob
+tables the world's mobs use (`playermodel.cpp`, `mobmodel.{h,cpp}`), unwrapped
+against the official 64x64 Steve skin and projected the way a GUI window needs --
+a model hung off nGL's near plane comes out at 1:1 with the screen's centre as
+the origin, so it is just translated to `(51,75)` of the window. The mouse rule is
+vanilla's own `atan(dx/40)`: the body turns half as far as the head, and the whole
+figure leans back and forth with the pointer's height. The window's "Crafting"
+label is drawn with it. The armour slots, the 2x2 grid and the result are the
+same ones the container screens have always had.
+
+The window also carries vanilla's **offhand slot** at `(77,62)`, which only the
+player's own inventory has -- the crafting table's and the furnace's menus do not
+carry one. It holds any item, not only a shield, and behaves exactly as a plain
+inventory slot does: a left click moves the whole stack either way, a right click
+half of it, and an empty offhand shows the shield outline the window draws for
+it. From the world, the desktop's `F` is vanilla's "swap items with offhand",
+trading the selected hotbar stack with the offhand one, wear and all. The stack
+is saved with the inventory (save format 14).
+
+## Still to do
+
+Nothing on the front-end. Every screen is drawn from vanilla's own numbers, and
+the ones vanilla does not have stand where vanilla's would: `Help` takes
+"Advancements" (the in-game guide), `Block List` takes "Statistics" (the
+catalogue of blocks and items), and this game's `Save World`, `Sound Test...` and
+`Player Inventory` fill the rest of the pause grid. The frame comparisons against
+a reference display are `tools/pcsim/titlemenu.txt` (the main menu),
+`tools/pcsim/pausemenu.txt` (the pause menu), `tools/pcsim/inventory.txt` (the
+player inventory and its model) and `tools/pcsim/ui.txt` (the screens behind
+them). See `GUI_VANILLA_PORT.md`.
+
+## Muntcraft
+
+The game is called Muntcraft everywhere a player can read the name except the
+wordmark itself, which is the real Minecraft logo: the version line
+(`Muntcraft 1.8.9`), the credits, the help heading and the file. The save file
+keeps the name `crafti.map.tns` it has always had, because that is the name the
+calculator's file association is registered under and renaming it would orphan
+every world that already exists.
 
 ## The people in the world
 
-The player and the villagers are the only humanoids. There was a Steve mob — a
+The player and the villagers are the only humanoids. There was a Steve mob -- a
 second, ambiguous humanoid that only a debug command could create and that did
-nothing but stand there — and it is gone: entity, spawn path, melee target and
-debug count. Villagers keep the humanoid model and the shared skin, which now
-lives in `textures/steve.h` directly rather than behind the deleted entity's
-accessor. `/summon` offers animals and creepers only.
+nothing but stand there -- and it is gone: entity, spawn path, melee target and
+debug count. Villagers keep the humanoid model and the official villager skin, which now
+lives in `textures/villager.h` (generated from
+`textures/entity/villager/type/plains.png`) rather than behind the deleted
+entity's accessor. `/summon` offers animals and creepers only.

@@ -11,9 +11,8 @@
 #include "oregeneration.h"
 #include "villagegen.h"
 #include "structuregen.h"
-
-//Texture with "Loading" written on it
-#include "textures/loadingtext.h"
+#include "menuui.h"
+#include "task.h"
 
 #ifndef NDEBUG
     #define debug(...) printf(__VA_ARGS__)
@@ -1487,7 +1486,7 @@ void drawLoadingtext(const int i)
         return;
     }
 
-    if(shown == true)
+    if(shown)
         return;
 
     count += 1;
@@ -1496,13 +1495,14 @@ void drawLoadingtext(const int i)
 
     shown = true;
 
-    if(lcd_type() != SCR_320x240_565 && lcd_type() != SCR_320x240_4)
+    // Vanilla's loading screen: the dirt every menu is drawn on, the label and a
+    // progress bar. A blocking load cannot say how far along it is, so the bar is
+    // drawn full -- it spans the whole wait. The screen is flushed here rather than
+    // left for the end of the frame, because the load returns before the frame's
+    // own render fills over it.
+    if(Task::screen == nullptr)
         return;
-    #ifdef _TINSPIRE
-        TEXTURE screen;
-        screen.width = SCREEN_WIDTH;
-        screen.height = SCREEN_HEIGHT;
-        screen.bitmap = reinterpret_cast<COLOR*>(REAL_SCREEN_BASE_ADDRESS);
-        drawTexture(loadingtext, screen, 0, 0, loadingtext.width, loadingtext.height, (SCREEN_WIDTH - loadingtext.width) / 2, 0, loadingtext.width, loadingtext.height);
-    #endif
+
+    MenuUI::drawLoadingScreen(*Task::screen, MenuUI::loadingLabel, 100);
+    nglDisplay();
 }

@@ -168,6 +168,43 @@ static void test_sky_light()
         previous = light;
     }
 
+    // The middle of the day is flat, not a peak: a sun 64 degrees up at 09:00
+    // and again at 15:00 both give full daylight, which is what stops the whole
+    // afternoon from reading as a permanent dusk.
+    setTime(3000); // 09:00
+    CHECK(skyLightLevel() == MaxSkyLight);
+    setTime(9000); // 15:00
+    CHECK(skyLightLevel() == MaxSkyLight);
+
+    // It brightens monotonically from dawn to noon as well.
+    setTime(TimeSunrise);
+    int morning = skyLightLevel();
+    for(unsigned int t = TimeSunrise; t <= TimeNoon; t += 250)
+    {
+        setTime(t);
+        CHECK(skyLightLevel() >= morning);
+        morning = skyLightLevel();
+    }
+
+    // The golden hour is a smoothstep between the two plates, so it arrives at
+    // full daylight with zero slope: the tick before the boundary is already
+    // within a rounding of it, where a straight ramp would still be several
+    // levels short and the plateau edge would show as a step.
+    unsigned int first_full = 0;
+    for(unsigned int t = TimeSunrise; t <= TimeNoon; t += 5)
+    {
+        setTime(t);
+        if(skyLightLevel() == MaxSkyLight)
+        {
+            first_full = t;
+            break;
+        }
+    }
+    CHECK(first_full > TimeSunrise); // dawn is not full daylight
+    CHECK(first_full < TimeNoon);
+    setTime(first_full - 1);
+    CHECK(skyLightLevel() >= MaxSkyLight - 2);
+
     // Night vision raises the floor but never lowers the level.
     setTime(TimeMidnight);
     CHECK(skyLightLevelAtLeast(150) == 150);
@@ -245,6 +282,23 @@ static void test_sky_colour()
     setTime(TimeSunset);
     SkyColor dusk = skyColor();
     CHECK(dusk.r > dusk.b);
+
+    // The glow reaches further than the light does, so the sky is already warm
+    // before the sun is up and still warm after it is down. Without that, dusk
+    // is just an earlier midnight and the horizon flips colour on one frame.
+    setTime(12500); // the sun about 12 degrees below the horizon
+    CHECK(sunElevationDegrees() <= NightElevation);
+    SkyColor after_sunset = skyColor();
+    CHECK(after_sunset.r > night.r);
+    CHECK(after_sunset.r < dusk.r);
+    setTime(23500); // the same height on the other side, before sunrise
+    CHECK(sunElevationDegrees() <= NightElevation);
+    CHECK_NEAR(skyColor().r, after_sunset.r, 0.02);
+
+    // Past the glow it is the plain night colour again, so the band does not
+    // tint the whole night.
+    setTime(TimeMidnight);
+    CHECK_NEAR(skyColor().r, night.r, 0.001);
 
     // Every component stays inside the valid range all cycle long.
     for(unsigned int t = 0; t < TicksPerDay; t += 97)

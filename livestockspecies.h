@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "mobmodel.h"
+
 /**
  * Pure, dependency-free definition of the passive livestock table.
  *
@@ -21,6 +23,9 @@ namespace Livestock
 		Sheep,
 		Chicken,
 		Horse,
+		Wolf,
+		Mooshroom,
+		Donkey,
 		Count
 	};
 
@@ -74,18 +79,20 @@ namespace Livestock
 		uint8_t drop_max[2];
 	};
 
-	/** Shared quadruped skin layout (64x64 RGB565, model units of 1/16 block). */
-	struct QuadrupedModel
-	{
-		uint8_t tex_width, tex_height;
-		uint8_t head_u, head_v, head_w, head_h, head_d;
-		uint8_t body_u, body_v, body_w, body_h, body_d;
-		uint8_t leg_u, leg_v, leg_w, leg_h, leg_d;
-		/// Solid patch for small detail boxes (ears, horns) so they carry no face art.
-		uint8_t detail_u, detail_v, detail_w, detail_h, detail_d;
-	};
-
-	const QuadrupedModel &quadrupedModel();
+	/**
+	 * The vanilla model for a species: the box model the 1.17.1 client draws,
+	 * transcribed into the tables mobmodel.h describes. The skins under
+	 * textures/entity/ are the official ones, so these UV origins are what line
+	 * them up.
+	 *
+	 * Chicken is deliberately absent: its model carries a fixed body rotation and
+	 * flapping wings, which the livestock renderer already draws in its own code.
+	 *
+	 * Mooshroom and Donkey are skin (and stats) variants in vanilla too -- both
+	 * reuse a model another species already transcribes -- so they return the cow
+	 * and the horse model rather than a second copy of the same boxes.
+	 */
+	const Mob::MobModel &model(Species species);
 
 	const Stats &stats(Species species);
 	const char *name(Species species);

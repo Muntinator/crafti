@@ -20,10 +20,15 @@ GCCFLAGS = -O$(OPTIMIZE) -I nGL -I . $(NDLESS_INCLUDES) -Wall -W -marm -ffast-ma
 LDFLAGS = $(NDLESS_LIBS) -lm -lz -Wl,--gc-sections
 ZEHNFLAGS = --name "Crafti" --version 13 --author "Fabian Vogt" --notice "3D Minecraft" --compress
 EXE = crafti
-OBJS = $(patsubst %.c, %.o, $(shell find . -name \*.c))
+# The game is every source in the tree except tools/, which holds the host-side
+# development tools (the headless harness and the emulator shim). They are
+# ordinary .cpp files, so an unqualified find would compile them into the
+# calculator build and break it.
+GAME_SOURCES = $(shell find . -not -path './tools/*' -a \( -name \*.c -o -name \*.cpp -o -name \*.S \))
+OBJS = $(patsubst %.c, %.o, $(filter %.c,$(GAME_SOURCES)))
 OBJS := $(filter-out ./syscalls.o,$(OBJS))
-OBJS += $(patsubst %.cpp, %.o, $(shell find . -name \*.cpp))
-OBJS += $(patsubst %.S, %.o, $(shell find . -name \*.S))
+OBJS += $(patsubst %.cpp, %.o, $(filter %.cpp,$(GAME_SOURCES)))
+OBJS += $(patsubst %.S, %.o, $(filter %.S,$(GAME_SOURCES)))
 
 all: $(EXE).tns
 

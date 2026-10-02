@@ -40,6 +40,7 @@ without the space: `give "redstone torch"` and `give redstonetorch` both work.
 /enchant [1|2|3]                      The table's offers, or take one
 /seed                                 Show the world seed
 /gamemode <survival|creative>         Switch the play mode
+/score [value]                        Show or set the player's score
 /help [command]                       List the commands, or explain one
 ```
 
@@ -109,7 +110,8 @@ the sky still builds the part that fits.
 
 ### /summon
 
-`chicken`, `cow`, `pig`, `sheep`, `horse` and `creeper`. With no coordinates the
+`chicken`, `cow`, `pig`, `sheep`, `horse`, `wolf`, `mooshroom`, `donkey` and
+`creeper`. With no coordinates the
 mob appears two blocks in front of the player; with coordinates it appears exactly
 there. Villagers are deliberately not summonable: a villager is bound to the
 village it belongs to (its home, its bed and its trade all hang off it), so one
@@ -139,6 +141,14 @@ one. See `ENCHANTING.md` for what every enchantment is worth in play.
 
 The world seed in decimal and hexadecimal, and the day counter. Two players with
 the same seed have the same terrain, biomes, caves, villages and structures.
+
+### /score
+
+The player's score, which is what the death screen's **"Score:"** line shows.
+It is vanilla's `Player.getScore()`: a separate value from experience, zero in a
+world that has no scoreboard (which is every world here), and kept across a
+respawn. Bare, it reports the current value; with a number it sets one, standing
+in for vanilla's `/scoreboard players set`.
 
 ## The debug screen
 

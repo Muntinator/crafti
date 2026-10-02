@@ -1,0 +1,61 @@
+# Mobs: the livestock the vanilla asset tree added -- the wolf (its own model),
+# the mooshroom (the cow's boxes, its own skin) and the donkey (the horse's
+# boxes, its own skin).
+#
+#   MUNT_SIM_SHOTS=/tmp/mobs sh tools/pcsim/play.sh tools/pcsim/mobs.txt
+#
+# The captures are staged on a flat platform built at a known height, because
+# `summon` drops the mob two blocks along the camera's heading and a generated
+# hillside would otherwise decide how far away it ends up. On the platform every
+# mob stands the same two blocks in front of the same camera, so the three
+# silhouettes are directly comparable -- and each summon is bracketed by a
+# capture of the same view without it, so a run can tell the animal from the
+# stone behind it.
+#
+#   aim <yaw> <pitch>   points the camera at a known heading, in degrees
+
+0.0    step 120
+0.0    caption The title screen.
+1.0    shot 01-title
+
+1.4    key space tap
+6.0    command gamemode creative
+6.1    command time set noon
+6.2    command weather clear
+
+# A 15x15 stone platform at y = 30, and the player standing on top of it.
+6.4    command fill -7 30 -7 7 30 7 stone
+7.2    command teleport 0 32 0
+9.0    step 60
+9.2    aim 0 0
+9.4    caption The empty stage the wolf capture is measured against.
+9.6    shot 02-before-wolf
+
+9.8    command summon wolf
+10.0   caption A wolf: the vanilla ModelWolf boxes on the official wolf.png.
+10.2   shot 03-wolf
+
+10.8   aim 90 0
+11.0   caption The empty stage, turned to the next heading.
+11.2   shot 04-before-mooshroom
+
+11.4   command summon mooshroom
+11.6   caption A mooshroom: the cow's boxes on the official red_mooshroom.png.
+11.8   shot 05-mooshroom
+
+12.4   aim 180 0
+12.6   caption The empty stage, turned to the next heading.
+12.8   shot 06-before-donkey
+
+13.0   command summon donkey
+13.2   caption A donkey: the horse's boxes on the official donkey.png.
+13.4   shot 07-donkey
+
+14.0   aim 270 0
+14.2   caption The empty stage, turned to the last heading.
+14.4   shot 08-before-wolf2
+
+14.6   command summon wolf
+14.8   caption A second wolf, on a heading no other animal walked through.
+15.0   shot 09-wolf2
+15.4   end

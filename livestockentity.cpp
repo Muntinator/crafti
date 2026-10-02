@@ -6,6 +6,7 @@
 #include "audio_manager.h"
 #include "fastmath.h"
 #include "gl.h"
+#include "mobmodel.h"
 #include "enchanting.h"
 #include "grounddrops.h"
 #include "terrain.h"
@@ -15,9 +16,12 @@
 
 #include "textures/chicken.h"
 #include "textures/cow.h"
+#include "textures/donkey.h"
 #include "textures/horse.h"
+#include "textures/mooshroom.h"
 #include "textures/pig.h"
 #include "textures/sheep.h"
+#include "textures/wolf.h"
 
 std::vector<LivestockEntity> livestock_entities;
 
@@ -69,6 +73,10 @@ namespace
 		case Livestock::Species::Pig: return GameAudio::MobPig;
 		case Livestock::Species::Sheep: return GameAudio::MobSheep;
 		case Livestock::Species::Horse: return GameAudio::MobHorse;
+		case Livestock::Species::Wolf: return GameAudio::MobWolf;
+		// A mooshroom lows like the cow and a donkey brays with the horse set.
+		case Livestock::Species::Mooshroom: return GameAudio::MobCow;
+		case Livestock::Species::Donkey: return GameAudio::MobHorse;
 		default: return GameAudio::MobChicken;
 		}
 	}
@@ -81,6 +89,9 @@ namespace
 		case Livestock::Species::Pig: return &pig_tex;
 		case Livestock::Species::Sheep: return &sheep_tex;
 		case Livestock::Species::Horse: return &horse_tex;
+		case Livestock::Species::Wolf: return &wolf_tex;
+		case Livestock::Species::Mooshroom: return &mooshroom_tex;
+		case Livestock::Species::Donkey: return &donkey_tex;
 		default: return &chicken_tex;
 		}
 	}
@@ -101,71 +112,16 @@ namespace
 		}
 	}
 
-	// --- rendering helpers (shared with the original chicken model) -----------
+	// --- rendering helpers (the chicken still draws itself) ------------------
 
-	TextureAtlasEntry skinArea(int u, int v, int w, int h)
-	{
-		return { static_cast<unsigned>(u), static_cast<unsigned>(u + w),
-		         static_cast<unsigned>(v), static_cast<unsigned>(v + h) };
-	}
-
-	TextureAtlasEntry mirrorU(TextureAtlasEntry t)
-	{
-		const unsigned tmp = t.left;
-		t.left = t.right;
-		t.right = tmp;
-		return t;
-	}
-
-	void emitQuad(
-		GLFix ax, GLFix ay, GLFix az,
-		GLFix bx, GLFix by, GLFix bz,
-		GLFix cx, GLFix cy, GLFix cz,
-		GLFix dx, GLFix dy, GLFix dz,
-		const TextureAtlasEntry &tex)
-	{
-		const COLOR flags = TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE;
-		nglAddVertex({ ax, ay, az, GLFix(static_cast<int>(tex.left)),  GLFix(static_cast<int>(tex.bottom)), flags });
-		nglAddVertex({ bx, by, bz, GLFix(static_cast<int>(tex.left)),  GLFix(static_cast<int>(tex.top)),    flags });
-		nglAddVertex({ cx, cy, cz, GLFix(static_cast<int>(tex.right)), GLFix(static_cast<int>(tex.top)),    flags });
-		nglAddVertex({ dx, dy, dz, GLFix(static_cast<int>(tex.right)), GLFix(static_cast<int>(tex.bottom)), flags });
-	}
-
-	/** Box unwrap matching tools/textures/gen_animal_textures.py and chicken.h. */
+	/** One vanilla model box; the unwrap and the emit live in mobmodel.cpp. */
 	void drawQuadBox(
 		GLFix bx, GLFix by, GLFix bz,
 		GLFix bw, GLFix bh, GLFix bd,
 		int u0, int v0, int wp, int hp, int dp,
 		bool mirror = false)
 	{
-		TextureAtlasEntry top  = skinArea(u0 + dp,           v0,      wp, dp);
-		TextureAtlasEntry bot  = skinArea(u0 + dp + wp,      v0,      wp, dp);
-		TextureAtlasEntry rgt  = skinArea(u0,                v0 + dp, dp, hp);
-		TextureAtlasEntry frt  = skinArea(u0 + dp,           v0 + dp, wp, hp);
-		TextureAtlasEntry lft  = skinArea(u0 + dp + wp,      v0 + dp, dp, hp);
-		TextureAtlasEntry bck  = skinArea(u0 + dp + wp + dp, v0 + dp, wp, hp);
-
-		if(mirror)
-		{
-			top = mirrorU(top);
-			bot = mirrorU(bot);
-			TextureAtlasEntry tmp = mirrorU(rgt);
-			rgt = mirrorU(lft);
-			lft = tmp;
-			frt = mirrorU(frt);
-			bck = mirrorU(bck);
-		}
-
-		const GLFix x0 = bx, x1 = bx + bw;
-		const GLFix y0 = by, y1 = by + bh;
-		const GLFix z0 = bz, z1 = bz + bd;
-
-		emitQuad(x0, y0, z0, x0, y1, z0, x1, y1, z0, x1, y0, z0, frt);
-		emitQuad(x1, y0, z1, x1, y1, z1, x0, y1, z1, x0, y0, z1, bck);
-		emitQuad(x0, y0, z1, x0, y1, z1, x0, y1, z0, x0, y0, z0, rgt);
-		emitQuad(x1, y0, z0, x1, y1, z0, x1, y1, z1, x1, y0, z1, lft);
-		emitQuad(x0, y1, z0, x0, y1, z1, x1, y1, z1, x1, y1, z0, top);
-		emitQuad(x1, y0, z0, x1, y0, z1, x0, y0, z1, x0, y0, z0, bot);
+		Mob::drawBox(bx, by, bz, bw, bh, bd, u0, v0, wp, hp, dp, mirror);
 	}
 
 	bool isBreedingFood(uint8_t item)
@@ -660,77 +616,23 @@ void LivestockEntity::render() const
 		return;
 	}
 
-	// --- shared quadruped model (cow / pig / sheep / horse) -----------------
-	const Livestock::QuadrupedModel &m = Livestock::quadrupedModel();
+	// --- the vanilla model (cow / pig / sheep / horse) -----------------------
+	const Mob::MobModel &m = Livestock::model(kind());
 	const Livestock::Stats &st = Livestock::stats(kind());
 
-	GLFix S = GLFix(BLOCK_SIZE) / GLFix(16) * static_cast<int>(st.render_scale) / 100;
-	if(isBaby())
-		S = S * BabyScalePercent / 100;
-
-	const GLFix leg_w = GLFix(m.leg_w) * S;
-	const GLFix leg_h = GLFix(m.leg_h) * S;
-	const GLFix leg_d = GLFix(m.leg_d) * S;
-	const GLFix body_w = GLFix(m.body_w) * S;
-	const GLFix body_h = GLFix(m.body_h) * S;
-	const GLFix body_d = GLFix(m.body_d) * S;
-	const GLFix head_w = GLFix(m.head_w) * S;
-	const GLFix head_h = GLFix(m.head_h) * S;
-	const GLFix head_d = GLFix(m.head_d) * S;
-
-	const GLFix body_half_w = body_w / 2;
-	const GLFix body_half_d = body_d / 2;
-	const GLFix body_bottom = leg_h;
-	const GLFix head_bottom = body_bottom + body_h - head_h / 2;
-	const GLFix head_z = -body_half_d - head_d + GLFix(2) * S;
-
-	// Legs: diagonal pairs swing together.
-	GLFix swing = cos_t * GLFix(35) * swing_intensity;
-	GLFix swing_neg = -swing;
-	swing.normaliseAngle();
-	swing_neg.normaliseAngle();
-
-	const GLFix leg_x = body_half_w - leg_w / 2;
-	const GLFix leg_z = body_half_d - leg_d - GLFix(S);
-
-	auto drawLeg = [&](GLFix px, GLFix pz, GLFix angle) {
-		glPushMatrix();
-		glTranslatef(px, leg_h, pz);
-		nglRotateX(angle);
-		drawQuadBox(GLFix(0) - leg_w / 2, -leg_h, GLFix(0) - leg_d / 2, leg_w, leg_h, leg_d,
-		            m.leg_u, m.leg_v, m.leg_w, m.leg_h, m.leg_d);
-		glPopMatrix();
-	};
-
-	drawLeg(-leg_x, -leg_z, swing);
-	drawLeg(-leg_x,  leg_z, swing_neg);
-	drawLeg( leg_x, -leg_z, swing_neg);
-	drawLeg( leg_x,  leg_z, swing);
-
-	// Body.
-	drawQuadBox(-body_half_w, body_bottom, -body_half_d, body_w, body_h, body_d,
-	            m.body_u, m.body_v, m.body_w, m.body_h, m.body_d);
-
-	// Head.
-	drawQuadBox(-head_w / 2, head_bottom, head_z, head_w, head_h, head_d,
-	            m.head_u, m.head_v, m.head_w, m.head_h, m.head_d);
-
-	// Ears (all quadrupeds) and horns (cow only), drawn from the solid detail patch.
-	const GLFix ear = GLFix(2) * S;
-	const GLFix ear_y = head_bottom + head_h - ear;
-	const GLFix ear_z = head_z + head_d / 2;
-	drawQuadBox(-head_w / 2 - ear, ear_y, ear_z - ear / 2, ear, ear + S, ear,
-	            m.detail_u, m.detail_v, m.detail_w, m.detail_h, m.detail_d);
-	drawQuadBox(head_w / 2, ear_y, ear_z - ear / 2, ear, ear + S, ear,
-	            m.detail_u, m.detail_v, m.detail_w, m.detail_h, m.detail_d);
-
-	if(kind() == Livestock::Species::Cow)
+	if(!m.empty())
 	{
-		const GLFix horn = GLFix(3) * S;
-		drawQuadBox(-head_w / 2 - horn, head_bottom + head_h - GLFix(2) * S, head_z,
-		            horn, horn, horn, m.detail_u, m.detail_v, m.detail_w, m.detail_h, m.detail_d);
-		drawQuadBox(head_w / 2, head_bottom + head_h - GLFix(2) * S, head_z,
-		            horn, horn, horn, m.detail_u, m.detail_v, m.detail_w, m.detail_h, m.detail_d);
+		GLFix S = GLFix(BLOCK_SIZE) / GLFix(16) * static_cast<int>(st.render_scale) / 100;
+		if(isBaby())
+			S = S * BabyScalePercent / 100;
+
+		// Vanilla limb swing: cos(limbSwing * 0.6662) * 1.4, with the diagonal
+		// legs in phase. Mob::draw picks the sign per leg from the part's pose.
+		GLFix swing = cos_t * GLFix(35) * swing_intensity;
+		swing.normaliseAngle();
+
+		// The body already carries the mob's facing, so the head leads it by 0.
+		Mob::draw(m, S, swing, GLFix(0));
 	}
 
 	glPopMatrix();

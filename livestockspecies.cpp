@@ -37,35 +37,197 @@ namespace Livestock
 			{ 115, 250, 15, 120, 340, 14, 1,
 			  { item(static_cast<uint8_t>(ItemTexture::LEATHER)), 0 },
 			  { 1, 0 }, { 2, 0 } },
+			// Wolf: a vanilla wolf drops nothing at all, so its pelt is dropped as
+			// leather, which is what the horse and the donkey do as well.
+			{ 76, 108, 8, 100, 340, 14, 1,
+			  { item(static_cast<uint8_t>(ItemTexture::LEATHER)), 0 },
+			  { 1, 0 }, { 2, 0 } },
+			// Mooshroom: the cow it is a variant of, beef and leather alike.
+			{ 96, 205, 10, 100, 320, 10, 2,
+			  { item(static_cast<uint8_t>(ItemTexture::RAW_BEEF)), item(static_cast<uint8_t>(ItemTexture::LEATHER)) },
+			  { 1, 0 }, { 3, 2 } },
+			// Donkey: leather, like the horse whose model it shares.
+			{ 108, 235, 15, 110, 340, 12, 1,
+			  { item(static_cast<uint8_t>(ItemTexture::LEATHER)), 0 },
+			  { 1, 0 }, { 2, 0 } },
 		};
 
-		const char *const names[SpeciesCount] = { "Cow", "Pig", "Sheep", "Chicken", "Horse" };
+		const char *const names[SpeciesCount] =
+			{ "Cow", "Pig", "Sheep", "Chicken", "Horse", "Wolf", "Mooshroom", "Donkey" };
 
 		// Percent weights per biome. Rows sum to <= 100, so a roll above the sum
 		// spawns nothing (deserts and water stay mostly empty).
+		// Order matches Species: cow, pig, sheep, chicken, horse, wolf, mooshroom,
+		// donkey. Wolves only turn up where there is something to hunt, so they are
+		// weighted towards the forests and never spawn on sand; mooshrooms are the
+		// forest/grassland analogue of the cow they are a variant of.
 		const uint8_t weights[BiomeCount][SpeciesCount] = {
 			// Grassland
-			{ 25, 20, 20, 25, 10 },
+			{ 20, 15, 15, 20, 10, 10,  5,  5 },
 			// Forest
-			{ 15, 10, 30, 35, 10 },
+			{ 10, 10, 20, 25, 10, 20,  5,  0 },
 			// Desert
-			{  0,  0, 10, 20,  0 },
+			{  0,  0, 10, 20,  0,  0,  0,  0 },
 			// Shore
-			{ 10, 10, 10, 60, 10 },
+			{ 10, 10, 10, 50, 10,  5,  0,  0 },
 			// Water
-			{  0,  0,  0,  0,  0 },
+			{  0,  0,  0,  0,  0,  0,  0,  0 },
 		};
 
-		const QuadrupedModel quad_model = {
-			64, 64,
-			0, 0, 8, 8, 8,      // head
-			0, 16, 12, 10, 18,  // body
-			0, 48, 4, 12, 4,    // leg
-			32, 0, 4, 4, 4,     // detail (ears/horns)
+		// --- the vanilla models, transcribed ---------------------------------
+		//
+		// The 1.17.1 client's box models. A part is one ModelRenderer (its rotation
+		// point and fixed rotation) and each box is one addBox(), so a line here can
+		// be read against the original class. The texture origins are the official
+		// ones, which is what makes the skins under textures/entity/ line up.
+
+		// ModelCow: ModelQuadruped(12) with the cow's head, body and horns.
+		const Mob::MobBox cow_boxes[] = {
+			{  0,  0,  8,  8,  6, -4, -4, -6 }, // head
+			{ 22,  0,  1,  3,  1, -5, -5, -4 }, // left horn
+			{ 22,  0,  1,  3,  1,  4, -5, -4 }, // right horn
+			{ 18,  4, 12, 18, 10, -6, -10, -7 }, // body
+			{ 52,  0,  4,  6,  1, -2,   2, -8 }, // udder
+			{  0, 16,  4, 12,  4, -2,   0, -2 }, // leg
+			{  0, 16,  4, 12,  4, -2,   0, -2 },
+			{  0, 16,  4, 12,  4, -2,   0, -2 },
+			{  0, 16,  4, 12,  4, -2,   0, -2 },
 		};
+		const Mob::MobPart cow_parts[] = {
+			{  0,  4,  -8, 0,  0, 3, Mob::Pose::Head },
+			{  0,  5,   2, 90, 3, 2, Mob::Pose::Static },
+			{ -4, 12,   7, 0,  5, 1, Mob::Pose::LegFrontLeft },
+			{  4, 12,   7, 0,  6, 1, Mob::Pose::LegFrontRight },
+			{ -4, 12,  -6, 0,  7, 1, Mob::Pose::LegBackLeft },
+			{  4, 12,  -6, 0,  8, 1, Mob::Pose::LegBackRight },
+		};
+		const Mob::MobModel cow_model = { 64, 32, 6, cow_parts, 9, cow_boxes };
+
+		// ModelPig: ModelQuadruped(6) plus the snout.
+		const Mob::MobBox pig_boxes[] = {
+			{  0,  0,  8,  8, 8, -4,  -4, -8 }, // head
+			{ 16, 16,  4,  3, 1, -2,   0, -9 }, // snout
+			{ 28,  8, 10, 16, 8, -5, -10, -7 }, // body
+			{  0, 16,  4,  6, 4, -2,   0, -2 }, // leg
+			{  0, 16,  4,  6, 4, -2,   0, -2 },
+			{  0, 16,  4,  6, 4, -2,   0, -2 },
+			{  0, 16,  4,  6, 4, -2,   0, -2 },
+		};
+		const Mob::MobPart pig_parts[] = {
+			{ 0, 12, -6, 0, 0, 2, Mob::Pose::Head },
+			{ 0, 11,  2, 90, 2, 1, Mob::Pose::Static },
+			{ -3, 18,  7, 0, 3, 1, Mob::Pose::LegFrontLeft },
+			{  3, 18,  7, 0, 4, 1, Mob::Pose::LegFrontRight },
+			{ -3, 18, -5, 0, 5, 1, Mob::Pose::LegBackLeft },
+			{  3, 18, -5, 0, 6, 1, Mob::Pose::LegBackRight },
+		};
+		const Mob::MobModel pig_model = { 64, 32, 6, pig_parts, 7, pig_boxes };
+
+		// ModelSheep1: the narrow wool body on ModelQuadruped(12).
+		const Mob::MobBox sheep_boxes[] = {
+			{  0,  0, 6,  6, 6, -3,  -4, -4 }, // head
+			{ 28,  8, 8, 16, 6, -4, -10, -7 }, // body
+			{  0, 16, 4,  6, 4, -2,   0, -2 }, // leg
+			{  0, 16, 4,  6, 4, -2,   0, -2 },
+			{  0, 16, 4,  6, 4, -2,   0, -2 },
+			{  0, 16, 4,  6, 4, -2,   0, -2 },
+		};
+		const Mob::MobPart sheep_parts[] = {
+			// ModelSheep1 keeps the base quadruped's pivots but gives the sheep
+			// 6-unit legs instead of 12. Measured from the ground that leaves the
+			// feet hanging, so all four pivots drop the extra 6 units and the whole
+			// animal stands as one piece again.
+			{ 0, 12, -8, 0, 0, 1, Mob::Pose::Head },
+			{ 0, 11,  2, 90, 1, 1, Mob::Pose::Static },
+			{ -3, 18,  7, 0, 2, 1, Mob::Pose::LegFrontLeft },
+			{  3, 18,  7, 0, 3, 1, Mob::Pose::LegFrontRight },
+			{ -3, 18, -5, 0, 4, 1, Mob::Pose::LegBackLeft },
+			{  3, 18, -5, 0, 5, 1, Mob::Pose::LegBackRight },
+		};
+		const Mob::MobModel sheep_model = { 64, 32, 6, sheep_parts, 6, sheep_boxes };
+
+		// ModelHorse (the 1.13+ one, 64x64). The neck, head, mane, ears and tail
+		// share the 30 degrees the vanilla model gives them.
+		const Mob::MobBox horse_boxes[] = {
+			{  0, 32, 10, 10, 22, -5, -8, -11 }, // body
+			{  0, 35,  4, 12,  7, -2, -11, -3 }, // neck
+			{  0, 13,  6,  5,  7, -3,  -5,   0 }, // head
+			{  0, 25,  4,  5,  5, -2,  -5,  -5 }, // muzzle
+			{ 19, 16,  2,  3,  1, -1, -18,   3 }, // left ear
+			{ 19, 16,  2,  3,  1, -2, -18,   3 }, // right ear
+			{ 56, 36,  2, 16,  2, -1, -16,   4 }, // mane
+			{ 42, 36,  3, 14,  4, -2,   0,  -2 }, // tail
+			{ 48, 21,  4, 11,  4, -2,   0,  -2 }, // leg
+			{ 48, 21,  4, 11,  4, -2,   0,  -2 },
+			{ 48, 21,  4, 11,  4, -2,   0,  -2 },
+			{ 48, 21,  4, 11,  4, -2,   0,  -2 },
+		};
+		const Mob::MobPart horse_parts[] = {
+			{  0, 11,   9,  0,  0, 1, Mob::Pose::Static },
+			{  0,  7,  -8, 30,  1, 1, Mob::Pose::Static },
+			{  0, -4, -11, 30,  2, 2, Mob::Pose::Head },
+			{  0,  7,  -8, 30,  4, 1, Mob::Pose::Head },
+			{  0,  7,  -8, 30,  5, 1, Mob::Pose::Head },
+			{  0,  7,  -8, 30,  6, 1, Mob::Pose::Static },
+			{  0,  4,  11, 30,  7, 1, Mob::Pose::Static },
+			{  3, 13,   9,  0,  8, 1, Mob::Pose::LegFrontLeft },
+			{ -3, 13,   9,  0,  9, 1, Mob::Pose::LegFrontRight },
+			{  3, 13,  -9,  0, 10, 1, Mob::Pose::LegBackLeft },
+			{ -3, 13,  -9,  0, 11, 1, Mob::Pose::LegBackRight },
+		};
+		const Mob::MobModel horse_model = { 64, 64, 11, horse_parts, 12, horse_boxes };
+
+		// ModelWolf (64x32). Vanilla puts the head half a unit off the integer grid
+		// (y = 13.5) and the legs at x = -2.5 / 0.5, because the whole animal is
+		// built half a unit to the left of the origin. The tables hold whole model
+		// units, so the head drops the half and the legs move to -3 / 1, which is
+		// still symmetric about the same x = -1 the vanilla offsets use.
+		const Mob::MobBox wolf_boxes[] = {
+			{  0,  0, 6, 6, 4, -3, -3, -2 }, // head
+			{ 16, 14, 2, 2, 1, -2, -5,  0 }, // left ear
+			{ 16, 14, 2, 2, 1,  0, -5,  0 }, // right ear
+			{  0, 10, 3, 3, 4, -2,  0, -5 }, // muzzle
+			{ 18, 14, 6, 9, 6, -4, -2, -3 }, // body
+			{ 21,  0, 8, 6, 7, -4, -3, -3 }, // mane
+			{  0, 18, 2, 8, 2, -1,  0, -1 }, // leg
+			{  0, 18, 2, 8, 2, -1,  0, -1 },
+			{  0, 18, 2, 8, 2, -1,  0, -1 },
+			{  0, 18, 2, 8, 2, -1,  0, -1 },
+			{  9, 18, 2, 8, 2, -1,  0, -1 }, // tail
+		};
+		const Mob::MobPart wolf_parts[] = {
+			// The boxes are in the vanilla order, so their u/v origins are the ones
+			// the official wolf.png paints them at.
+			{ -1, 14,  -7, 0,  0, 4, Mob::Pose::Head },   // head, ears and muzzle
+			{  0, 14,   2, 0,  4, 1, Mob::Pose::Static }, // body
+			{ -1, 14,   2, 0,  5, 1, Mob::Pose::Static }, // mane
+			{ -3, 16,  -4, 0,  6, 1, Mob::Pose::LegFrontLeft },
+			{  1, 16,  -4, 0,  7, 1, Mob::Pose::LegFrontRight },
+			{ -3, 16,   7, 0,  8, 1, Mob::Pose::LegBackLeft },
+			{  1, 16,   7, 0,  9, 1, Mob::Pose::LegBackRight },
+			{ -1, 12,   8, 0, 10, 1, Mob::Pose::Static }, // tail
+		};
+		const Mob::MobModel wolf_model = { 64, 32, 8, wolf_parts, 11, wolf_boxes };
+
+		const Mob::MobModel no_model = { 0, 0, 0, nullptr, 0, nullptr };
 	}
 
-	const QuadrupedModel &quadrupedModel() { return quad_model; }
+	const Mob::MobModel &model(Species species)
+	{
+		switch(species)
+		{
+		case Species::Cow: return cow_model;
+		case Species::Pig: return pig_model;
+		case Species::Sheep: return sheep_model;
+		case Species::Horse: return horse_model;
+		case Species::Wolf: return wolf_model;
+		// A mooshroom is a cow and a donkey is a horse: both draw the boxes the
+		// table already holds instead of a second copy of the same numbers.
+		case Species::Mooshroom: return cow_model;
+		case Species::Donkey: return horse_model;
+		default: return no_model; // Chicken draws itself
+		}
+	}
 
 	const Stats &stats(Species species)
 	{

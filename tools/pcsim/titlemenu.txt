@@ -1,0 +1,53 @@
+# The main menu, captured with its button interactions: hover, the keyboard, a
+# disabled button and a click that opens a screen.
+#
+#   MUNT_SIM_SHOTS=/tmp/title sh tools/pcsim/play.sh tools/pcsim/titlemenu.txt
+#
+# The title screen is vanilla's TitleScreen: the panorama behind a wordmark with
+# its `Java Edition` strip, a splash tilted 20 degrees and pulsing, and vanilla's
+# button block -- three full-width buttons, then two half-width ones on a shared
+# row a fourth of the way down plus 48 + 72 + 12. The desktop harness runs at
+# twice the GUI scale, so every number below is the calculator's doubled.
+#
+#   mpos X Y     puts the pointer there, which is what hover tests against
+#   btn left tap click, and "s"/"w" (or the arrows) walk the selection
+#
+# The run starts with no saved world, so "Continue" is the disabled button -- the
+# same state vanilla greys out when there is nothing to continue.
+
+0.0    step 120
+0.0    caption The main menu: the vanilla panorama, the official wordmark with its Java Edition strip, the tilted pulsing splash, and vanilla's button block -- three full-width buttons then two half-width ones. "Continue" is greyed because no world has been saved.
+1.0    shot 01-title
+
+# The pointer picks a button, exactly as vanilla's does: hovering moves the
+# highlight onto the button under it.
+1.4    mpos 320 284
+1.8    caption Hovering a button lights it up and takes the highlight, the way vanilla's title screen behaves.
+2.0    shot 02-title-hover
+
+# A disabled button is greyed and cannot take the highlight.
+2.4    mpos 320 236
+2.8    caption The pointer is over the disabled "Continue": it stays greyed and the highlight does not move onto it, which is exactly how vanilla treats a button that cannot be used.
+3.0    shot 03-title-disabled
+
+# The keyboard drives the same block: "s" steps the selection down one button.
+3.4    key s tap
+3.8    caption The keyboard moves the same highlight -- "s" steps down the button block, and "w"/the up arrow steps back up.
+4.0    shot 04-title-keyboard
+
+# A click takes the button under the pointer: Graphing Mode opens the graph
+# screen, which is one of this game's screens standing in for one of vanilla's.
+4.4    mpos 218 404
+4.8    btn left tap
+5.6    caption A click takes the button under the pointer: Graphing Mode is open.
+5.8    shot 05-title-graph
+
+# Back to the menu and a world button, so the capture shows a click really does
+# start the game.
+6.2    key esc tap
+6.6    mpos 320 332
+7.0    btn left tap
+9.0    step 40
+9.4    caption The same click on "New Terrain World" starts the game.
+9.6    shot 06-title-world
+10.0   end

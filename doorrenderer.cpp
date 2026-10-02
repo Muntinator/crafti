@@ -1,5 +1,7 @@
 #include "doorrenderer.h"
 
+#include "audio_manager.h"
+
 constexpr GLFix DoorRenderer::door_depth; //As small as possible, a opened door shouldn't be much of an obstacle
 constexpr uint8_t DoorRenderer::DOOR_TOP, DoorRenderer::DOOR_OPEN, DoorRenderer::DOOR_FORCE_OPEN; //FORCE_OPEN: Opened by hand, not redstone
 
@@ -82,6 +84,12 @@ bool DoorRenderer::action(const BLOCK_WDATA block, const int local_x, const int 
 
     toggleState(block, local_x, local_y, local_z, c, door_open ? 0 : (DOOR_OPEN | DOOR_FORCE_OPEN));
 
+    // The same hinge sound however the door was moved.
+    if(door_open)
+        GameAudio::doorClose();
+    else
+        GameAudio::doorOpen();
+
     return true;
 }
 
@@ -104,6 +112,11 @@ void DoorRenderer::tick(const BLOCK_WDATA block, int local_x, int local_y, int l
         return;
 
     toggleState(block, local_x, local_y, local_z, c, redstone_state ? DOOR_OPEN : 0);
+
+    if(door_open)
+        GameAudio::doorClose();
+    else
+        GameAudio::doorOpen();
 }
 
 void DoorRenderer::addedBlock(const BLOCK_WDATA block, int local_x, int local_y, int local_z, Chunk &c)

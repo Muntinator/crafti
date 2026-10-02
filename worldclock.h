@@ -46,6 +46,16 @@ namespace WorldClock
 
 	/** Sun elevation below which the sky counts as night (spawns, stars). */
 	constexpr int NightElevation = -6;
+	/**
+	 * Sun elevation at and above which the world is at full daylight. Between
+	 * this and NightElevation the light runs down through the golden hour, which
+	 * is the only part of the day either body's height still matters to.
+	 */
+	constexpr int DaylightElevation = 20;
+	/** Sun height within which the sky is glowed towards sunrise/sunset orange. */
+	constexpr int TwilightGlowDegrees = 20;
+	/** Weight of that glow with the sun exactly on the horizon. */
+	constexpr float TwilightGlowStrength = 0.75f;
 
 	/** Darkest sky light level; keeps the screen readable at midnight. */
 	constexpr int MinSkyLight = 40;
@@ -147,7 +157,11 @@ namespace WorldClock
 	 */
 	bool moonPixel(int radius, int dx, int dy, int phase);
 
-	/** 0..255 global sky exposure for the terrain light tint. */
+	/**
+	 * 0..255 global sky exposure for the terrain light tint: MaxSkyLight while the
+	 * sun is at or above DaylightElevation, MinSkyLight once it is down to
+	 * NightElevation, and a smoothstep between the two.
+	 */
 	int skyLightLevel();
 	/** Same as skyLightLevel but never falling below `floor_level` (night vision). */
 	int skyLightLevelAtLeast(int floor_level);

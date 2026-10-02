@@ -2,6 +2,13 @@
 
 #include "audio_manager.h"
 
+#include <algorithm>
+#include <stdint.h>
+
+#ifndef _TINSPIRE
+#include <SDL/SDL.h>
+#endif
+
 #include "font.h"
 #include "menuui.h"
 #include "worldtask.h"
@@ -11,76 +18,146 @@
 #include "terrain.h"
 #include "texturetools.h"
 
-extern unsigned char font_dat[];
+#include "textures/title_backdrop.h"
+#include "textures/title_logo.h"
+#include "textures/edition.h"
 
 StartTask start_task;
 
 namespace
 {
     /**
-     * The title screen is static: the dirt backdrop and the wordmark are the same
-     * every frame. Both are therefore drawn once into textures of their own and
-     * blitted from then on, which is what makes the screen cheap on the calculator
-     * (two copies instead of a few hundred scaled tiles and a full-screen darkening
-     * pass every frame). They are deliberately never freed: this task lives as long
-     * as the game does, and freeing a texture after nglUninit() is not safe.
+     * The title screen is static: the panorama, the wordmark and the edition strip
+     * are the same every frame, and all three are ordinary textures embedded in the
+     * build, so they are simply blitted. The splash is the one piece that has to be
+     * drawn: it is text, it changes every visit, and it is rotated, so it is drawn
+     * once into a texture of its own and then blitted at an angle.
      */
-    TEXTURE *title_backdrop = nullptr;
-    TEXTURE *title_logo = nullptr;
+    TEXTURE *splash_texture = nullptr;
+    const char *splash_drawn = nullptr;
 
-    constexpr int TitleDirtTile = 16; ///< one dirt block, in screen pixels at scale 1
-
-    /** One of the jokes under the wordmark, picked once per visit to the screen. */
+    /** Picks one of the jokes under the wordmark, once per visit to the screen. */
     const char *current_splash = MenuUI::splashLines[0];
 
     /**
-     * Gives the two cached textures back. They are worth their 150 kB while the
-     * title screen is up and worth nothing once the world is, so they are built
-     * when the screen is shown and released when it is left -- a world that never
-     * returns to the title keeps the memory, which is the point.
+     * The splash's pulse. `splash_pulse` runs 0..10..0 and is the percent the line
+     * is scaled down by, and it steps every `SplashPulseStepMs` so that the whole
+     * up-and-down takes half a second -- the two pulses a second vanilla has.
      */
+    const int SplashPulseStepMs = 25;
+    int splash_pulse = 0;
+    int splash_pulse_ms = 0;
+
+#ifndef _TINSPIRE
+    /** The left button's state last frame, so a click is an edge and not a hold. */
+    bool left_mouse_was_down = false;
+#endif
+
+    /**
+     * Draws the splash line into a texture of its own, outlined, ready to be
+     * rotated onto the screen. It is rebuilt only when the line changes, which is
+     * once per visit: this is the only per-visit allocation the screen makes.
+     */
+    void buildSplash(const char *text)
+    {
+        if(splash_texture != nullptr)
+        {
+            deleteTexture(splash_texture);
+            splash_texture = nullptr;
+        }
+
+        // One pixel of outline either side, which is what drawSplash() adds.
+        const int w = static_cast<int>(measureString(text)) + 2;
+        const int h = static_cast<int>(fontHeight()) + 2;
+        splash_texture = newTexture(w, h, 0, true, 0);
+        MenuUI::drawSplash(text, *splash_texture, 1, 1);
+        splash_drawn = text;
+    }
+
+    /** Gives the splash texture back. The rest of the screen is embedded artwork. */
     void releaseTitleGraphics()
     {
-        if(title_backdrop != nullptr)
+        if(splash_texture != nullptr)
         {
-            deleteTexture(title_backdrop);
-            title_backdrop = nullptr;
-        }
-        if(title_logo != nullptr)
-        {
-            deleteTexture(title_logo);
-            title_logo = nullptr;
+            deleteTexture(splash_texture);
+            splash_texture = nullptr;
+            splash_drawn = nullptr;
         }
     }
 
-    /** Tiles the dirt once into a screen-sized texture and dims it like vanilla. */
-    void buildTitleBackdrop()
+    /**
+     * Blits `src` rotated by -20 degrees, the angle vanilla tilts the splash at,
+     * scaled by `scale_percent` and anchored on its left edge's centre line.
+     *
+     * nGL has no rotated blit, so this walks the destination rectangle the rotated
+     * sprite covers and maps every pixel back into the source with the inverse
+     * rotation: one pass, and the sprite is sampled exactly once per pixel, which
+     * is what keeps the tilted text from breaking up. The angle's sine and cosine
+     * are the fixed-point constants below, because a 20-degree tilt does not need
+     * a call into the trigonometry library.
+     */
+    void blitRotated(const TEXTURE &src, TEXTURE &dest, int anchor_x, int anchor_y,
+                     int scale_percent)
     {
-        title_backdrop = newTexture(SCREEN_WIDTH, SCREEN_HEIGHT, 0, false);
+        if(scale_percent < 1)
+            scale_percent = 1;
 
-        // terrain_atlas[2][0] is the dirt block: the same tile the world draws.
-        const TextureAtlasEntry &dirt = terrain_atlas[2][0].resized;
-        const int tile = TitleDirtTile * MenuUI::uiScale();
+        const int64_t cos_q = 962;  // cos(-20) * 1024
+        const int64_t sin_q = -350; // sin(-20) * 1024
 
-        for(int y = 0; y + tile <= static_cast<int>(title_backdrop->height); y += tile)
-            for(int x = 0; x + tile <= static_cast<int>(title_backdrop->width); x += tile)
-                drawTexture(*terrain_resized, *title_backdrop,
-                            dirt.left, dirt.top,
-                            dirt.right - dirt.left, dirt.bottom - dirt.top,
-                            x, y, tile, tile);
+        const int w = static_cast<int>(src.width);
+        const int h = static_cast<int>(src.height);
+        const int half = h / 2;
 
-        // Vanilla's menu backdrop is the dirt at about two thirds brightness, so
-        // that the logo and the labels on top of it stay readable.
-        MenuUI::shadeRect(*title_backdrop, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 62);
-    }
+        // The rotated rectangle's bounding box: the four corners carried through
+        // the rotation are enough, and they keep the loop off the rest of the screen.
+        const int corner_x[4] = {0, w, 0, w};
+        const int corner_y[4] = {-half, -half, half, half};
+        int min_x = 0, max_x = 0, min_y = 0, max_y = 0;
+        for(int i = 0; i < 4; ++i)
+        {
+            const int dx = static_cast<int>((corner_x[i] * cos_q - corner_y[i] * sin_q)
+                                            * scale_percent / (1024 * 100));
+            const int dy = static_cast<int>((corner_x[i] * sin_q + corner_y[i] * cos_q)
+                                            * scale_percent / (1024 * 100));
+            if(i == 0)
+            {
+                min_x = max_x = dx;
+                min_y = max_y = dy;
+                continue;
+            }
+            min_x = std::min(min_x, dx);
+            max_x = std::max(max_x, dx);
+            min_y = std::min(min_y, dy);
+            max_y = std::max(max_y, dy);
+        }
 
-    /** Draws the wordmark once, into a texture sized to hold its outline and bevel. */
-    void buildTitleLogo(const MenuUI::TitleLayout &layout)
-    {
-        const int margin = MenuUI::logoMargin(layout.logo_scale);
+        const int64_t divisor = 1024 * static_cast<int64_t>(scale_percent);
+        for(int dy = min_y; dy <= max_y; ++dy)
+        {
+            const int py = anchor_y + dy;
+            if(py < 0 || py >= static_cast<int>(dest.height))
+                continue;
 
-        title_logo = newTexture(layout.logo_width + margin * 2, layout.logo_height + margin * 2, 0, true, 0);
-        MenuUI::drawLogo(MenuUI::titleWordmark, *title_logo, title_logo->width / 2, margin, layout.logo_scale);
+            for(int dx = min_x; dx <= max_x; ++dx)
+            {
+                const int px = anchor_x + dx;
+                if(px < 0 || px >= static_cast<int>(dest.width))
+                    continue;
+
+                // The inverse of the rotation above, with the scale undone.
+                const int64_t dxq = dx, dyq = dy;
+                const int sx = static_cast<int>((dxq * cos_q + dyq * sin_q) * 100 / divisor);
+                const int sy = static_cast<int>((-dxq * sin_q + dyq * cos_q) * 100 / divisor) + half;
+                if(sx < 0 || sx >= w || sy < 0 || sy >= h)
+                    continue;
+
+                const COLOR c = src.bitmap[sx + sy * w];
+                if(src.has_transparency && c == src.transparent_color)
+                    continue;
+                dest.bitmap[px + py * dest.width] = c;
+            }
+        }
     }
 }
 
@@ -101,50 +178,141 @@ void StartTask::makeCurrent()
     Task::makeCurrent();
 }
 
+void StartTask::activate()
+{
+    if(!itemEnabled(selected_item))
+        return;
+
+    GameAudio::uiClick();
+
+    // Every choice but quitting leaves the title screen, and the splash texture
+    // goes with it (the next visit builds it again).
+    if(selected_item != EXIT)
+        releaseTitleGraphics();
+
+    switch(selected_item)
+    {
+    case CONTINUE:
+        world_task.makeCurrent();
+        break;
+    case NEW_FLAT:
+        world.setWorldType(World::WorldType::Flat);
+        world_task.resetWorld();
+        world_task.makeCurrent();
+        break;
+    case NEW_TERRAIN:
+        world.setWorldType(World::WorldType::Terrain);
+        world_task.resetWorld();
+        world_task.makeCurrent();
+        break;
+    case NEW_GRAPH:
+        graph_task.makeCurrent();
+        break;
+    case EXIT:
+        running = false;
+        break;
+    }
+}
+
 void StartTask::render()
 {
-    const MenuUI::TitleLayout layout = MenuUI::titleLayout();
+    const MenuUI::TitleLayout layout = MenuUI::titleLayout(current_splash);
 
-    if(title_backdrop == nullptr)
-        buildTitleBackdrop();
-    if(title_logo == nullptr)
-        buildTitleLogo(layout);
+    if(splash_drawn != current_splash)
+        buildSplash(current_splash);
 
-    // The whole backdrop in one copy: the dirt is already tiled and dimmed inside it.
-    drawTexture(*title_backdrop, *screen,
-                0, 0, SCREEN_WIDTH, SCREEN_HEIGHT,
+    // The panorama, scaled to the screen. Vanilla rotates it every frame; here it
+    // is one pre-rendered frame, because six cubemap faces do not fit on a CX.
+    drawTexture(title_backdrop, *screen,
+                0, 0, title_backdrop.width, title_backdrop.height,
                 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
-    drawTexture(*title_logo, *screen,
-                0, 0, title_logo->width, title_logo->height,
-                (SCREEN_WIDTH - static_cast<int>(title_logo->width)) / 2, layout.logo_y,
-                title_logo->width, title_logo->height);
+    // The official wordmark and the edition strip under it.
+    drawTexture(title_logo, *screen,
+                0, 0, title_logo.width, title_logo.height,
+                layout.logo_x, layout.logo_y, layout.logo_w, layout.logo_h);
+    drawTexture(edition, *screen,
+                0, 0, edition.width, edition.height,
+                layout.edition_x, layout.edition_y, layout.edition_w, layout.edition_h);
 
-    MenuUI::drawSplash(current_splash, *screen, SCREEN_WIDTH / 2, layout.splash_y);
+    // The splash, tilted up to the right and pulsing, which is what makes the title
+    // screen look alive without anything actually moving. The pulse runs 0..10..0
+    // (vanilla's `|sin| * 0.1`), so the line shrinks by up to ten percent and comes
+    // back, twice a second.
+    if(splash_texture != nullptr)
+    {
+        const int pulse = splash_pulse <= MenuUI::SplashPulse
+                              ? splash_pulse
+                              : 2 * MenuUI::SplashPulse - splash_pulse;
+        blitRotated(*splash_texture, *screen, layout.splash_x, layout.splash_y,
+                    layout.splash_scale - pulse);
+    }
 
     for(int i = 0; i < START_ITEM_MAX; ++i)
     {
-        const int y = layout.buttons.buttonY(i);
+        int x = 0, y = 0, w = 0, h = 0;
+        layout.buttonRect(i, x, y, w, h);
         const bool enabled = itemEnabled(i);
         const bool focused = (i == selected_item);
 
-        MenuUI::drawButton(*screen, layout.buttons.x, y, layout.buttons.w, layout.buttons.h,
-                           focused, enabled);
-        MenuUI::drawButtonLabel(MenuUI::titleLabels[i], *screen, layout.buttons.x, y,
-                                layout.buttons.w, layout.buttons.h, focused, enabled);
+        MenuUI::drawButton(*screen, x, y, w, h, focused, enabled);
+        MenuUI::drawButtonLabel(MenuUI::titleLabels[i], *screen, x, y, w, h,
+                                focused, enabled);
     }
 
     // The small print along the bottom, where vanilla keeps its version and its
-    // credits, and the two lines this build needs: how to drive the menu, and
-    // whether the audio pack was found.
-    MenuUI::drawSmallPrint(MenuUI::versionText, *screen, 1, layout.version_y);
-    MenuUI::drawSmallPrint(MenuUI::creditText, *screen,
-                           SCREEN_WIDTH - static_cast<int>(measureString(MenuUI::creditText)) - 1,
-                           layout.version_y);
-    MenuUI::drawSmallPrint(MenuUI::hintText, *screen, 1, layout.hint_y);
-    MenuUI::drawSmallPrint(GameAudio::packStatus(), *screen, 1, layout.audio_y);
-}void StartTask::logic(GLFix /*dt */)
+    // credits at vanilla's own x. What the calculator's keys do is documented on
+    // the help screen rather than here, and the audio pack reports itself on the
+    // sound test screen.
+    MenuUI::drawSmallPrint(MenuUI::versionText, *screen, layout.version_x, layout.version_y);
+    MenuUI::drawSmallPrint(MenuUI::creditText, *screen, layout.credit_x, layout.version_y);
+}
+
+void StartTask::logic(GLFix dt)
 {
+    // The splash's pulse runs on real time, like the day/night clock does.
+    splash_pulse_ms += static_cast<int>(dt * GLFix(static_cast<int>(simulation_tick_ms)));
+    while(splash_pulse_ms >= SplashPulseStepMs)
+    {
+        splash_pulse_ms -= SplashPulseStepMs;
+        splash_pulse = (splash_pulse + 1) % 21;
+    }
+
+#ifndef _TINSPIRE
+    // A desktop has a mouse, so it gets the focus-by-hover vanilla has: the pointer
+    // picks the button and a click takes it. The calculator keeps the keys.
+    SDL_PumpEvents();
+    int mouse_x = 0, mouse_y = 0;
+    const Uint8 buttons = SDL_GetMouseState(&mouse_x, &mouse_y);
+    const bool left_down = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
+
+    const MenuUI::TitleLayout layout = MenuUI::titleLayout(current_splash);
+    int hovered = -1;
+    for(int i = 0; i < START_ITEM_MAX; ++i)
+    {
+        int x = 0, y = 0, w = 0, h = 0;
+        layout.buttonRect(i, x, y, w, h);
+        if(mouse_x >= x && mouse_x < x + w && mouse_y >= y && mouse_y < y + h)
+            hovered = i;
+    }
+
+    if(hovered >= 0 && itemEnabled(hovered))
+        selected_item = hovered;
+
+    if(left_down && !left_mouse_was_down)
+    {
+        left_mouse_was_down = true;
+        if(hovered >= 0 && itemEnabled(hovered))
+        {
+            selected_item = hovered;
+            activate();
+            return;
+        }
+    }
+    if(!left_down)
+        left_mouse_was_down = false;
+#endif
+
     if(key_held_down)
         key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_ENTER);
     else if(keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_8))
@@ -175,36 +343,7 @@ void StartTask::render()
             return;
         }
 
-        GameAudio::play(GameAudio::EventMenuSelect);
-
-        // Every choice but quitting leaves the title screen, and the two cached
-        // textures go with it (the next visit builds them again).
-        if(selected_item != EXIT)
-            releaseTitleGraphics();
-
-        switch(selected_item)
-        {
-        case CONTINUE:
-            world_task.makeCurrent();
-            break;
-        case NEW_FLAT:
-            world.setWorldType(World::WorldType::Flat);
-            world_task.resetWorld();
-            world_task.makeCurrent();
-            break;
-        case NEW_TERRAIN:
-            world.setWorldType(World::WorldType::Terrain);
-            world_task.resetWorld();
-            world_task.makeCurrent();
-            break;
-        case NEW_GRAPH:
-            graph_task.makeCurrent();
-            break;
-        case EXIT:
-            running = false;
-            break;
-        }
-
+        activate();
         key_held_down = true;
     }
     else if(keyPressed(KEY_NSPIRE_ESC))

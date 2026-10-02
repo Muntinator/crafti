@@ -1,5 +1,5 @@
-// Generated from furnace.png (256x256 vanilla furnace GUI)
-// Regenerate: python3 textures/gen_furnace_h.py
+// Generated from the Minecraft 1.17.1 GUI textures -- do not edit by hand.
+// Source: textures/gui/. Regenerate: python3 tools/textures/gen_gui_textures.py
 static uint16_t furnace_gui_data[] = {
     0x0000, 0x0000, 0x0841, 0x0841, 0x0841, 0x0841, 0x0841, 0x0841, 0x0841, 0x0841, 0x0841, 0x0841,
     0x0841, 0x0841, 0x0841, 0x0841, 0x0841, 0x0841, 0x0841, 0x0841, 0x0841, 0x0841, 0x0841, 0x0841,

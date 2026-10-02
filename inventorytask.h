@@ -24,6 +24,13 @@ class InventoryTask : public Task
 {
 public:
     void openPlayerInventory();
+    /**
+     * Opens the player inventory and remembers where closing should return to, so
+     * a pause-menu button lands back on the pause menu rather than in the world.
+     * The flag is cleared the next time the inventory closes, so an in-game open
+     * still returns to the world.
+     */
+    void openPlayerInventoryFrom(Task *from);
     void openCraftingTable();
     void openFurnace(int block_x, int block_y, int block_z);
     /** Opens the chest at a block position (its contents live in cheststore.h). */
@@ -50,10 +57,18 @@ private:
     // those, so a chest slot can never be mistaken for a worn piece.
     static constexpr int CHEST_SLOT_OFFSET = 49;
     static constexpr int ARMOR_SLOT_OFFSET = CHEST_SLOT_OFFSET + 54;
+    /** The single offhand widget, above the four armour ones. */
+    static constexpr int OFFHAND_SLOT = ARMOR_SLOT_OFFSET + 4; // Inventory::armor_slot_count
 
     void activate();
+    /** Closes the window, back to wherever it was opened from. */
+    void close();
     int slotFromMouse(int mouse_x, int mouse_y) const;
-    /** Top-left corner of the player inventory window, as render() draws it. */
+    /**
+     * Top-left corner of the window render() draws, in screen pixels. The armour
+     * widgets and the chest panel are laid out from it, which is why it is shared
+     * rather than recomputed in each of the two files.
+     */
     static int inventoryWindowX();
     static int inventoryWindowY();
     int craftingSlotFromMouse(int mouse_x, int mouse_y) const;
@@ -97,6 +112,28 @@ private:
     int armorSlotFromMouse(int mouse_x, int mouse_y) const;
     /** Takes a worn piece onto the cursor, or puts the held one on. */
     void armorHandleClick(int index);
+
+    // --- offhand widget (inventorychest.cpp) --------------------------------
+    /**
+     * Draws the offhand stack, or the shield outline when it is empty. Only the
+     * player's own window has the slot: vanilla's InventoryMenu is the one menu
+     * that carries it, not the crafting table's or the furnace's.
+     */
+    void renderOffhandWidget();
+    bool offhandWidgetBounds(int &x, int &y, int &w, int &h) const;
+    /** The offhand widget under the mouse, or INVALID_SLOT. */
+    int offhandSlotFromMouse(int mouse_x, int mouse_y) const;
+    /**
+     * Picks the offhand stack up, or puts the held one down, exactly as a plain
+     * inventory slot does -- the offhand takes any item, not just a shield.
+     */
+    void offhandHandleClick(bool right_click);
+
+    /**
+     * Where closing returns to: null means the world, and a pause-menu open sets
+     * it to the pause menu. Cleared as soon as the window closes.
+     */
+    Task *return_task = nullptr;
 
     BLOCK_WDATA held_block = BLOCK_AIR;
     unsigned int held_count = 0;

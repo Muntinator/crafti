@@ -1,5 +1,11 @@
-// Item texture atlas (16x11 grid layout)
-// Each item = uint8_t index mapping to (x, y) = (index % 16, index / 16)
+// The item texture atlas' layout.
+//
+// Each item is a uint8_t index into the atlas generated into items_texture.h
+// (256x256, 16 tiles of 16px per axis): the tile an index names lives at
+// (x, y) = (index % 16, index / 16). This enum *is* the layout -- the generator,
+// tools/textures/gen_item_textures.py, reads it back out and puts the matching
+// official Minecraft 1.17.1 item texture on each coordinate -- so the values
+// below are load-bearing and reordering them moves the art with them.
 
 #ifndef ITEMS_H
 #define ITEMS_H
@@ -206,7 +212,9 @@ enum class ItemTexture : uint8_t {
     BROWN_DYE_ALT = 174,
     BONE_MEAL = 175,
 
-    // Row 11+ (tiles y≥176 in 256px items.png) — extend atlas indices as needed.
+    // Row 11 -- the last id; (0, 11) in the 16-wide atlas. Rows 12..15 are
+    // unused and left empty, so new items can be appended here without moving
+    // anything already placed.
     COOKED_SALMON = 176,
 };
 

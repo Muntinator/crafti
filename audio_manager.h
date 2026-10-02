@@ -109,6 +109,31 @@ namespace GameAudio
 	void mobSound(MobKind kind, bool hurt, int distance = 0);
 	bool playUiSound(unsigned int id);
 
+	// --- vanilla one-shots ---------------------------------------------------
+	/**
+	 * The cues the game itself raises, each named after the sound it is rather
+	 * than after a sample id, so no gameplay code has to know the pack's ids.
+	 *
+	 * Every one of them plays the official sample when a pack is installed and
+	 * falls back to the matching procedural tone when it is not: a build with no
+	 * pack is quiet rather than wrong, and never silent. The tone fallbacks are
+	 * the same ones the old `play(Event)` calls used, which is why that API is
+	 * still here -- it is the no-pack path, not a second sound set.
+	 */
+	void uiClick();
+	void playerHurt();
+	/** An attack swing; `strong` picks the heavier of the two families. */
+	void playerAttack(bool strong = false);
+	/** Landing after a fall; `big` for a fall tall enough to hurt. */
+	void playerFall(bool big);
+	void playerEat();
+	void playerLevelUp();
+	void itemPickup();
+	void chestOpen();
+	void chestClose();
+	void doorOpen();
+	void doorClose();
+
 	// --- music ---------------------------------------------------------------
 	bool startMusic(); // starts the next track, wrapping when the pack ends
 	void stopMusic();

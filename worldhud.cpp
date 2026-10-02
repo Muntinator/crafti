@@ -24,7 +24,6 @@
 #include "worldclock.h"
 
 #include "textures/icons.h"
-#include "textures/inventory.h"
 
 extern unsigned char font_dat[];
 
@@ -44,13 +43,12 @@ void WorldTask::renderHud()
 {
     const bool graph_mode = world.worldType() == World::WorldType::Graph;
 
-    // HUD from textures/gui/icons.png (MCP Gui.field_110324_m). The UVs are the
-    // vanilla 1.4.x ones the atlas is generated for: hearts at y=0, armour at
+    // HUD from the official gui/icons.png (Gui.GUI_ICONS_LOCATION). The UVs are
+    // the vanilla 1.17.1 ones the sheet is laid out for: hearts at y=0, armour at
     // y=9, breath at y=18, hunger at y=27, all 9x9 with the container at x=16,
     // the full icon at x=52 and the half icon at x=61.
     {
-        constexpr int hotbar_src_width = 22 * 9;
-        const int hud_scale = SCREEN_WIDTH >= hotbar_src_width * 2 ? 2 : 1;
+        const int hud_scale = Inventory::hotbarScale();
         constexpr int sp = 9;
         constexpr int container_x = 16;
         constexpr int full_x = 52;
@@ -180,37 +178,8 @@ void WorldTask::renderHud()
                 snprintf(item_line, sizeof(item_line), "%s", global_block_renderer.getName(current_slot));
         }
         drawStringCenter(item_line, 0xFFFF, *screen, SCREEN_WIDTH / 2, SCREEN_HEIGHT - current_inventory.height() - fontHeight());
-
-        // Draw selection indicator using inventory texture at (1,23) to (2,44)
-        constexpr int hotbar_src_width = 22 * 9; // 22 * hotbar_slot_count
-        constexpr int hotbar_src_height = 22;
-        constexpr int hotbar_slot_src_left = 3;
-        constexpr int hotbar_slot_src_pitch = 20;
-
-        const int hotbar_scale = SCREEN_WIDTH >= hotbar_src_width * 2 ? 2 : 1;
-        const int hotbar_draw_width = hotbar_src_width * hotbar_scale;
-        const int hotbar_draw_height = hotbar_src_height * hotbar_scale;
-        const int hotbar_slot_pitch = hotbar_slot_src_pitch * hotbar_scale;
-        const int hotbar_slots_left = hotbar_slot_src_left * hotbar_scale;
-        const int hotbar_slots_top = 3 * hotbar_scale;
-
-        const int inventory_x = (SCREEN_WIDTH - hotbar_draw_width) / 2;
-        const int inventory_y = SCREEN_HEIGHT - hotbar_draw_height - 3;
-
-        // Selector: 22x22 from inventory.png at (1,23) to (22,44)
-        constexpr int selector_src_x = 1;
-        constexpr int selector_src_y = 23;
-        constexpr int selector_src_w = 22;
-        constexpr int selector_src_h = 22;
-
-        const int slot_offset = current_inventory.currentSlotIndex() * hotbar_slot_pitch;
-        const int draw_x = inventory_x + hotbar_slots_left + slot_offset - 2 * hotbar_scale;
-        const int draw_y = inventory_y + hotbar_slots_top - 2 * hotbar_scale;
-
-        drawTexture(inventory, *screen,
-                    selector_src_x, selector_src_y, selector_src_w, selector_src_h,
-                    draw_x, draw_y,
-                    selector_src_w * hotbar_scale, selector_src_h * hotbar_scale);
+        // The selected slot's frame is drawn by Inventory::draw() itself, so the
+        // hotbar and the frame around it are always in step.
     }
 
     int message_y = graph_mode ? static_cast<int>(fontHeight()) + 7 : 5;

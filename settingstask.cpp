@@ -1,14 +1,13 @@
 #include "settingstask.h"
 
+#include <cstdio>
+
 #include "audio_manager.h"
 #include "audio_output.h"
-#include "font.h"
-#include "texturetools.h"
+#include "menuui.h"
 #include "villagegen.h"
 #include "worldclock.h"
 #include "worldtask.h"
-
-#include "textures/selection.h"
 
 SettingsTask settings_task;
 
@@ -88,13 +87,57 @@ SettingsTask::SettingsTask()
     // Rain and thunderstorms. They are derived from the day/night clock, so this
     // only applies while that cycle is on.
     settings.push_back({"Weather", fastmode_values, 2, 1, 0, 1});
+    // The front-end's own scale, added by the vanilla port. Appended last so older
+    // save files keep loading; "Auto" is the largest scale the screen can hold.
+    settings.push_back({"GUI scale", MenuUI::guiScaleValues,
+                        static_cast<unsigned int>(MenuUI::guiScaleValueCount), 0, 0, 1});
+}
 
-    background = newTexture(background_width, background_height, 0, false);
+SettingsTask::RowKind SettingsTask::rowKind(unsigned int entry) const
+{
+    const SettingsEntry &e = settings[entry];
+    if(e.values == nullptr)
+        return RowKind::Slider;
+    if(e.values == fastmode_values)
+        return RowKind::Toggle;
+    return RowKind::Cycle;
+}
+
+bool SettingsTask::isToggleEntry(unsigned int entry) const
+{
+    return settings[entry].values == fastmode_values;
 }
 
 bool SettingsTask::isVolumeEntry(unsigned int entry) const
 {
     return entry >= AUDIO_MASTER && entry < AUDIO_GPIO4;
+}
+
+bool SettingsTask::isAudioEntry(unsigned int entry) const
+{
+    return entry >= AUDIO_MASTER && entry <= AUDIO_GPIO4;
+}
+
+void SettingsTask::formatValue(unsigned int entry, char *out, unsigned int size) const
+{
+    const SettingsEntry &e = settings[entry];
+
+    if(isVolumeEntry(entry))
+    {
+        snprintf(out, size, "%u%%", e.current_value);
+        return;
+    }
+
+    if(e.values == nullptr)
+    {
+        snprintf(out, size, "%u", e.current_value);
+        return;
+    }
+
+    if(e.current_value < e.values_count)
+        snprintf(out, size, "%s", e.values[e.current_value]);
+    else
+        out[0] = '\0';
 }
 
 void SettingsTask::applyGameplaySettings()
@@ -109,140 +152,247 @@ void SettingsTask::applyGameplaySettings()
 
 SettingsTask::~SettingsTask()
 {
-    deleteTexture(background);
 }
 
 void SettingsTask::makeCurrent()
 {
-    if(!background_saved)
-        saveBackground();
-
     settings[DISTANCE].current_value = world.fieldOfView();
 
+    // Show the scale the front-end is actually running at, so the row is truthful
+    // even after an "Auto" choice.
+    settings[GUI_SCALE].current_value = static_cast<unsigned int>(MenuUI::guiScale());
+
+    current_selection = 0;
+    scroll = 0;
     changed_something = false;
 
     Task::makeCurrent();
 }
 
-void SettingsTask::render()
+void SettingsTask::drawEntry(unsigned int entry, int x, int y, int w, int h)
 {
-    drawBackground();
+    SettingsEntry &e = settings[entry];
+    const bool focused = (current_selection == entry);
+    const RowKind kind = rowKind(entry);
 
-    const unsigned int x = (SCREEN_WIDTH - background->width) / 2;
-    unsigned int y = (SCREEN_HEIGHT - background->height) / 2;
-    drawTextureOverlay(*background, 0, 0, *screen, x, y, background->width, background->height);
-    drawString("Settings", 0xFFFF, *screen, x, y - fontHeight());
+    char value[16];
+    formatValue(entry, value, sizeof(value));
 
-    y += 8;
+    char label[64];
+    MenuUI::formatOptionLabel(label, sizeof(label), e.name, value);
 
-    for(unsigned int i = 0; i < settings.size(); ++i)
+    if(kind == RowKind::Slider)
     {
-        SettingsEntry &e = settings[i];
-
-        if(i == current_selection)
-            drawTexture(selection, *screen, 0, 0, selection.width, selection.height, x + 5, y, selection.width, selection.height);
-
-        drawString(e.name, 0xFFFF, *screen, x + selection.width + 10, y);
-
-        if(!isVolumeEntry(i))
-        {
-            if(e.values == nullptr)
-            {
-                char number[10];
-                snprintf(number, sizeof(number), "%u", e.current_value);
-                drawString(number, 0xFFFF, *screen, x + 100, y);
-            }
-            else
-                drawString(e.values[e.current_value], 0xFFFF, *screen, x + 100, y);
-        }
-        else
-        {
-            char volume_text[12];
-            snprintf(volume_text, sizeof(volume_text), "%u%%", e.current_value);
-            drawString(volume_text, 0xFFFF, *screen, x + 150, y);
-        }
-
-        y += fontHeight() + 5;
+        // Vanilla's slider is a button whose label sits on the track and whose
+        // handle marks the value.
+        MenuUI::drawSlider(*screen, x, y, w, h, e.current_value, e.min_value,
+                           e.values_count - 1, focused);
+        MenuUI::drawButtonLabel(label, *screen, x, y, w, h, focused);
+        return;
     }
 
+    MenuUI::drawButton(*screen, x, y, w, h, focused);
+
+    if(kind == RowKind::Toggle)
+    {
+        // Vanilla words an on/off option as "Name: On"; the checkbox at the right
+        // is the same state drawn as a widget.
+        const int scale = MenuUI::uiScale();
+        const int box = 20 * scale;
+        const int gap = 4 * scale;
+        MenuUI::drawCheckbox(*screen, x + w - box - gap, y + (h - box) / 2, box,
+                             e.current_value != 0, focused);
+        MenuUI::drawButtonLabel(label, *screen, x, y, w - box - gap, h, focused);
+        return;
+    }
+
+    // A list row: the label carries the current value and left/right cycles it.
+    MenuUI::drawButtonLabel(label, *screen, x, y, w, h, focused);
+}
+
+void SettingsTask::render()
+{
+    // Vanilla's options screen is the dirt backdrop, a title, and a two-column
+    // grid of widgets with a wide "Done" under it.
+    MenuUI::drawMenuBackground(*screen);
+
+    const int total = static_cast<int>(settings.size());
+    MenuUI::OptionsLayout layout = MenuUI::optionsLayout(total, scroll);
+    scroll = layout.first_visible;
+
+    MenuUI::drawHeading(MenuUI::optionsHeading, *screen, layout.title_y);
+
+    // Rows are stored top to bottom, so once one is off the top there is nothing
+    // below it to draw either.
+    for(int row = layout.first_visible; row < layout.rows && layout.rowVisible(row); ++row)
+    {
+        const int y = layout.rowY(row);
+        for(int col = 0; col < 2; ++col)
+        {
+            const int index = row * 2 + col;
+            if(index >= total)
+                break;
+            drawEntry(static_cast<unsigned int>(index), layout.columnX(col), y,
+                      layout.button_w, layout.button_h);
+        }
+    }
+
+    const bool done_focused = (current_selection >= settings.size());
+    MenuUI::drawButton(*screen, layout.done_x, layout.done_y, layout.done_w, layout.done_h,
+                       done_focused);
+    MenuUI::drawButtonLabel(MenuUI::optionsDoneLabel, *screen, layout.done_x, layout.done_y,
+                            layout.done_w, layout.done_h, done_focused);
+}
+
+void SettingsTask::moveSelection(int delta)
+{
+    const int total = static_cast<int>(settings.size());
+    int selection = static_cast<int>(current_selection) + delta;
+
+    if(selection < 0)
+        selection = total; // above the first entry is the "Done" button
+    if(selection > total)
+        selection = 0;
+    current_selection = static_cast<unsigned int>(selection);
+
+    // The "Done" button is not part of the grid, so selecting it leaves the scroll
+    // alone.
+    if(current_selection >= settings.size())
+        return;
+
+    const MenuUI::OptionsLayout layout = MenuUI::optionsLayout(total, scroll);
+    scroll = MenuUI::optionsScrollFor(static_cast<int>(current_selection) / 2,
+                                      layout.visible_rows, layout.rows, scroll);
+}
+
+void SettingsTask::changeValue(int delta)
+{
+    if(current_selection >= settings.size())
+        return; // "Done" has no value
+
+    SettingsEntry &e = settings[current_selection];
+
+    if(isToggleEntry(current_selection))
+    {
+        // Left/right flips an on/off row as well, which is what a keyboard user
+        // expects from a checkbox.
+        e.current_value = e.current_value == 0 ? 1 : 0;
+    }
+    else
+    {
+        const int step = e.step > 0 ? static_cast<int>(e.step) : 1;
+        const int min = static_cast<int>(e.min_value);
+        const int max = static_cast<int>(e.values_count) - 1;
+
+        int value = static_cast<int>(e.current_value) + delta * step;
+        if(value < min)
+            value = max;
+        if(value > max)
+            value = min;
+        e.current_value = static_cast<unsigned int>(value);
+    }
+
+    changed_something = true;
+
+    if(isAudioEntry(current_selection))
+        applyAudioSettings();
+    if(current_selection == VILLAGE_FREQUENCY || current_selection == DAY_LENGTH)
+        applyGameplaySettings();
+    if(current_selection == GUI_SCALE)
+        MenuUI::setGuiScale(static_cast<int>(settings[GUI_SCALE].current_value));
+}
+
+void SettingsTask::activate()
+{
+    if(current_selection >= settings.size())
+    {
+        leave();
+        return;
+    }
+
+    SettingsEntry &e = settings[current_selection];
+    const RowKind kind = rowKind(current_selection);
+
+    if(kind == RowKind::Slider)
+        return; // a slider changes with left/right only
+
+    if(kind == RowKind::Toggle)
+        e.current_value = e.current_value == 0 ? 1 : 0;
+    else
+        e.current_value = (e.current_value + 1) % e.values_count;
+
+    changed_something = true;
+
+    if(isAudioEntry(current_selection))
+        applyAudioSettings();
+    if(current_selection == VILLAGE_FREQUENCY || current_selection == DAY_LENGTH)
+        applyGameplaySettings();
+    if(current_selection == GUI_SCALE)
+        MenuUI::setGuiScale(static_cast<int>(settings[GUI_SCALE].current_value));
+}
+
+void SettingsTask::openFrom(Task *from)
+{
+    return_task = from;
+    makeCurrent();
+}
+
+void SettingsTask::leave()
+{
+    Task *back = return_task;
+    return_task = nullptr;
+
+    if(back != nullptr)
+        back->makeCurrent();
+    else
+        world_task.makeCurrent();
+
+    if(changed_something)
+    {
+        world.setDirty();
+        world.setFieldOfView(settings[DISTANCE].current_value);
+
+        nglSetNearPlane(settings[NEARPLANE_Z].current_value);
+    }
+
+    applyAudioSettings();
+    applyGameplaySettings();
+
+    key_held_down = true;
 }
 
 void SettingsTask::logic(GLFix /*dt*/)
 {
     if(key_held_down)
-        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_LEFT) || keyPressed(KEY_NSPIRE_4) || keyPressed(KEY_NSPIRE_RIGHT) || keyPressed(KEY_NSPIRE_6);
+        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN)
+            || keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_LEFT)
+            || keyPressed(KEY_NSPIRE_4) || keyPressed(KEY_NSPIRE_RIGHT) || keyPressed(KEY_NSPIRE_6)
+            || keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_ENTER) || keyPressed(KEY_NSPIRE_CLICK);
     else if(keyPressed(KEY_NSPIRE_ESC))
-    {
-        world_task.makeCurrent();
-
-        if(changed_something)
-        {
-            world.setDirty();
-            world.setFieldOfView(settings[DISTANCE].current_value);
-
-            nglSetNearPlane(settings[NEARPLANE_Z].current_value);
-        }
-
-        applyAudioSettings();
-        applyGameplaySettings();
-
-        key_held_down = true;
-    }
+        leave();
     else if(keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_8))
     {
-        if(current_selection == 0)
-            current_selection = settings.size() - 1;
-        else
-            --current_selection;
-
+        moveSelection(-1);
         key_held_down = true;
     }
     else if(keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_2))
     {
-        ++current_selection;
-        if(current_selection >= settings.size())
-            current_selection = 0;
-
+        moveSelection(+1);
         key_held_down = true;
     }
     else if(keyPressed(KEY_NSPIRE_LEFT) || keyPressed(KEY_NSPIRE_4))
     {
-        SettingsEntry &entry = settings[current_selection];
-        if(isVolumeEntry(current_selection))
-        {
-            entry.current_value = entry.current_value < entry.step ? 0 : entry.current_value - entry.step;
-            applyAudioSettings();
-            changed_something = true;
-            key_held_down = true;
-            return;
-        }
-        if(entry.current_value < entry.min_value + entry.step)
-            entry.current_value = entry.values_count - 1;
-        else
-            entry.current_value -= entry.step;
-
-        changed_something = true;
-
+        changeValue(-1);
         key_held_down = true;
     }
     else if(keyPressed(KEY_NSPIRE_RIGHT) || keyPressed(KEY_NSPIRE_6))
     {
-        SettingsEntry &entry = settings[current_selection];
-        entry.current_value += entry.step;
-        if(isVolumeEntry(current_selection))
-        {
-            if(entry.current_value > entry.values_count - 1)
-                entry.current_value = entry.values_count - 1;
-        }
-        else if(entry.current_value >= entry.values_count)
-            entry.current_value = entry.min_value;
-
-        if(isVolumeEntry(current_selection) || current_selection == AUDIO_GPIO4)
-            applyAudioSettings();
-        if(current_selection == VILLAGE_FREQUENCY || current_selection == DAY_LENGTH)
-            applyGameplaySettings();
-        changed_something = true;
-
+        changeValue(+1);
+        key_held_down = true;
+    }
+    else if(keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_ENTER) || keyPressed(KEY_NSPIRE_CLICK))
+    {
+        activate();
         key_held_down = true;
     }
 }
@@ -300,6 +450,10 @@ bool SettingsTask::loadFromFile(gzFile file, int version)
             && value < settings[i].values_count)
             settings[i].current_value = value;
     }
+
+    // The GUI scale is part of the saved settings; an older file that has no such
+    // entry leaves it at "Auto", which is the default.
+    MenuUI::setGuiScale(static_cast<int>(settings[GUI_SCALE].current_value));
 
     applyAudioSettings();
     applyGameplaySettings();

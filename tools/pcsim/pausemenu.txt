@@ -1,0 +1,89 @@
+# The in-game pause menu, captured with its button interactions: the appearance,
+# the keyboard and the pointer, a child screen opening and coming back, resuming
+# the game and quitting to the title. It is the port of vanilla 1.17.1's
+# PauseScreen, so every number below is the widget the real one draws.
+#
+#   MUNT_SIM_SHOTS=/tmp/pause sh tools/pcsim/play.sh tools/pcsim/pausemenu.txt
+#
+# Vanilla's PauseScreen, and therefore this one:
+#
+#   - washes the frozen world in `Screen.renderBackground`'s vertical gradient,
+#     ARGB 0xC0101010 to 0xD0101010 -- a dark grey that grows from about 75% to
+#     81% opacity, far darker than the half shade the old menu used,
+#   - heads the screen "Game Menu", centred at y 40,
+#   - lays its buttons out from `height / 4 + 8` on a 24-pixel pitch: a 204-wide
+#     button, three rows of two 98-wide buttons, then another 204-wide button,
+#     the two columns at `width / 2 - 102` and `width / 2 + 4`.
+#
+# The desktop harness runs at twice the GUI scale (640x480), so every number
+# above is doubled on screen. The calculator's own keys are reached through the
+# harness' desktop mappings: `s`/`w` step the selection down/up, `space` (or
+# `enter`) takes it, `esc` opens and closes the menu.
+#
+#   mpos X Y     puts the pointer there, which is what hover tests against
+#   btn left tap click, and that is what takes the button under the pointer
+
+0.0    step 120
+0.0    caption The title screen, for reference.
+1.0    shot 01-title
+
+# Start a world, so the pause menu has a world to dim behind it.
+1.4    key space tap
+6.0    command gamemode creative
+6.1    command time set noon
+6.2    command weather clear
+6.8    step 33
+7.2    caption The world, for reference.
+7.4    shot 02-world
+
+# --- the pause menu -------------------------------------------------------
+# ESC (Menu on the calculator) opens it, exactly as vanilla's does.
+8.0    key esc tap
+8.8    caption The pause menu: vanilla's "Game Menu" heading over the world washed in the screen's dark gradient, then vanilla's own button grid -- a full-width "Back to Game", three rows of two (Help / Block List, Save World / Sound Test..., Options... / Player Inventory) and a full-width "Save and Quit to Title".
+9.0    shot 03-pause
+
+# The keyboard walks the grid the way vanilla's does: 2 (s) steps down, 8 (w)
+# steps back up, and the highlight follows.
+9.4    key s tap
+9.8    key s tap
+10.2   caption Two steps down put the highlight on "Block List", the right-hand button of the first two-column row -- the grid runs one full-width button, then three rows of two, then one more.
+10.4   shot 04-pause-down
+
+# The pointer picks a button too, exactly as vanilla's does on a machine with a
+# mouse: moving onto a button lights it and takes the highlight, before any click.
+10.8   mpos 426 300
+11.2   caption The pointer is over "Player Inventory": hovering a button lights it and takes the highlight, which is how vanilla's screens behave.
+11.4   shot 05-pause-hover
+
+# --- Options opens as a child screen, and closing it comes back here -------
+11.8   mpos 214 300
+12.2   btn left tap
+12.8   caption A click takes the button under the pointer: "Options..." opens the options screen on top of the pause menu.
+13.0   shot 06-pause-options
+
+13.6   key esc tap
+14.2   caption Closing Options returns to the pause menu, as it does in vanilla -- the screen was opened as a child of the pause menu, not of the world, so Esc comes back here rather than dropping the player into the game. The pointer is still over "Options...", so that button carries the highlight.
+14.4   shot 07-pause-return
+
+# --- the player inventory, opened from the pause menu ---------------------
+14.6   mpos 426 300
+15.0   btn left tap
+15.6   caption "Player Inventory" opened the same way, and closes back to the pause menu just like Options.
+15.8   shot 08-pause-inventory
+
+# --- Back to Game ---------------------------------------------------------
+# The desktop build closes the player inventory with `t` (the key that opens it),
+# not Esc, so that is what returns to the pause menu here.
+16.4   key t tap
+17.0   mpos 320 156
+17.4   btn left tap
+17.8   caption "Back to Game" closes the menu and hands control back to the world, the way vanilla's does.
+18.0   shot 09-pause-resume
+
+# --- Save and Quit to Title ----------------------------------------------
+18.6   key esc tap
+19.2   mpos 320 348
+19.6   btn left tap
+20.4   caption "Save and Quit to Title" writes the world and returns to vanilla's title screen.
+20.6   shot 10-pause-quit
+21.0   end

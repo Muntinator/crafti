@@ -1,5 +1,5 @@
 // Host tests for the livestock definition tables: per-species stats, drop
-// tables, the shared quadruped UV layout and the biome-weighted spawn rules.
+// tables, the vanilla model layouts and the biome-weighted spawn rules.
 //
 // Build and run with `make -C tests`.
 
@@ -23,7 +23,7 @@ static int species_index(Species s) { return static_cast<int>(s); }
 
 static void test_stats()
 {
-    CHECK(Livestock::SpeciesCount == 5);
+    CHECK(Livestock::SpeciesCount == 8);
     CHECK(Livestock::BiomeCount == 5);
 
     for(unsigned int i = 0; i < Livestock::SpeciesCount; ++i)
@@ -71,6 +71,15 @@ static void test_drops()
           == Livestock::itemStack(static_cast<uint8_t>(ItemTexture::RAW_CHICKEN)));
     CHECK(Livestock::stats(Species::Horse).drop_stack[0]
           == Livestock::itemStack(static_cast<uint8_t>(ItemTexture::LEATHER)));
+    // The wolf has no vanilla drop, so it drops its pelt as leather like the horse.
+    CHECK(Livestock::stats(Species::Wolf).drop_stack[0]
+          == Livestock::itemStack(static_cast<uint8_t>(ItemTexture::LEATHER)));
+    CHECK(Livestock::stats(Species::Mooshroom).drop_stack[0]
+          == Livestock::itemStack(static_cast<uint8_t>(ItemTexture::RAW_BEEF)));
+    CHECK(Livestock::stats(Species::Mooshroom).drop_stack[1]
+          == Livestock::itemStack(static_cast<uint8_t>(ItemTexture::LEATHER)));
+    CHECK(Livestock::stats(Species::Donkey).drop_stack[0]
+          == Livestock::itemStack(static_cast<uint8_t>(ItemTexture::LEATHER)));
 
     // Item stacks must survive the BLOCK_ITEM encoding, through getITEMDATA():
     // an id of 128 or more does not fit in the 7-bit block reading.
@@ -96,42 +105,61 @@ static void test_drops()
 }
 
 namespace {
-struct Rect { int x0, y0, x1, y1; };
-
-Rect box_bounds(int u, int v, int w, int h, int d)
+bool is_leg(Mob::Pose pose)
 {
-    // Unwrap width is 2*(w+d), height is d+h; see drawQuadBox.
-    return { u, v, u + 2 * (w + d), v + d + h };
+    return pose == Mob::Pose::LegFrontLeft || pose == Mob::Pose::LegFrontRight
+        || pose == Mob::Pose::LegBackLeft || pose == Mob::Pose::LegBackRight;
 }
 
-bool overlaps(const Rect &a, const Rect &b)
+// A box's unwrap is 2*(w+d) wide and d+h tall, starting at its uv origin. If it
+// runs past the skin the box samples whatever is next to it, so it has to fit.
+bool box_fits(const Mob::MobBox &b, int tw, int th)
 {
-    return a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+    return b.u >= 0 && b.v >= 0 && b.w > 0 && b.h > 0 && b.d > 0
+        && b.u + 2 * (b.w + b.d) <= tw
+        && b.v + b.d + b.h <= th;
 }
 }
 
-static void test_quadruped_layout()
+static void test_vanilla_models()
 {
-    const Livestock::QuadrupedModel &m = Livestock::quadrupedModel();
-    CHECK(m.tex_width == 64);
-    CHECK(m.tex_height == 64);
-
-    const Rect head = box_bounds(m.head_u, m.head_v, m.head_w, m.head_h, m.head_d);
-    const Rect body = box_bounds(m.body_u, m.body_v, m.body_w, m.body_h, m.body_d);
-    const Rect leg = box_bounds(m.leg_u, m.leg_v, m.leg_w, m.leg_h, m.leg_d);
-    const Rect detail = box_bounds(m.detail_u, m.detail_v, m.detail_w, m.detail_h, m.detail_d);
-
-    const Rect regions[4] = { head, body, leg, detail };
-    for(const Rect &r : regions)
+    // Every mob but the chicken draws the vanilla 1.17.1 box model, so its UV
+    // origins have to land inside the official skin it is drawn with.
+    for(unsigned int i = 0; i < Livestock::SpeciesCount; ++i)
     {
-        CHECK(r.x0 >= 0 && r.y0 >= 0);
-        CHECK(r.x1 <= m.tex_width);
-        CHECK(r.y1 <= m.tex_height);
-    }
+        const Species s = static_cast<Species>(i);
+        const Mob::MobModel &m = Livestock::model(s);
 
-    for(unsigned int i = 0; i < 4; ++i)
-        for(unsigned int j = i + 1; j < 4; ++j)
-            CHECK(!overlaps(regions[i], regions[j]));
+        if(s == Species::Chicken)
+        {
+            CHECK(m.empty()); // the renderer still draws this one itself
+            continue;
+        }
+
+        CHECK(!m.empty());
+        CHECK(m.tex_width == 64);
+        CHECK(m.part_count > 0);
+        CHECK(m.box_count > 0);
+
+        for(unsigned int b = 0; b < m.box_count; ++b)
+            CHECK(box_fits(m.boxes[b], m.tex_width, m.tex_height));
+
+        unsigned int legs = 0;
+        for(unsigned int p = 0; p < m.part_count; ++p)
+        {
+            const Mob::MobPart &part = m.parts[p];
+            CHECK(part.box_count > 0);
+            CHECK(part.first_box + part.box_count <= m.box_count);
+            if(is_leg(part.pose))
+            {
+                ++legs;
+                // The y axis counts down, so a foot on the ground ends at 24.
+                const Mob::MobBox &leg = m.boxes[part.first_box];
+                CHECK(part.py + leg.oy + leg.h == 24);
+            }
+        }
+        CHECK(legs >= 2); // something has to hold the mob up
+    }
 }
 
 static void test_weights()
@@ -159,17 +187,28 @@ static void test_weights()
 
 static void test_pick_boundaries()
 {
-    // Grassland {25, 20, 20, 25, 10}
+    // Grassland {20, 15, 15, 20, 10, 10, 5, 5}
     CHECK(species_index(Livestock::pickSpecies(0, Biome::Grassland)) == species_index(Species::Cow));
-    CHECK(species_index(Livestock::pickSpecies(24, Biome::Grassland)) == species_index(Species::Cow));
-    CHECK(species_index(Livestock::pickSpecies(25, Biome::Grassland)) == species_index(Species::Pig));
-    CHECK(species_index(Livestock::pickSpecies(44, Biome::Grassland)) == species_index(Species::Pig));
-    CHECK(species_index(Livestock::pickSpecies(45, Biome::Grassland)) == species_index(Species::Sheep));
-    CHECK(species_index(Livestock::pickSpecies(64, Biome::Grassland)) == species_index(Species::Sheep));
-    CHECK(species_index(Livestock::pickSpecies(65, Biome::Grassland)) == species_index(Species::Chicken));
-    CHECK(species_index(Livestock::pickSpecies(89, Biome::Grassland)) == species_index(Species::Chicken));
-    CHECK(species_index(Livestock::pickSpecies(90, Biome::Grassland)) == species_index(Species::Horse));
-    CHECK(species_index(Livestock::pickSpecies(99, Biome::Grassland)) == species_index(Species::Horse));
+    CHECK(species_index(Livestock::pickSpecies(19, Biome::Grassland)) == species_index(Species::Cow));
+    CHECK(species_index(Livestock::pickSpecies(20, Biome::Grassland)) == species_index(Species::Pig));
+    CHECK(species_index(Livestock::pickSpecies(34, Biome::Grassland)) == species_index(Species::Pig));
+    CHECK(species_index(Livestock::pickSpecies(35, Biome::Grassland)) == species_index(Species::Sheep));
+    CHECK(species_index(Livestock::pickSpecies(49, Biome::Grassland)) == species_index(Species::Sheep));
+    CHECK(species_index(Livestock::pickSpecies(50, Biome::Grassland)) == species_index(Species::Chicken));
+    CHECK(species_index(Livestock::pickSpecies(69, Biome::Grassland)) == species_index(Species::Chicken));
+    CHECK(species_index(Livestock::pickSpecies(70, Biome::Grassland)) == species_index(Species::Horse));
+    CHECK(species_index(Livestock::pickSpecies(79, Biome::Grassland)) == species_index(Species::Horse));
+    CHECK(species_index(Livestock::pickSpecies(80, Biome::Grassland)) == species_index(Species::Wolf));
+    CHECK(species_index(Livestock::pickSpecies(89, Biome::Grassland)) == species_index(Species::Wolf));
+    CHECK(species_index(Livestock::pickSpecies(90, Biome::Grassland)) == species_index(Species::Mooshroom));
+    CHECK(species_index(Livestock::pickSpecies(94, Biome::Grassland)) == species_index(Species::Mooshroom));
+    CHECK(species_index(Livestock::pickSpecies(95, Biome::Grassland)) == species_index(Species::Donkey));
+    CHECK(species_index(Livestock::pickSpecies(99, Biome::Grassland)) == species_index(Species::Donkey));
+
+    // Wolves hunt in the forest and never turn up on sand.
+    CHECK(Livestock::spawnWeight(Biome::Forest, Species::Wolf)
+          > Livestock::spawnWeight(Biome::Grassland, Species::Wolf));
+    CHECK(Livestock::spawnWeight(Biome::Desert, Species::Wolf) == 0);
 
     // Every roll must land on exactly one species (or none) in every biome.
     for(unsigned int b = 0; b < Livestock::BiomeCount; ++b)
@@ -205,7 +244,7 @@ int main()
 {
     test_stats();
     test_drops();
-    test_quadruped_layout();
+    test_vanilla_models();
     test_weights();
     test_pick_boundaries();
     test_classify();

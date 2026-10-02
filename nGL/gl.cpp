@@ -139,6 +139,27 @@ void nglMultMatVectRes(const MATRIX *mat1, const VECTOR3 *vect, VECTOR3 *res)
     res->z = P(mat1, 2, 0)*x + P(mat1, 2, 1)*y + P(mat1, 2, 2)*z + P(mat1, 2, 3);
 }
 
+/**
+ * The divisor of the perspective divide, kept away from zero.
+ *
+ * A vertex in the camera plane -- or within one fixed-point step of it, since
+ * the conversion truncates -- has no projection, and dividing by its depth is a
+ * division by zero: a crash on the desktop build and a silent garbage pixel on
+ * the calculator. The rasteriser already refuses geometry nearer than
+ * CLIP_PLANE, so clamping to that same plane is the answer the rest of the
+ * renderer would have given anyway, and it keeps the projected coordinates
+ * bounded instead of scaling them by a huge factor.
+ */
+static inline int perspectiveDivisor(const GLFix z)
+{
+    int divisor = z.toInteger<int>();
+
+    if(divisor > -CLIP_PLANE && divisor < CLIP_PLANE)
+        divisor = divisor < 0 ? -CLIP_PLANE : CLIP_PLANE;
+
+    return divisor;
+}
+
 void nglPerspective(VERTEX *v)
 {
 #ifdef BETTER_PERSPECTIVE
@@ -152,7 +173,7 @@ void nglPerspective(VERTEX *v)
     v->x = new_x;
     v->y = new_y;
 #else
-    auto div = Fix<12, int32_t>(near_plane)/v->z.toInteger<int>();
+    auto div = Fix<12, int32_t>(near_plane)/perspectiveDivisor(v->z);
 
     //Round to integers, as we don't lose the topmost bits with integer multiplication
     v->x = div * v->x.toInteger<int>();
@@ -205,7 +226,7 @@ void nglPerspective(VECTOR3 *v)
     v->x = new_x;
     v->y = new_y;
 #else
-    auto div = Fix<12, int32_t>(near_plane)/v->z.toInteger<int>();
+    auto div = Fix<12, int32_t>(near_plane)/perspectiveDivisor(v->z);
 
     //Round to integers, as we don't lose the topmost bits with integer multiplication
     v->x = div * v->x.toInteger<int>();

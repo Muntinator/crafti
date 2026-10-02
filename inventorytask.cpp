@@ -7,12 +7,14 @@
 #include <algorithm>
 #include <cstdio>
 
+#include "audio_manager.h"
 #include "blockrenderer.h"
 #include "cheststore.h"
 #include "font.h"
 #include "inventory.h"
 #include "itemicons.h"
 #include "itemrules.h"
+#include "playermodel.h"
 #include "world.h"
 #include "worldtask.h"
 
@@ -24,9 +26,16 @@
 InventoryTask inventory_task;
 
 namespace {
+// The player, crafting-table and furnace windows are all the official 176x166
+// vanilla sheet (GuiContainer's "generic 54" size), so every coordinate below is
+// the one vanilla puts that slot at in ContainerPlayer / ContainerWorkbench /
+// ContainerFurnace -- and the whole window fits the screen on both platforms
+// instead of having to be cropped.
+constexpr int window_src_width = 176;
+constexpr int window_src_height = 166;
 constexpr int inv_src_slot_size = 16;
 constexpr int inv_src_slot_gap = 2;
-constexpr int inv_src_pitch = inv_src_slot_size + inv_src_slot_gap;
+constexpr int inv_src_pitch = inv_src_slot_size + inv_src_slot_gap; // 18
 #ifdef _TINSPIRE
 constexpr int inv_draw_scale = 1;
 #else
@@ -35,66 +44,55 @@ constexpr int inv_draw_scale = 2;
 constexpr int inv_draw_slot_size = inv_src_slot_size * inv_draw_scale;
 constexpr int inv_draw_slot_gap = inv_src_slot_gap * inv_draw_scale;
 constexpr int inv_draw_pitch = inv_draw_slot_size + inv_draw_slot_gap;
-constexpr int inv_draw_slot_inset = 1 * inv_draw_scale;
-constexpr int hotbar_src_x = 8;
-constexpr int hotbar_src_y = 142;
+
+// The four armour slots run down the left of the window, one per 18 pixels.
+constexpr int armor_src_x = 8;
+constexpr int armor_src_y = 8;
+
+// The storage rows and the hotbar, which both windows have at the same place.
 constexpr int storage_src_x = 8;
 constexpr int storage_src_y = 84;
+constexpr int hotbar_src_x = 8;
+constexpr int hotbar_src_y = 142;
 constexpr int storage_cols = 9;
 constexpr int storage_rows = 3;
 
-// Crafting table panel coordinates in textures/crafting_table.png
-constexpr int table_input_x0 = 58;
-constexpr int table_input_y0 = 32;
-constexpr int table_input_x1 = 165;
-constexpr int table_input_y1 = 139;
-constexpr int table_output_x0 = 238;
-constexpr int table_output_y0 = 60;
-constexpr int table_output_x1 = 288;
-constexpr int table_output_y1 = 110;
-#ifdef _TINSPIRE
-constexpr int table_panel_offset_y = 6;
-#else
-constexpr int table_panel_offset_y = 26; // Previously 6; moved down by 20px.
-#endif
+// The 2x2 grid and its result slot in the player window...
+constexpr int crafting_src_x = 98;
+constexpr int crafting_src_y = 18;
+constexpr int crafting_output_src_x = 154;
+constexpr int crafting_output_src_y = 28;
 
-// Crafting area coordinates in inventory2.png
-constexpr int crafting_src_x = 87;
-constexpr int crafting_src_y = 25;
-constexpr int crafting_output_src_x = 143;
-constexpr int crafting_output_src_y = 35;
+// ...and the 3x3 grid and its result slot in the crafting table window.
+constexpr int table_crafting_src_x = 30;
+constexpr int table_crafting_src_y = 17;
+constexpr int table_output_src_x = 124;
+constexpr int table_output_src_y = 35;
 
-// Crafting grid is 2x2
 constexpr int crafting_cols = 2;
 constexpr int crafting_rows = 2;
-constexpr int crafting_slot_width = 18;  // (122-87+1) / 2 = ~18
-constexpr int crafting_slot_height = 18; // (60-25+1) / 2 = ~18
-
-constexpr int inventory_center_offset_x = 0;
-#ifdef _TINSPIRE
-constexpr int inventory_center_offset_y = 0;
-#else
-constexpr int inventory_center_offset_y = 40;
-#endif
-
-// The usable slot layout is not centered inside inventory2.png, so center using this region.
-constexpr int inventory_layout_left = storage_src_x;
-constexpr int inventory_layout_right = hotbar_src_x + (Inventory::hotbar_slot_count - 1) * inv_src_pitch + inv_src_slot_size;
-constexpr int inventory_layout_top = storage_src_y;
-constexpr int inventory_layout_bottom = hotbar_src_y + inv_src_slot_size;
 
 int inventoryOriginX()
 {
-    return (SCREEN_WIDTH - (inventory_layout_left + inventory_layout_right) * inv_draw_scale) / 2 + inventory_center_offset_x;
+    return (SCREEN_WIDTH - window_src_width * inv_draw_scale) / 2;
 }
 
 int inventoryOriginY()
 {
-    return (SCREEN_HEIGHT - (inventory_layout_top + inventory_layout_bottom) * inv_draw_scale) / 2 + inventory_center_offset_y;
+    return (SCREEN_HEIGHT - window_src_height * inv_draw_scale) / 2;
 }
 
-// The armour widgets are drawn just outside the inventory window, so they need
-// its position as well (they live in inventorychest.cpp with the chest panel).
+/** The window all three container screens are drawn in, in screen pixels. */
+void inventoryWindowRect(int &x, int &y, int &w, int &h)
+{
+    x = inventoryOriginX();
+    y = inventoryOriginY();
+    w = window_src_width * inv_draw_scale;
+    h = window_src_height * inv_draw_scale;
+}
+
+// The armour slots are part of the window, so their widgets need its position too
+// (they live in inventorychest.cpp with the chest panel).
 
 TEXTURE *craftingTableTexture()
 {
@@ -106,71 +104,11 @@ bool slotOccupied(BLOCK_WDATA block, unsigned int count)
     return getBLOCK(block) != BLOCK_AIR && count > 0;
 }
 
-void craftingTablePanelRect(const TEXTURE &table_tex, int &panel_x, int &panel_y, int &panel_w, int &panel_h)
-{
-    const int max_w = std::max(1, SCREEN_WIDTH - 8);
-    const int inventory_w = static_cast<int>(inventory2.width) * inv_draw_scale;
-    const int preferred_w = std::min(max_w, inventory_w);
-    const int tw = static_cast<int>(table_tex.width);
-    const int th = static_cast<int>(table_tex.height);
-
-    panel_w = std::min(tw, preferred_w);
-    if(panel_w < 1)
-        panel_w = 1;
-
-    panel_h = (panel_w * th) / tw;
-#ifdef _TINSPIRE
-    // 320x240: uncapped panel is ~126px tall and crowds the inventory below.
-    constexpr int nspire_table_max_h = 74;
-    if(panel_h > nspire_table_max_h)
-    {
-        panel_h = nspire_table_max_h;
-        panel_w = (panel_h * tw) / th;
-        if(panel_w < 1)
-            panel_w = 1;
-    }
-#endif
-    if(panel_h < 1)
-        panel_h = 1;
-
-    panel_x = (SCREEN_WIDTH - panel_w) / 2;
-    panel_y = table_panel_offset_y;
-}
-
-// Vanilla GuiContainer uses 176×166; GuiFurnace draws only UV (0,0)–(176,166). Columns x≥176 in furnace.png are
-// flame / smelting progress sprites (drawTexturedModalRect at 176,12 and 176,14), not part of the static background.
+// GuiContainer uses 176x166; GuiFurnace draws only UV (0,0)-(176,166). Columns x>=176
+// in furnace.png are the flame and the smelting arrow (drawn at 176,0 and 176,14),
+// not part of the static background.
 constexpr int furnace_gui_src_w = 176;
 constexpr int furnace_gui_src_h = 166;
-
-/** Fit the 176×166 furnace panel to the screen (correct aspect; matches ContainerFurnace slot coordinates). */
-void furnaceGuiPanelRect(int &panel_x, int &panel_y, int &panel_w, int &panel_h)
-{
-    const int margin = 8;
-    const int max_w = std::max(1, SCREEN_WIDTH - margin);
-    const int max_h = std::max(1, SCREEN_HEIGHT - margin);
-
-    int w = max_w;
-    int h = (w * furnace_gui_src_h) / furnace_gui_src_w;
-    if(h > max_h)
-    {
-        h = max_h;
-        w = (h * furnace_gui_src_w) / furnace_gui_src_h;
-        if(w < 1)
-            w = 1;
-    }
-    // ~20% smaller than max-fit (less dominant on screen)
-    constexpr int furnace_scale_pct = 80;
-    w = (w * furnace_scale_pct) / 100;
-    h = (h * furnace_scale_pct) / 100;
-    if(w < 1)
-        w = 1;
-    if(h < 1)
-        h = 1;
-    panel_w = w;
-    panel_h = h;
-    panel_x = (SCREEN_WIDTH - panel_w) / 2;
-    panel_y = (SCREEN_HEIGHT - panel_h) / 2;
-}
 
 enum class RecipeMat : uint8_t {
     Empty,
@@ -671,10 +609,8 @@ void tickFurnaceTile(World &world, int x, int y, int z, FurnaceTileData &d)
 
 } // namespace
 
-// The armour widgets are drawn just outside the inventory window, so they need
-// its position as well (they live in inventorychest.cpp with the chest panel).
-// These two are outside the anonymous namespace above on purpose: a member
-// definition has to be in a namespace that encloses the class.
+// Outside the anonymous namespace above on purpose: a member definition has to be
+// in a namespace that encloses the class.
 int InventoryTask::inventoryWindowX()
 {
     return inventoryOriginX();
@@ -691,6 +627,26 @@ void InventoryTask::openPlayerInventory()
     furnace_mode = false;
     chest_mode = false;
     activate();
+}
+
+void InventoryTask::openPlayerInventoryFrom(Task *from)
+{
+    return_task = from;
+    makeCurrent();
+}
+
+void InventoryTask::close()
+{
+    if(chest_mode)
+        GameAudio::chestClose();
+
+    Task *back = return_task;
+    return_task = nullptr;
+
+    if(back != nullptr)
+        back->makeCurrent();
+    else
+        world_task.makeCurrent();
 }
 
 void InventoryTask::openCraftingTable()
@@ -800,6 +756,11 @@ void InventoryTask::activate()
     if(!background_saved)
         saveBackground();
 
+    // Vanilla plays the chest lid when one is opened; the player window, the
+    // crafting table and the furnace are silent.
+    if(chest_mode)
+        GameAudio::chestOpen();
+
 #ifdef _TINSPIRE
     if(chest_mode)
     {
@@ -850,78 +811,27 @@ int InventoryTask::activeCraftingRows() const
 
 void InventoryTask::craftingGridBounds(int &x, int &y, int &w, int &h) const
 {
-    if(!crafting_table_mode)
-    {
-        const int inv_x = inventoryOriginX();
-        const int inv_y = inventoryOriginY();
-        x = inv_x + crafting_src_x * inv_draw_scale;
-        y = inv_y + crafting_src_y * inv_draw_scale;
-        w = crafting_slot_width * activeCraftingCols() * inv_draw_scale;
-        h = crafting_slot_height * activeCraftingRows() * inv_draw_scale;
-        return;
-    }
+    // The grid is where the vanilla window of whichever screen is open puts it:
+    // (98,18) for the player window's 2x2 grid, (30,17) for the crafting table's
+    // 3x3 one. Both are the slot origins ContainerPlayer / ContainerWorkbench use.
+    int origin_x = 0, origin_y = 0, window_w = 0, window_h = 0;
+    inventoryWindowRect(origin_x, origin_y, window_w, window_h);
 
-    TEXTURE *table_tex = craftingTableTexture();
-    if(!table_tex)
-    {
-        const int inv_x = inventoryOriginX();
-        const int inv_y = inventoryOriginY();
-        x = inv_x + crafting_src_x * inv_draw_scale;
-        y = inv_y + crafting_src_y * inv_draw_scale;
-        w = crafting_slot_width * activeCraftingCols() * inv_draw_scale;
-        h = crafting_slot_height * activeCraftingRows() * inv_draw_scale;
-        return;
-    }
-
-    int panel_x = 0, panel_y = 0, panel_w = 0, panel_h = 0;
-    craftingTablePanelRect(*table_tex, panel_x, panel_y, panel_w, panel_h);
-
-    x = panel_x + (table_input_x0 * panel_w) / static_cast<int>(table_tex->width);
-    y = panel_y + (table_input_y0 * panel_h) / static_cast<int>(table_tex->height);
-    int x1 = panel_x + ((table_input_x1 + 1) * panel_w) / static_cast<int>(table_tex->width);
-    int y1 = panel_y + ((table_input_y1 + 1) * panel_h) / static_cast<int>(table_tex->height);
-    w = std::max(1, x1 - x);
-    h = std::max(1, y1 - y);
+    x = origin_x + (crafting_table_mode ? table_crafting_src_x : crafting_src_x) * inv_draw_scale;
+    y = origin_y + (crafting_table_mode ? table_crafting_src_y : crafting_src_y) * inv_draw_scale;
+    w = activeCraftingCols() * inv_draw_pitch;
+    h = activeCraftingRows() * inv_draw_pitch;
 }
 
 void InventoryTask::craftingOutputBounds(int &x, int &y, int &w, int &h) const
 {
-    if(!crafting_table_mode)
-    {
-        const int inv_x = inventoryOriginX();
-        const int inv_y = inventoryOriginY();
-        const int output_src_w = 160 - 143 + 1;
-        const int output_src_h = 52 - 35 + 1;
-        x = inv_x + crafting_output_src_x * inv_draw_scale;
-        y = inv_y + crafting_output_src_y * inv_draw_scale;
-        w = output_src_w * inv_draw_scale;
-        h = output_src_h * inv_draw_scale;
-        return;
-    }
+    int origin_x = 0, origin_y = 0, window_w = 0, window_h = 0;
+    inventoryWindowRect(origin_x, origin_y, window_w, window_h);
 
-    TEXTURE *table_tex = craftingTableTexture();
-    if(!table_tex)
-    {
-        const int inv_x = inventoryOriginX();
-        const int inv_y = inventoryOriginY();
-        const int output_src_w = 160 - 143 + 1;
-        const int output_src_h = 52 - 35 + 1;
-        x = inv_x + crafting_output_src_x * inv_draw_scale;
-        y = inv_y + crafting_output_src_y * inv_draw_scale;
-        w = output_src_w * inv_draw_scale;
-        h = output_src_h * inv_draw_scale;
-        return;
-    }
-
-    int panel_x = 0, panel_y = 0, panel_w = 0, panel_h = 0;
-    craftingTablePanelRect(*table_tex, panel_x, panel_y, panel_w, panel_h);
-
-    x = panel_x + (table_output_x0 * panel_w) / static_cast<int>(table_tex->width);
-    y = panel_y + (table_output_y0 * panel_h) / static_cast<int>(table_tex->height);
-    int x1 = panel_x + ((table_output_x1 + 1) * panel_w) / static_cast<int>(table_tex->width);
-    int y1 = panel_y + ((table_output_y1 + 1) * panel_h) / static_cast<int>(table_tex->height);
-    w = std::max(1, x1 - x);
-    h = std::max(1, y1 - y);
+    x = origin_x + (crafting_table_mode ? table_output_src_x : crafting_output_src_x) * inv_draw_scale;
+    y = origin_y + (crafting_table_mode ? table_output_src_y : crafting_output_src_y) * inv_draw_scale;
+    w = inv_draw_slot_size;
+    h = inv_draw_slot_size;
 }
 
 void InventoryTask::furnaceSlotBounds(int slot_index, int &x, int &y, int &w, int &h) const
@@ -938,7 +848,7 @@ void InventoryTask::furnaceSlotBounds(int slot_index, int &x, int &y, int &w, in
     }
 
     int panel_x = 0, panel_y = 0, panel_w = 0, panel_h = 0;
-    furnaceGuiPanelRect(panel_x, panel_y, panel_w, panel_h);
+    inventoryWindowRect(panel_x, panel_y, panel_w, panel_h);
     x = panel_x + (sx * panel_w) / furnace_gui_src_w;
     y = panel_y + (sy * panel_h) / furnace_gui_src_h;
     w = std::max(1, (slot_px * panel_w) / furnace_gui_src_w);
@@ -977,7 +887,7 @@ void InventoryTask::furnacePlayerSlotBounds(int player_slot, int &x, int &y, int
     }
 
     int panel_x = 0, panel_y = 0, panel_w = 0, panel_h = 0;
-    furnaceGuiPanelRect(panel_x, panel_y, panel_w, panel_h);
+    inventoryWindowRect(panel_x, panel_y, panel_w, panel_h);
     x = panel_x + (sx * panel_w) / furnace_gui_src_w;
     y = panel_y + (sy * panel_h) / furnace_gui_src_h;
     w = std::max(1, (slot_px * panel_w) / furnace_gui_src_w);
@@ -998,6 +908,15 @@ int InventoryTask::slotFromMouse(int mouse_x, int mouse_y) const
         const int armor_slot = armorSlotFromMouse(mouse_x, mouse_y);
         if(armor_slot != INVALID_SLOT)
             return armor_slot;
+    }
+
+    // The offhand slot belongs to the player's own window: vanilla's
+    // InventoryMenu is the only one of the three menus that carries it.
+    if(!furnace_mode && !crafting_table_mode)
+    {
+        const int offhand_slot = offhandSlotFromMouse(mouse_x, mouse_y);
+        if(offhand_slot != INVALID_SLOT)
+            return offhand_slot;
     }
 
     const int inv_x = inventoryOriginX();
@@ -1187,6 +1106,12 @@ void InventoryTask::handleLeftClick(int slot)
     if(!furnace_mode && slot >= ARMOR_SLOT_OFFSET && slot < ARMOR_SLOT_OFFSET + Inventory::armor_slot_count)
     {
         armorHandleClick(slot - ARMOR_SLOT_OFFSET);
+        return;
+    }
+
+    if(slot == OFFHAND_SLOT)
+    {
+        offhandHandleClick(false);
         return;
     }
 
@@ -1404,6 +1329,12 @@ void InventoryTask::handleRightClick(int slot)
         return;
     }
 
+    if(slot == OFFHAND_SLOT)
+    {
+        offhandHandleClick(true);
+        return;
+    }
+
     if(chest_mode && slot >= CHEST_SLOT_OFFSET)
     {
         chestHandleClick(slot, true);
@@ -1597,6 +1528,12 @@ void InventoryTask::handleHalfPlace(int slot)
         return;
     }
 
+    if(slot == OFFHAND_SLOT)
+    {
+        offhandHandleClick(true);
+        return;
+    }
+
     if(!isHoldingItem())
         return;
 
@@ -1697,54 +1634,24 @@ void InventoryTask::render()
         return;
     }
 
-    // Worn armour, in the strip left of the inventory window. Drawn before the
-    // window itself, which never covers that strip. The furnace screen has no
-    // inventory window (its panel is centred and wider), so the widgets are left
-    // out of it entirely rather than being drawn under the panel.
-    if(!furnace_mode)
-        renderArmorWidgets();
-
     const int inv_x = inventoryOriginX();
     const int inv_y = inventoryOriginY();
 
-    if(!furnace_mode)
+    // The window itself: the player's inventory, the crafting table's, or the
+    // furnace's -- three 176x166 vanilla sheets, all drawn in the same place, so
+    // the slots below land on the ones baked into whichever of them is showing.
+    if(!furnace_mode && !crafting_table_mode)
     {
-        const int inv_w = static_cast<int>(inventory2.width) * inv_draw_scale;
-        const int inv_h = static_cast<int>(inventory2.height) * inv_draw_scale;
-
-        const int clip_x0 = std::max(0, inv_x);
-        const int clip_y0 = std::max(0, inv_y);
-        const int clip_x1 = std::min(SCREEN_WIDTH, inv_x + inv_w);
-        const int clip_y1 = std::min(SCREEN_HEIGHT, inv_y + inv_h);
-
-        if(clip_x1 > clip_x0 && clip_y1 > clip_y0)
-        {
-            const int rel_left = clip_x0 - inv_x;
-            const int rel_top = clip_y0 - inv_y;
-            const int rel_right = clip_x1 - inv_x;
-            const int rel_bottom = clip_y1 - inv_y;
-
-            const int src_x = rel_left / inv_draw_scale;
-            const int src_y = rel_top / inv_draw_scale;
-            const int src_right = (rel_right + inv_draw_scale - 1) / inv_draw_scale;
-            const int src_bottom = (rel_bottom + inv_draw_scale - 1) / inv_draw_scale;
-            const int src_w = src_right - src_x;
-            const int src_h = src_bottom - src_y;
-
-            if(src_w > 0 && src_h > 0)
-                drawTexture(inventory2, *screen,
-                            src_x, src_y, src_w, src_h,
-                            inv_x + src_x * inv_draw_scale,
-                            inv_y + src_y * inv_draw_scale,
-                            src_w * inv_draw_scale,
-                            src_h * inv_draw_scale);
-        }
+        drawTexture(inventory2, *screen,
+                    0, 0, window_src_width, window_src_height,
+                    inv_x, inv_y,
+                    window_src_width * inv_draw_scale, window_src_height * inv_draw_scale);
     }
 
     if(furnace_mode)
     {
         int panel_x = 0, panel_y = 0, panel_w = 0, panel_h = 0;
-        furnaceGuiPanelRect(panel_x, panel_y, panel_w, panel_h);
+        inventoryWindowRect(panel_x, panel_y, panel_w, panel_h);
         const int src_w = std::min(static_cast<int>(furnace_gui.width), furnace_gui_src_w);
         const int src_h = std::min(static_cast<int>(furnace_gui.height), furnace_gui_src_h);
         drawTexture(furnace_gui, *screen,
@@ -1764,17 +1671,22 @@ void InventoryTask::render()
         auto vw = [&](int w) { return std::max(1, (w * panel_w) / furnace_gui_src_w); };
         auto vh = [&](int h) { return std::max(1, (h * panel_h) / furnace_gui_src_h); };
 
+        // The flame sprite is the 14x13 patch at (176,0) of the sheet, drawn
+        // upwards from the bottom of its box (36..48). The clamp is what keeps a
+        // full burn from asking for a row above the sprite: when the furnace is at
+        // full heat the box is 13 rows tall and starts at row 36, where vanilla's
+        // own 12 - burn arithmetic would already be one row past the top of it.
         int burn_scale = fd_gui.current_item_burn_time;
         if(burn_scale <= 0)
             burn_scale = 200;
-        const int burn_h_pc = std::min(13, fd_gui.burn_time * 13 / burn_scale);
-        if(burn_h_pc > 0 && fd_gui.burn_time > 0)
+        const int flame_h = std::min(13, fd_gui.burn_time * 13 / burn_scale);
+        if(flame_h > 0 && fd_gui.burn_time > 0)
         {
-            const int sh = burn_h_pc + 1;
+            const int sh = std::min(13, flame_h + 1);
             drawTexture(furnace_gui, *screen,
-                        static_cast<uint16_t>(176), static_cast<uint16_t>(12 - burn_h_pc),
+                        static_cast<uint16_t>(176), static_cast<uint16_t>(13 - sh),
                         static_cast<uint16_t>(14), static_cast<uint16_t>(sh),
-                        static_cast<uint16_t>(vx(56)), static_cast<uint16_t>(vy(36 + 12 - burn_h_pc)),
+                        static_cast<uint16_t>(vx(56)), static_cast<uint16_t>(vy(49 - sh)),
                         static_cast<uint16_t>(vw(14)), static_cast<uint16_t>(vh(sh)));
         }
 
@@ -1795,15 +1707,50 @@ void InventoryTask::render()
     {
         if(TEXTURE *table_tex = craftingTableTexture())
         {
-            int panel_x = 0, panel_y = 0, panel_w = 0, panel_h = 0;
-            craftingTablePanelRect(*table_tex, panel_x, panel_y, panel_w, panel_h);
             drawTexture(*table_tex, *screen,
-                        0, 0,
-                        table_tex->width, table_tex->height,
-                        panel_x, panel_y,
-                        panel_w, panel_h);
+                        0, 0, window_src_width, window_src_height,
+                        inv_x, inv_y,
+                        window_src_width * inv_draw_scale, window_src_height * inv_draw_scale);
         }
     }
+
+    // The player's own model fills the right half of the player window, exactly
+    // as vanilla's InventoryScreen draws it in renderBg: the feet at (51,75) of
+    // the window, one model turning to follow the pointer. It goes down before
+    // the armour and items so a stack being dragged up lands on top of it.
+    if(!furnace_mode && !crafting_table_mode)
+    {
+        int mouse_x, mouse_y;
+#ifndef _TINSPIRE
+        SDL_GetMouseState(&mouse_x, &mouse_y);
+#else
+        mouse_x = cursor_x;
+        mouse_y = cursor_y;
+#endif
+        const int feet_x = inv_x + 51 * inv_draw_scale;
+        const int feet_y = inv_y + 75 * inv_draw_scale;
+        // Vanilla hands renderEntityInInventory mouse deltas measured from the
+        // window's own pixels, and leans about the point (51,25) of it. The
+        // screen deltas are divided back down by the window's scale to match.
+        const int dx = (feet_x - mouse_x) / inv_draw_scale;
+        const int dy = (inv_y + 25 * inv_draw_scale - mouse_y) / inv_draw_scale;
+        PlayerModel::drawInGui(feet_x, feet_y, 30 * inv_draw_scale,
+                               PlayerModel::yawForMouse(dx),
+                               PlayerModel::pitchForMouse(dy));
+
+        // Vanilla's window carries its own label; the player's says "Crafting"
+        // at (97,6) in 0x404040.
+        drawString("Crafting", 0x4208, *screen,
+                   inv_x + 97 * inv_draw_scale, inv_y + 6 * inv_draw_scale);
+
+        // The offhand slot only the player's window has, drawn with the items.
+        renderOffhandWidget();
+    }
+
+    // The worn armour goes into the four slots the window draws down its left
+    // edge, so it is drawn after the window and before its own items.
+    if(!furnace_mode)
+        renderArmorWidgets();
 
     const int pitch = inv_draw_pitch;
     if(furnace_mode)
@@ -2015,7 +1962,7 @@ void InventoryTask::logic(GLFix dt)
     {
         if(!key_held_down)
         {
-            world_task.makeCurrent();
+            close();
             key_held_down = true;
         }
         return;
@@ -2053,7 +2000,7 @@ void InventoryTask::logic(GLFix dt)
     // On calculator builds, close with A, . or ESC.
     if(keyPressed(KEY_NSPIRE_A) || keyPressed(KEY_NSPIRE_PERIOD) || keyPressed(KEY_NSPIRE_ESC))
     {
-        world_task.makeCurrent();
+        close();
         key_held_down = true;
         return;
     }

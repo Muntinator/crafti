@@ -1,0 +1,123 @@
+# The player's inventory: the official window, the player model standing in its
+# right half, and the three things the window is for -- putting armour on,
+# crafting in the 2x2 grid and moving a stack around. Captured for a side-by-side
+# look against vanilla.
+#
+#   MUNT_SIM_SHOTS=/tmp/inv sh tools/pcsim/play.sh tools/pcsim/inventory.txt
+#
+# The window is the same 176x166 sheet the other containers use, drawn at 2x on
+# the desktop, so its slots sit at window-relative source coordinates times two:
+# the hotbar starts at (8,142), the storage rows at (8,84), the 2x2 grid at
+# (98,18) and its result at (154,28), and the four armour slots down the left at
+# (8,8) stepping 18. The mouse is the pointer the model follows: it turns to face
+# wherever it is, so the three appearance frames walk it round the player.
+#
+#   mpos X Y     puts the pointer there, which is what the model and the slots read
+#   btn left tap a single left click, which is what moves a stack
+
+0.0    step 120
+# Off the title screen into the world, the way every scenario starts.
+1.4    key space tap
+
+1.8    command gamemode creative
+1.9    command time set noon
+2.0    command weather clear
+2.2    step 20
+
+# The stacks land in the first free slots, which are the nine on the hotbar.
+2.4    command give log 8
+2.45   command give planks 32
+2.5    command give "iron helmet"
+2.55   command give "diamond sword"
+2.6    command give cobblestone 64
+3.0    step 20
+
+3.6    key t tap
+
+# --- the player model -----------------------------------------------------
+# Each of these points the pointer somewhere new; the model turns to follow it,
+# the way vanilla's mouse rule turns the player in the window.
+4.2    mpos 246 124
+4.6    caption The player inventory: the official 176x166 window with its four armour slots, the 2x2 grid and its result, and the player himself standing in the right half, facing the pointer.
+4.8    shot 01-inventory-front
+
+5.4    mpos 366 130
+5.8    caption The pointer moved to the right, so the player has turned with it.
+6.0    shot 02-model-turned-right
+
+6.6    mpos 128 92
+7.0    caption The pointer moved up and to the left: the player has turned the other way and leaned back to keep looking at it.
+7.2    shot 03-model-turned-left
+
+# --- equipping armour -----------------------------------------------------
+# The helmet is the third stack, in the hotbar's third slot. Picking it up and
+# clicking the helmet slot puts it on, the way vanilla's own armour slots work.
+7.8    mpos 248 374
+8.0    btn left tap
+8.6    mpos 176 106
+8.8    btn left tap
+9.4    caption The iron helmet picked up off the hotbar and worn: the armour slot on the left now holds it, drawn with the piece's own icon.
+9.6    shot 04-armour-equipped
+
+# --- crafting --------------------------------------------------------------
+# A single log in the 2x2 grid is vanilla's 1:1 recipe for four planks, so the
+# result slot fills in as soon as it lands.
+10.2   mpos 176 374
+10.4   btn left tap
+11.0   mpos 356 126
+11.2   btn left tap
+11.8   caption A log placed in the top-left of the 2x2 grid; the result slot to its right has filled with the four planks the recipe makes.
+12.0   shot 05-craft-grid
+
+# Taking the result consumes the log and leaves the planks on the pointer.
+12.6   mpos 468 146
+12.8   btn left tap
+13.4   caption The result taken: the log is consumed and the planks are on the pointer.
+13.6   shot 06-planks-taken
+
+# Put them down in the storage rows so the pointer is free again.
+14.2   mpos 212 258
+14.4   btn left tap
+15.0   caption The planks put down in the storage rows.
+15.2   shot 07-planks-stored
+
+# --- moving a stack --------------------------------------------------------
+15.8   mpos 320 374
+16.0   btn left tap
+16.6   mpos 176 258
+16.8   btn left tap
+17.4   caption A stack of cobblestone moved from the hotbar's fifth slot into the top-left of the storage rows, the way a left click lifts a whole stack and another puts it down.
+17.6   shot 08-stack-moved
+
+# --- the offhand slot ------------------------------------------------------
+# The offhand sat at (77,62) of the window, the slot vanilla's InventoryMenu
+# keeps for the shield (and for anything else). It takes any item, so it behaves
+# like every other slot: left click in, left click out. The sword is the fourth
+# stack, in hotbar slot four.
+18.2   mpos 284 374
+18.4   btn left tap
+19.0   mpos 314 214
+19.2   btn left tap
+19.8   caption The diamond sword moved into the offhand slot, the one vanilla keeps beside the crafting grid: any item fits there, not only a shield. On an empty offhand the slot shows the shield outline the window draws for it.
+20.0   shot 09-offhand-filled
+
+# And straight back out again, to the hotbar slot it came from.
+20.6   mpos 314 214
+20.8   btn left tap
+21.4   mpos 284 374
+21.6   btn left tap
+22.2   caption The sword taken back out of the offhand and returned to the hotbar: a stack moves out of the slot exactly as it moves in.
+22.4   shot 10-offhand-emptied
+
+# Vanilla's offhand key, from the world: F trades the selected hotbar stack with
+# whatever the offhand holds. `3` is the desktop's cycle-hotbar key, which walks
+# the selection from the empty first slot onto the planks in the second.
+22.8   key t tap
+23.2   key 3 tap
+23.8   key f tap
+24.4   key t tap
+24.8   mpos 246 124
+25.2   caption Vanilla's offhand key does the same without the window: pressing F in the world traded the selected hotbar stack (the planks) with the offhand, so the planks are now the offhand stack and the second hotbar slot is empty.
+25.4   shot 11-offhand-key
+
+25.8   end

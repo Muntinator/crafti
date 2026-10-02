@@ -11,6 +11,26 @@ public:
     Inventory();
 
     void draw(TEXTURE &tex);
+
+    /**
+     * The hotbar widget and its selected-slot frame, as the official
+     * gui/widgets.png draws them: nine 16-pixel slots on a 20-pixel pitch inside a
+     * 182x22 bar, and a 24x24 frame drawn one pixel up and to the left of the slot
+     * it rings. The geometry is here because three screens draw the same widget --
+     * the world HUD, the block list and this one -- and they all have to agree
+     * about where a slot is, down to the pixel a click is tested against.
+     */
+    static int hotbarScale();
+    static int hotbarWidth();
+    static int hotbarHeight();
+    static int hotbarLeft();
+    static int hotbarTop();
+    static int hotbarSlotSize();
+    static int hotbarSlotX(int slot);
+    static int hotbarSlotY();
+    static int hotbarSelectorSize();
+    static int hotbarSelectorX(int slot);
+    static int hotbarSelectorY();
     /**
      * The small green-to-red wear bar under an item widget. Nothing is drawn for
      * an item that cannot break or that is still unused.
@@ -56,6 +76,26 @@ public:
 
     /** Enchantments of the worn pieces, in the same order as the armour itself. */
     Enchanting::Set armor_enchant[armor_slot_count] = {};
+
+    // --- offhand -----------------------------------------------------------
+
+    /**
+     * The offhand stack, which is one slot rather than four: vanilla's
+     * `PlayerInventory` keeps it beside the armour (its slot 40, shown at
+     * (77,62) of the player window), and it can hold any item, not just armour.
+     * Like the armour, the wear travels with the stack that is in it.
+     */
+    BLOCK_WDATA offhand = BLOCK_AIR;
+    unsigned int offhand_count = 0;
+    unsigned short offhand_damage = 0;
+
+    BLOCK_WDATA offhandBlock() const;
+    unsigned int offhandCount() const;
+    unsigned short offhandDamage() const;
+    /** Puts a stack in the offhand; an air block or zero count empties it. */
+    void setOffhand(BLOCK_WDATA block, unsigned int count, unsigned short worn);
+    /** Vanilla's "swap items with offhand" key: trades the held hotbar slot. */
+    void swapOffhandWithCurrentSlot();
     /** Enchantments on the held stack, which is what a table or an anvil works on. */
     const Enchanting::Set &currentSlotEnchant() const { return enchant[current_slot]; }
     Enchanting::Set &currentSlotEnchant() { return enchant[current_slot]; }

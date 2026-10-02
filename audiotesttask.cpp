@@ -6,6 +6,7 @@
 #include "audio_nspire_gpio4.h"
 #include "audio_output.h"
 #include "font.h"
+#include "menuui.h"
 #include "starttask.h"
 #include "texturetools.h"
 
@@ -26,33 +27,6 @@ namespace
 		"Back"
 	};
 
-	void fillRect(TEXTURE &tex, int x, int y, int w, int h, COLOR c)
-	{
-		if(x >= static_cast<int>(tex.width) || y >= static_cast<int>(tex.height) || w <= 0 || h <= 0)
-			return;
-
-		if(x < 0)
-		{
-			w += x;
-			x = 0;
-		}
-		if(y < 0)
-		{
-			h += y;
-			y = 0;
-		}
-		if(x + w > static_cast<int>(tex.width))
-			w = tex.width - x;
-		if(y + h > static_cast<int>(tex.height))
-			h = tex.height - y;
-
-		for(int yy = 0; yy < h; ++yy)
-		{
-			COLOR *line = tex.bitmap + (y + yy) * tex.width + x;
-			for(int xx = 0; xx < w; ++xx)
-				line[xx] = c;
-		}
-	}
 }
 
 AudioTestTask::AudioTestTask()
@@ -178,46 +152,42 @@ void AudioTestTask::runItem(unsigned int item)
 
 void AudioTestTask::render()
 {
-	drawStringCenter("Audio Test", 0xFFFF, *screen, SCREEN_WIDTH / 2, 8);
+	// The dirt every vanilla menu is drawn on, and a vanilla heading.
+	MenuUI::drawMenuBackground(*screen);
+	MenuUI::drawHeading("Audio Test", *screen, MenuUI::headingY());
 
-	const int button_w = 220;
-	const int button_h = 18;
+	// Ten rows do not fit a standard 24-pixel button column on a 240-pixel
+	// screen, so the buttons are packed a little tighter -- but they are still the
+	// vanilla widget sheet's button, in its plain and highlighted states.
+	const int button_w = SCREEN_WIDTH - 16;
+	const int button_h = 16 * MenuUI::uiScale();
 	const int button_x = (SCREEN_WIDTH - button_w) / 2;
-	int y = 30;
+	int y = 26 * MenuUI::uiScale();
 
 	for(unsigned int i = 0; i < ITEM_MAX; ++i)
 	{
 		const bool selected = (static_cast<int>(i) == selected_item);
-		if(selected)
-		{
-			fillRect(*screen, button_x, y, button_w, button_h, 0x7BEF);
-			drawRectangle(*screen, button_x, y, button_w, button_h, 0xFFFF);
-		}
-		else
-		{
-			drawRectangle(*screen, button_x, y, button_w, button_h, 0x8410);
-		}
-
-		drawString(item_labels[i], selected ? 0x0000 : 0xFFFF, *screen, button_x + 6, y + 4);
-		y += button_h + 3;
+		MenuUI::drawButton(*screen, button_x, y, button_w, button_h, selected);
+		MenuUI::drawButtonLabel(item_labels[i], *screen, button_x, y, button_w, button_h, selected);
+		y += button_h + 2 * MenuUI::uiScale();
 	}
 
 	y += 4;
-	drawString("Audio pack:", 0x8410, *screen, 8, y);
-	drawString(GameAudio::packStatus(), 0xFFFF, *screen, 100, y);
+	drawString("Audio pack:", MenuUI::TextDisabled, *screen, 8, y);
+	drawString(GameAudio::packStatus(), MenuUI::Text, *screen, 100, y);
 	y += fontHeight() + 2;
 
-	drawString("Output:", 0x8410, *screen, 8, y);
-	drawString(GameAudioOutput::backendName(), 0xFFFF, *screen, 100, y);
+	drawString("Output:", MenuUI::TextDisabled, *screen, 8, y);
+	drawString(GameAudioOutput::backendName(), MenuUI::Text, *screen, 100, y);
 	y += fontHeight() + 2;
 
-	drawString(GameAudioGpio4::status(), 0xFFFF, *screen, 8, y);
+	drawString(GameAudioGpio4::status(), MenuUI::Text, *screen, 8, y);
 	y += fontHeight() + 2;
 
 	if(status_timeout > 0)
-		drawString(status, 0xFFE0, *screen, 8, y);
+		drawString(status, MenuUI::Splash, *screen, 8, y);
 	else
-		drawString("Up/Down to move, 5/Return to run", 0x8410, *screen, 8, y);
+		drawString("Up/Down to move, 5/Return to run", MenuUI::TextDisabled, *screen, 8, y);
 }
 
 void AudioTestTask::logic(GLFix /*dt*/)

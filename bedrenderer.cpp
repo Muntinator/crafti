@@ -3,16 +3,16 @@
 #include "bed.h"
 #include "worldtask.h"
 
-// The bed's four tiles are painted into row 5 of the atlas at load time by
-// terrain.cpp (paintBedTile). They are the only tiles in the game that belong to
-// a *shape* rather than to a block -- the two ends of the bed are told apart by
-// which top tile they use -- so they are named here instead of being read out of
-// the block_textures table.
-static constexpr int bed_tile_row = 5;
-static constexpr int bed_head_top_tile = 0;  // the blanket with the pillow pad
-static constexpr int bed_underside_tile = 1; // plain planks
-static constexpr int bed_side_tile = 2;      // the blanket turned over the frame
-static constexpr int bed_foot_top_tile = 3;  // the blanket on its own
+// The bed's four tiles are cut from the official bed texture into row 4 of the
+// atlas (tools/textures/gen_block_textures.py). They are the only tiles in the
+// game that belong to a *shape* rather than to a block -- the two ends of the
+// bed are told apart by which top tile they use -- so they are named here
+// instead of being read out of the block_textures table.
+static constexpr int bed_tile_row = 4;
+static constexpr int bed_head_top_tile = 4;  // the blanket with the pillow pad
+static constexpr int bed_underside_tile = 5; // plain planks
+static constexpr int bed_side_tile = 6;      // the blanket turned over the frame
+static constexpr int bed_foot_top_tile = 7;  // the blanket on its own
 
 constexpr GLFix BedRenderer::bed_height;
 

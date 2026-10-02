@@ -10,9 +10,8 @@
  *
  * Pure rules: no engine state, no nGL rendering, no globals. Every function is a
  * function of the stack value alone, so the whole file is exercised by
- * tests/itemrules_test.cc on the host. The tables mirror Minecraft 1.4 (the
- * version the item atlas is generated for) so the numbers on the calculator are
- * the ones a player already knows.
+ * tests/itemrules_test.cc on the host. The tables mirror Minecraft 1.4's
+ * balance, so the numbers on the calculator are the ones a player already knows.
  *
  * Durability lives next to the stack, not inside it: a BLOCK_WDATA has no room
  * for a damage counter (both bytes are used by the block id and the item id).

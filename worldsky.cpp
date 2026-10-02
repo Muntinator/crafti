@@ -128,29 +128,34 @@ void WorldTask::renderSky()
     const int radius = SCREEN_WIDTH / 40;
     const int sun_elevation = WorldClock::sunElevationDegrees();
 
-    // Sunrise and sunset glow: white in the middle of the day, warming up as the
-    // sun comes down, so dawn and dusk read as dawn and dusk and not just as a
-    // dimmer noon. Two discs of pixels, which is free next to one textured
-    // triangle even on the CX.
+    // How close the sun is to the horizon, as a 0..1 fraction: 0 with it high in
+    // the sky, 1 with it on the horizon. The glow and the disc itself are both
+    // coloured from this one number, so the disc cannot stay white inside an
+    // orange halo. Two discs of pixels for the glow, which is free next to one
+    // textured triangle even on the CX.
     constexpr int glow_degrees = 22;
-    if(sun_elevation > -sink && sun_elevation < glow_degrees)
+    const int distance_to_horizon = sun_elevation > 0 ? sun_elevation : -sun_elevation;
+    const bool low_sun = sun_elevation > -sink && distance_to_horizon < glow_degrees;
+    const GLFix nearness = low_sun
+        ? GLFix(1.0f - static_cast<float>(distance_to_horizon) / static_cast<float>(glow_degrees))
+        : GLFix(0);
+
+    if(low_sun)
     {
-        const float nearness = 1.0f - static_cast<float>(sun_elevation > 0 ? sun_elevation : -sun_elevation)
-            / static_cast<float>(glow_degrees);
-        const GLFix amount = GLFix(nearness);
-        const unsigned short inner = colorRGB(GLFix(0.72f) + amount * GLFix(0.28f),
-                                              GLFix(0.62f) + amount * GLFix(0.28f),
-                                              GLFix(0.48f) + amount * GLFix(0.42f));
-        const unsigned short outer = colorRGB(GLFix(0.55f) + amount * GLFix(0.20f),
-                                              GLFix(0.45f) + amount * GLFix(0.22f),
-                                              GLFix(0.38f) + amount * GLFix(0.34f));
+        const unsigned short inner = colorRGB(GLFix(0.72f) + nearness * GLFix(0.28f),
+                                              GLFix(0.62f) + nearness * GLFix(0.28f),
+                                              GLFix(0.48f) + nearness * GLFix(0.42f));
+        const unsigned short outer = colorRGB(GLFix(0.55f) + nearness * GLFix(0.20f),
+                                              GLFix(0.45f) + nearness * GLFix(0.22f),
+                                              GLFix(0.38f) + nearness * GLFix(0.34f));
         skyHalo(WorldClock::sunAzimuthDegrees(), sun_elevation, radius * 3, outer);
         skyHalo(WorldClock::sunAzimuthDegrees(), sun_elevation, radius * 2, inner);
     }
 
     if(sun_elevation > -sink)
         skyBody(WorldClock::sunAzimuthDegrees(), sun_elevation, radius,
-                colorRGB(GLFix(1), GLFix(0.96f), GLFix(0.72f)));
+                colorRGB(GLFix(1.0f), GLFix(0.96f) - nearness * GLFix(0.42f),
+                         GLFix(0.72f) - nearness * GLFix(0.55f)));
 
     const int moon_elevation = WorldClock::moonElevationDegrees();
     if(moon_elevation > -sink)

@@ -135,10 +135,20 @@ build/bed_test: bed_test.cc $(ROOT)/bed.cpp $(ROOT)/bed.h \
 # against the boxes they are drawn in. It is built twice, because the calculator
 # screen (320x240, _TINSPIRE) is half the desktop's in each direction and a label
 # that fits one need not fit the other.
-build/menuui_test: menuui_test.cc $(ROOT)/menuui.cpp $(ROOT)/menuui.h $(ROOT)/font.cpp | build
+# The front-end's artwork is generated from the vanilla sheets, so the test has to
+# be rebuilt when one of those headers is regenerated: the geometry it checks is
+# derived from the images' own sizes.
+MENUUI_TEXTURES := $(ROOT)/textures/menu_button.h $(ROOT)/textures/menu_background.h \
+                   $(ROOT)/textures/title_logo.h \
+                   $(ROOT)/textures/edition.h $(ROOT)/textures/slider_handle.h \
+                   $(ROOT)/textures/checkbox.h $(ROOT)/textures/font_bmp.h \
+                   $(ROOT)/textures/font_dat.h $(ROOT)/textures/font_bmp_wide.h \
+                   $(ROOT)/textures/font_dat_wide.h
+
+build/menuui_test: menuui_test.cc $(ROOT)/menuui.cpp $(ROOT)/menuui.h $(ROOT)/font.cpp $(MENUUI_TEXTURES) | build
 	$(CXX) $(COMMON) -I$(ROOT)/nGL -D_TINSPIRE -o $@ menuui_test.cc $(ROOT)/menuui.cpp $(ROOT)/font.cpp
 
-build/menuui_wide_test: menuui_test.cc $(ROOT)/menuui.cpp $(ROOT)/menuui.h $(ROOT)/font.cpp | build
+build/menuui_wide_test: menuui_test.cc $(ROOT)/menuui.cpp $(ROOT)/menuui.h $(ROOT)/font.cpp $(MENUUI_TEXTURES) | build
 	$(CXX) $(COMMON) -I$(ROOT)/nGL -o $@ menuui_test.cc $(ROOT)/menuui.cpp $(ROOT)/font.cpp
 
 clean:

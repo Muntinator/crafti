@@ -5,10 +5,26 @@ the world, somewhere to put them, and tools that wear out. All three keep the
 existing shape of the code: the rules are pure modules that the host tests drive,
 and the engine files only hook them up.
 
+## The item atlas (`textures/items_texture.h`)
+
+The item icons are the official Minecraft 1.17.1 textures, one file per item
+under `textures/item/` in vanilla's own layout, arranged into the atlas by
+`tools/textures/gen_item_textures.py`. The script reads the `ItemTexture` enum in
+`textures/items.h` and puts each item's texture at the coordinate its value
+implies, so the enum and the art cannot drift apart, and `itemicons.cpp` samples
+`(index % 16, index / 16)` out of the 256x256 result. Regenerate with
+
+    python3 tools/textures/gen_item_textures.py
+
+Two entries are not a plain copy: the bed, which vanilla draws as a 3D model and
+so has no 2D icon (composed here from the same red-bed unwrap the block atlas
+uses), and the compass and clock, which vanilla animates over 32 and 64 frames
+and this engine draws as a single still.
+
 ## Durability (`itemrules.h/.cpp`)
 
-Every number comes from Minecraft 1.4, the version the item atlas is generated
-for, so a player who knows that version already knows these:
+Every number comes from Minecraft 1.4, the balance the tables were written
+against, so a player who knows that version already knows these:
 
 | Material | Tools | Helmet | Chest | Legs | Boots |
 | --- | --- | --- | --- | --- | --- |
@@ -75,12 +91,14 @@ littered with the contents of its chests.
 ## Chests (`cheststore.*`)
 
 `BLOCK_CHEST` is block id 45 — the id was unused and the new block is appended to
-the normal range, so every existing save still reads. It is the only block with no
-art in the atlases the game ships (an external 512² file and two embedded 256²
-ones), so `terrain.cpp` paints it into **row 4 of the atlas, which was unused**,
-before the resized copy is made: that means the world, the inventory icon, the
-block list and the drop entity all get it without touching any texture file. The
-tiles are a wooden lid (top), a plain side and a front with hinges and a latch.
+the normal range, so every existing save still reads. Vanilla has no 2D chest
+texture to copy (the chest is a block entity, so its texture is a model unwrap),
+and the atlases the game ships (an external 512² file and two embedded 256² ones)
+had no art for it either. `tools/textures/gen_block_textures.py` therefore cuts a
+wooden lid (top), a plain side and a front with hinges and a latch out of
+`entity/chest/normal.png` and places them in **row 4 of the atlas, which was
+unused**: the world, the inventory icon, the block list and the drop entity all
+get them without a hand-drawn tile.
 
 Chests are block entities. The world stores only the block; `cheststore.h` owns
 the contents, keyed by block position, so there is no per-screen copy of the

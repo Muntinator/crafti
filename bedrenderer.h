@@ -20,9 +20,9 @@
  * bed. A bed whose partner has been replaced therefore still draws closed, and a
  * proper bed has no coincident geometry at all.
  *
- * The tiles come from atlas row 5, painted at runtime by terrain.cpp exactly the
- * way the chest's row 4 is, and none of them has to be turned to follow which way
- * the bed points (see paintBedTile).
+ * The tiles come from columns 4..7 of atlas row 4, cut out of the official bed
+ * model's texture by tools/textures/gen_block_textures.py, and none of them has
+ * to be turned to follow which way the bed points.
  */
 class BedRenderer : public DumbBlockRenderer
 {

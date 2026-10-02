@@ -10,51 +10,74 @@
 #include "itemrules.h"
 
 #include "textures/inventory.h"
-#include "textures/inventory2.h"
 
 Inventory current_inventory;
 
-static constexpr int hotbar_src_x = 0;
-static constexpr int hotbar_src_y = 0;
-static constexpr int hotbar_src_width = 22 * Inventory::hotbar_slot_count;
+// The hotbar widget as the official gui/widgets.png draws it: nine 16-pixel slots
+// on a 20-pixel pitch starting at (3,3) of a 182x22 bar, and the selected-slot
+// frame at (0,22), 24x24.
+static constexpr int hotbar_src_width = 182;
 static constexpr int hotbar_src_height = 22;
 static constexpr int hotbar_slot_src_left = 3;
 static constexpr int hotbar_slot_src_top = 3;
 static constexpr int hotbar_slot_src_size = 16;
 static constexpr int hotbar_slot_src_pitch = 20;
-
-static int hotbarScale()
-{
-    return SCREEN_WIDTH >= hotbar_src_width * 2 ? 2 : 1;
-}
+static constexpr int selector_src_x = 0;
+static constexpr int selector_src_y = 22;
+static constexpr int selector_src_size = 24;
 
 Inventory::Inventory()
 {
 }
 
+int Inventory::hotbarScale()
+{
+    return SCREEN_WIDTH >= hotbar_src_width * 2 ? 2 : 1;
+}
+
+int Inventory::hotbarWidth() { return hotbar_src_width * hotbarScale(); }
+int Inventory::hotbarHeight() { return hotbar_src_height * hotbarScale(); }
+int Inventory::hotbarLeft() { return (SCREEN_WIDTH - hotbarWidth()) / 2; }
+int Inventory::hotbarTop() { return SCREEN_HEIGHT - hotbarHeight() - 3; }
+int Inventory::hotbarSlotSize() { return hotbar_slot_src_size * hotbarScale(); }
+
+int Inventory::hotbarSlotX(int slot)
+{
+    return hotbarLeft() + (hotbar_slot_src_left + slot * hotbar_slot_src_pitch) * hotbarScale();
+}
+
+int Inventory::hotbarSlotY()
+{
+    return hotbarTop() + hotbar_slot_src_top * hotbarScale();
+}
+
+int Inventory::hotbarSelectorSize() { return selector_src_size * hotbarScale(); }
+
+int Inventory::hotbarSelectorX(int slot)
+{
+    // Vanilla draws the frame one pixel up and to the left of the slot it rings.
+    return hotbarLeft() + (hotbar_slot_src_left + slot * hotbar_slot_src_pitch - 1) * hotbarScale();
+}
+
+int Inventory::hotbarSelectorY()
+{
+    return hotbarTop() + (hotbar_slot_src_top - 1) * hotbarScale();
+}
+
 void Inventory::draw(TEXTURE &tex)
 {
-    const int hotbar_scale = hotbarScale();
-    const int hotbar_draw_width = hotbar_src_width * hotbar_scale;
-    const int hotbar_draw_height = hotbar_src_height * hotbar_scale;
-    const int hotbar_slot_size = hotbar_slot_src_size * hotbar_scale;
-    const int hotbar_slot_pitch = hotbar_slot_src_pitch * hotbar_scale;
-    const int hotbar_slots_left = hotbar_slot_src_left * hotbar_scale;
-    const int hotbar_slots_top = hotbar_slot_src_top * hotbar_scale;
+    drawTexture(inventory, tex, 0, 0, hotbar_src_width, hotbar_src_height,
+                hotbarLeft(), hotbarTop(), hotbarWidth(), hotbarHeight());
 
-    const int inventory_x = (SCREEN_WIDTH - hotbar_draw_width) / 2;
-    const int inventory_y = SCREEN_HEIGHT - hotbar_draw_height - 3;
-
-    drawTexture(inventory, tex, hotbar_src_x, hotbar_src_y, hotbar_src_width, hotbar_src_height, inventory_x, inventory_y, hotbar_draw_width, hotbar_draw_height);
     for(unsigned int i = 0; i < hotbar_slot_count; ++i)
     {
         const BLOCK_WDATA block = entries[i];
         if(counts[i] == 0 || getBLOCK(block) == BLOCK_AIR)
             continue;
 
-        const int slot_x = inventory_x + hotbar_slots_left + static_cast<int>(i) * hotbar_slot_pitch;
-        const int slot_y = inventory_y + hotbar_slots_top;
-        const int slot_px = hotbar_slot_size;
+        const int slot_x = hotbarSlotX(static_cast<int>(i));
+        const int slot_y = hotbarSlotY();
+        const int slot_px = hotbarSlotSize();
 
         if(getBLOCK(block) == BLOCK_ITEM)
         {
@@ -93,19 +116,15 @@ void Inventory::draw(TEXTURE &tex)
 
         char count_text[12];
         snprintf(count_text, sizeof(count_text), "%u", counts[i]);
-        drawString(count_text, 0xFFFF, tex, slot_x + hotbar_slot_size - 10, slot_y + 2);
+        drawString(count_text, 0xFFFF, tex, slot_x + slot_px - 10, slot_y + 2);
 
         drawDurabilityBar(tex, block, damage[i], slot_x, slot_y, slot_px);
     }
 
-    const int selector_src_x = 24;
-    const int selector_src_y = 22;
-    const int selector_size = 24;
     drawTexture(inventory, tex,
-                selector_src_x, selector_src_y, selector_size, selector_size,
-                inventory_x + hotbar_slots_left + current_slot * hotbar_slot_pitch - 4 * hotbar_scale,
-                inventory_y + hotbar_slots_top - 4 * hotbar_scale,
-                selector_size * hotbar_scale, selector_size * hotbar_scale);
+                selector_src_x, selector_src_y, selector_src_size, selector_src_size,
+                hotbarSelectorX(current_slot), hotbarSelectorY(),
+                hotbarSelectorSize(), hotbarSelectorSize());
 }
 
 /**
@@ -154,7 +173,7 @@ void Inventory::drawDurabilityBar(TEXTURE &tex, BLOCK_WDATA block, unsigned shor
 
 unsigned int Inventory::height()
 {
-    return hotbar_src_height * hotbarScale();
+    return hotbarHeight();
 }
 
 BLOCK_WDATA Inventory::currentSlot() const
@@ -499,6 +518,65 @@ bool Inventory::equipArmorFromSlot(int slot)
     return true;
 }
 
+BLOCK_WDATA Inventory::offhandBlock() const
+{
+    if(offhand_count == 0)
+        return BLOCK_AIR;
+
+    return offhand;
+}
+
+unsigned int Inventory::offhandCount() const
+{
+    return offhand_count;
+}
+
+unsigned short Inventory::offhandDamage() const
+{
+    if(offhand_count == 0)
+        return 0;
+
+    return offhand_damage;
+}
+
+void Inventory::setOffhand(BLOCK_WDATA block, unsigned int count, unsigned short worn)
+{
+    // Same rule as a plain inventory slot: the wear belongs to the stack, so it is
+    // kept only while the same item stays in the slot, and never more than the
+    // item can take.
+    const bool kept_item = (offhand == block && getBLOCK(block) != BLOCK_AIR);
+
+    offhand = block;
+    offhand_count = (getBLOCK(block) == BLOCK_AIR || count == 0) ? 0 : count;
+
+    if(offhand_count == 0)
+    {
+        offhand = BLOCK_AIR;
+        offhand_damage = 0;
+        return;
+    }
+
+    const int max_damage = ItemRules::maxDamage(block);
+    if(!kept_item || max_damage <= 0)
+        offhand_damage = 0;
+    else
+        offhand_damage = worn > max_damage ? static_cast<unsigned short>(max_damage) : worn;
+}
+
+void Inventory::swapOffhandWithCurrentSlot()
+{
+    const BLOCK_WDATA held_block = currentSlot();
+    const unsigned int held_count = currentSlotCount();
+    const unsigned short held_worn = currentSlotDamage();
+
+    const BLOCK_WDATA off_block = offhandBlock();
+    const unsigned int off_count = offhandCount();
+    const unsigned short off_worn = offhandDamage();
+
+    setOffhand(held_block, held_count, held_worn);
+    setSlotWithDamage(current_slot, off_block, off_count, off_worn);
+}
+
 void Inventory::importLegacyCounts()
 {
     for(unsigned int i = 0; i < slot_count; ++i)
@@ -537,5 +615,8 @@ void Inventory::reset()
         enchant[i].clear();
     }
     clearArmor();
+    offhand = BLOCK_AIR;
+    offhand_count = 0;
+    offhand_damage = 0;
     current_slot = 0;
 }

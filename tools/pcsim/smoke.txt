@@ -1,0 +1,21 @@
+# A quick check that the harness still runs the game.
+#
+#   MUNT_SIM_SCRIPT=tools/pcsim/smoke.txt MUNT_SIM_SHOTS=/tmp/munt-smoke \
+#       ./tools/pcsim/build/crafti-sim /tmp/munt-smoke/world.tns
+#
+# Boots the title screen, starts a terrain world, prints where the player landed
+# and walks a couple of blocks. Seconds rather than minutes, and it fails loudly
+# (a crash handler, and a probe with `stuck=1`) rather than quietly. The full
+# tour is tools/pcsim/tour.txt.
+
+0.0    step 120
+0.0    shot smoke-title
+1.4    key space tap
+6.0    command gamemode creative
+6.1    probe spawned
+6.5    scan 4
+7.0    step 33
+7.5    key w down
+9.0    key w up
+9.4    probe walked
+9.8    end

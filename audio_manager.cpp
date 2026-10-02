@@ -586,6 +586,85 @@ bool playUiSound(unsigned int id)
 	return playSound(id);
 }
 
+// -------------------------------------------------------------- one-shots
+// The official samples behind each named cue. The arrays are the three takes
+// vanilla ships for the sounds that have them; one is picked per play so a run
+// of steps or hits is not the same file over and over.
+void uiClick()
+{
+	if(!GameAudioPack::isOpen()) { play(EventMenuSelect); return; }
+	playSound(Sound::RandomClick);
+}
+
+void playerHurt()
+{
+	if(!GameAudioPack::isOpen()) { play(EventPlayerDamage); return; }
+	static const uint16_t hits[3] = { Sound::DamageHit1, Sound::DamageHit2, Sound::DamageHit3 };
+	playSound(hits[nextRandom() % 3]);
+}
+
+void playerAttack(bool strong)
+{
+	if(!GameAudioPack::isOpen()) { play(EventMobHit); return; }
+	static const uint16_t weak[3] = {
+		Sound::EntityPlayerAttackWeak1, Sound::EntityPlayerAttackWeak2, Sound::EntityPlayerAttackWeak3
+	};
+	static const uint16_t heavy[3] = {
+		Sound::EntityPlayerAttackStrong1, Sound::EntityPlayerAttackStrong2, Sound::EntityPlayerAttackStrong3
+	};
+	const uint16_t *family = strong ? heavy : weak;
+	playSound(family[nextRandom() % 3]);
+}
+
+void playerFall(bool big)
+{
+	if(!GameAudioPack::isOpen()) { play(EventLand); return; }
+	playSound(big ? Sound::DamageFallbig : Sound::DamageFallsmall);
+}
+
+void playerEat()
+{
+	if(!GameAudioPack::isOpen()) { play(EventMenuSelect); return; }
+	static const uint16_t eats[3] = { Sound::RandomEat1, Sound::RandomEat2, Sound::RandomEat3 };
+	playSound(eats[nextRandom() % 3]);
+}
+
+void playerLevelUp()
+{
+	if(!GameAudioPack::isOpen()) { play(EventMenuSelect); return; }
+	playSound(Sound::RandomLevelup);
+}
+
+void itemPickup()
+{
+	if(!GameAudioPack::isOpen()) { play(EventMenuSelect); return; }
+	playSound(Sound::RandomPop);
+}
+
+void chestOpen()
+{
+	if(!GameAudioPack::isOpen()) { play(EventMenuSelect); return; }
+	playSound(Sound::RandomChestopen);
+}
+
+void chestClose()
+{
+	if(!GameAudioPack::isOpen()) { play(EventMenuSelect); return; }
+	playSound(Sound::RandomChestclosed);
+}
+
+void doorOpen()
+{
+	if(!GameAudioPack::isOpen()) { play(EventMenuSelect); return; }
+	playSound(Sound::RandomDoorOpen);
+}
+
+void doorClose()
+{
+	if(!GameAudioPack::isOpen()) { play(EventMenuSelect); return; }
+	playSound(Sound::RandomDoorClose);
+}
+
 void play(Event event)
 {
 	if(static_cast<unsigned int>(event) >= EventCount)

@@ -1,0 +1,114 @@
+# One day of Muntcraft, one shot at a time.
+#
+#   sh tools/pcsim/play.sh tools/pcsim/daycycle.txt
+#
+# Every shot stops the clock with /time set and then aims the camera with `aim`,
+# so a frame is a known time and a known heading rather than wherever a turn
+# happened to end. `sky` prints the numbers behind each one: both bodies, the
+# light level and the background colour.
+#
+# Time 0 is sunrise and 24000 ticks is a day, so the ticks below read as 06:00,
+# 09:00, ... as the game's own wall clock reports them (worldclock.h shifts the
+# clock by 6000 ticks so that sunrise is 06:00).
+
+0.0    step 120
+0.0    caption Muntcraft's day/night cycle: the clock, the sun, the moon and the light it all casts, stopped at nine times of day.
+0.0    shot 01-loading
+1.0    shot 02-title
+1.4    key space tap
+6.0    command gamemode creative
+6.1    command weather clear
+6.2    command time set 0
+6.6    sky sunrise
+6.8    probe spawned
+
+# The clock advances in real time, so the tour stops it with /time set at each
+# step; `step 120` keeps the wait between shots short in wall-clock terms.
+7.0    step 120
+
+# --- 06:00, sunrise -------------------------------------------------------
+# The sun is on the horizon at azimuth 90, so the camera looks that way along
+# the horizon: the disc is in frame and the light comes from the front.
+7.0    command time set 0
+7.1    aim 90 0
+7.4    sky sunrise
+7.6    caption 06:00 - sunrise. The sun comes up over the water at azimuth 90, the sky is at its reddest, and the terrain is at its darkest daylight: shade 0.67.
+7.8    shot 03-sunrise
+
+# --- 09:00, morning -------------------------------------------------------
+8.6    command time set 3000
+8.7    aim 120 0
+9.0    sky 09:00
+9.2    caption 09:00 - morning. The sun is 45 degrees up and the world is fully lit: shade 1.00 and a clear blue sky.
+9.4    shot 04-morning
+
+# --- 12:00, noon ----------------------------------------------------------
+10.2   command time set 6000
+10.3   aim 180 -90
+10.6   sky noon
+10.8   caption 12:00 - noon, looking straight up. The sun is at the zenith, so the sky is its deepest blue and there is no shadow anywhere.
+11.0   shot 05-noon-zenith
+11.8   aim 180 0
+12.0   shot 06-noon
+12.2   sky noon (horizon)
+
+# --- 15:00, afternoon -----------------------------------------------------
+12.8   command time set 9000
+12.9   aim 225 0
+13.2   sky 15:00
+13.4   caption 15:00 - afternoon. The sun has started down the western half of the sky.
+13.6   shot 07-afternoon
+
+# --- 17:30, the sun coming down -------------------------------------------
+14.4   command time set 11500
+14.5   aim 262 20
+14.8   sky 17:30
+15.0   caption 17:30 - the sun is low enough to sit in the frame, and the light on the ground is starting to warm.
+15.2   shot 08-late-afternoon
+
+# --- 18:00, sunset --------------------------------------------------------
+16.0   command time set 12000
+16.1   aim 270 0
+16.4   sky sunset
+16.6   caption 18:00 - sunset. The sun sets at azimuth 270 and the sky has gone orange over the water.
+16.8   shot 09-sunset
+
+# --- 19:00, dusk ----------------------------------------------------------
+17.6   command time set 13000
+17.7   aim 285 8
+18.0   sky dusk
+18.2   caption 19:00 - dusk. The sun is below the horizon, the sky is still glowing, and the terrain has dimmed to shade 0.67.
+18.4   shot 10-dusk
+
+# --- 20:00, night: the moon is up -----------------------------------------
+19.2   command time set 14000
+19.3   aim 120 64
+19.6   sky 20:00
+19.8   caption 20:00 - night. The sun is 64 degrees below the horizon and the moon has taken its place, 64 degrees up at azimuth 120, drawn as a disc with its phase.
+20.0   shot 11-moonrise
+
+# --- 00:00, midnight ------------------------------------------------------
+20.8   command time set 18000
+20.9   aim 180 -90
+21.2   sky midnight
+21.4   caption 00:00 - midnight, looking straight up at the moon at the zenith, with the star field turning around it.
+21.6   shot 12-midnight-moon
+
+# --- 03:00, the small hours -----------------------------------------------
+22.4   command time set 21000
+22.5   aim 225 64
+22.8   sky 03:00
+23.0   caption 03:00 - the small hours. The moon is on its way down and the world is at its darkest: shade 0.45.
+23.2   shot 13-night
+
+# --- 05:00, before dawn ---------------------------------------------------
+24.0   command time set 23000
+24.1   aim 60 0
+24.4   sky 05:00
+24.6   caption 05:00 - before dawn. The moon has set, the stars are still out and the sky is beginning to lift in the east.
+24.8   shot 14-predawn
+
+25.6   sky the end
+25.8   probe the end
+26.0   echo --- day cycle finished
+26.4   end

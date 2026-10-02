@@ -36,8 +36,6 @@ namespace
 {
     /** Text colour: white, which is what every other overlay uses. */
     constexpr COLOR text_color = 0xFFFF;
-    /** The panel behind the text. Dark enough for white to read over the world. */
-    constexpr COLOR panel_color = 0x0861; // 565 dark blue-grey
     /** A dimmer line, for the hint list. */
     constexpr COLOR hint_color = 0xB5B6;
 
@@ -87,6 +85,32 @@ void CommandTask::fillPanel(int x, int y, int width, int height, unsigned short 
                 continue;
 
             pixels[px + py * SCREEN_WIDTH] = color;
+        }
+    }
+}
+
+void CommandTask::dimPanel(int x, int y, int width, int height)
+{
+    if(screen == nullptr || screen->bitmap == nullptr)
+        return;
+
+    unsigned short *pixels = screen->bitmap;
+
+    for(int row = 0; row < height; ++row)
+    {
+        const int py = y + row;
+        if(py < 0 || py >= SCREEN_HEIGHT)
+            continue;
+
+        for(int column = 0; column < width; ++column)
+        {
+            const int px = x + column;
+            if(px < 0 || px >= SCREEN_WIDTH)
+                continue;
+
+            // (c & 0xF7DE) >> 1 is a per-channel halving of a 565 pixel.
+            pixels[px + py * SCREEN_WIDTH] = static_cast<unsigned short>(
+                (pixels[px + py * SCREEN_WIDTH] & 0xF7DE) >> 1);
         }
     }
 }
@@ -269,7 +293,9 @@ void CommandTask::render()
     const unsigned int rows = log_size + 2;
     const int panel_height = static_cast<int>(rows * line_height) + 4;
 
-    fillPanel(0, 0, SCREEN_WIDTH, panel_height, panel_color);
+    // Vanilla's chat is a translucent black box over the world; the dim is that
+    // box, baked in because nGL cannot blend.
+    dimPanel(0, 0, SCREEN_WIDTH, panel_height);
 
     // The prompt. Long lines scroll rather than overflow the screen: the end of
     // what is being typed is what matters.

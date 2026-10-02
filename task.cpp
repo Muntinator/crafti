@@ -290,12 +290,18 @@ void Task::drawBackground()
  * Version 11: The play mode chosen with /gamemode (survival or creative)
  * Version 12: The bed that was slept in, i.e. the respawn point
  * Version 13: Enchantments on the inventory slots and on the worn armour
+ * Version 14: The offhand stack
  *
  * The order of the fields matters: load() reads them in exactly the order save()
  * writes them, and anything added to the world task's own section has to sit
  * before world.saveToFile(), whose chunk list ends the file.
+ *
+ * The version-13 enchantments used to be read after the chests, which is not
+ * where save() writes them (it writes them directly after the armour, before the
+ * chests). load() now reads them there too, so the file it accepts is the one
+ * save() produces -- for a version-13 file as much as for a version-14 one.
  */
-static constexpr int savefile_version = 13;
+static constexpr int savefile_version = 14;
 
 #define LOAD_FROM_FILE(var) if(gzfread(&var, sizeof(var), 1, file) != 1) { gzclose(file); return false; }
 #define SAVE_TO_FILE(var) if(gzfwrite(&var, sizeof(var), 1, file) != 1) { gzclose(file); return false; }
@@ -312,7 +318,7 @@ bool Task::load()
     int version;
     LOAD_FROM_FILE(version);
 
-    static_assert(savefile_version == 13, "Adjust loading code for backward compatibility");
+    static_assert(savefile_version == 14, "Adjust loading code for backward compatibility");
 
     if(version < 4 || version > savefile_version)
     {
@@ -410,6 +416,49 @@ bool Task::load()
         current_inventory.clearArmor();
     }
 
+    // Version 14: the offhand stack, with the wear of whatever is in it. An older
+    // file leaves it empty, which is what those worlds had.
+    if(version >= 14)
+    {
+        LOAD_FROM_FILE(current_inventory.offhand)
+        LOAD_FROM_FILE(current_inventory.offhand_count)
+        LOAD_FROM_FILE(current_inventory.offhand_damage)
+    }
+    else
+    {
+        current_inventory.offhand = BLOCK_AIR;
+        current_inventory.offhand_count = 0;
+        current_inventory.offhand_damage = 0;
+    }
+
+    // Version 13: the enchantments on the carried items and on the worn armour.
+    // They are written as the packed entry bytes, because an enchantment is one
+    // byte (five bits of id, three of level) and the whole set travels with the
+    // stack. An older save leaves every item unenchanted, which is what it was.
+    // Read here, directly after the armour, because that is where save() writes
+    // them: before the chests, not after them.
+    if(version >= 13)
+    {
+        for(int i = 0; i < Inventory::slot_count; ++i)
+            LOAD_FROM_FILE(current_inventory.enchant[i].entries)
+        for(int i = 0; i < Inventory::slot_count; ++i)
+        {
+            unsigned char count;
+            LOAD_FROM_FILE(count)
+            current_inventory.enchant[i].count = count > Enchanting::MaxPerItem
+                ? Enchanting::MaxPerItem : count;
+        }
+        for(int i = 0; i < Inventory::armor_slot_count; ++i)
+            LOAD_FROM_FILE(current_inventory.armor_enchant[i].entries)
+        for(int i = 0; i < Inventory::armor_slot_count; ++i)
+        {
+            unsigned char count;
+            LOAD_FROM_FILE(count)
+            current_inventory.armor_enchant[i].count = count > Enchanting::MaxPerItem
+                ? Enchanting::MaxPerItem : count;
+        }
+    }
+
     // Version 10: the chests and what is inside them. Like the clock this is
     // written before the world, because the world's own section is a chunk list
     // terminated by the end of the file.
@@ -456,32 +505,6 @@ bool Task::load()
     }
     else
         world_task.restoreBedSpawn(false, 0, 0, 0);
-
-    // Version 13: the enchantments on the carried items and on the worn armour.
-    // They are written as the packed entry bytes, because an enchantment is one
-    // byte (five bits of id, three of level) and the whole set travels with the
-    // stack. An older save leaves every item unenchanted, which is what it was.
-    if(version >= 13)
-    {
-        for(int i = 0; i < Inventory::slot_count; ++i)
-            LOAD_FROM_FILE(current_inventory.enchant[i].entries)
-        for(int i = 0; i < Inventory::slot_count; ++i)
-        {
-            unsigned char count;
-            LOAD_FROM_FILE(count)
-            current_inventory.enchant[i].count = count > Enchanting::MaxPerItem
-                ? Enchanting::MaxPerItem : count;
-        }
-        for(int i = 0; i < Inventory::armor_slot_count; ++i)
-            LOAD_FROM_FILE(current_inventory.armor_enchant[i].entries)
-        for(int i = 0; i < Inventory::armor_slot_count; ++i)
-        {
-            unsigned char count;
-            LOAD_FROM_FILE(count)
-            current_inventory.armor_enchant[i].count = count > Enchanting::MaxPerItem
-                ? Enchanting::MaxPerItem : count;
-        }
-    }
 
     // Dropped items are not saved: a stack on the ground is a short-lived thing
     // (five minutes), and a world that is left mid-pickup should not come back
@@ -530,6 +553,11 @@ bool Task::save()
     SAVE_TO_FILE(current_inventory.armor)
     SAVE_TO_FILE(current_inventory.armor_counts)
     SAVE_TO_FILE(current_inventory.armor_damage)
+
+    // The offhand stack, read back directly after the armour.
+    SAVE_TO_FILE(current_inventory.offhand)
+    SAVE_TO_FILE(current_inventory.offhand_count)
+    SAVE_TO_FILE(current_inventory.offhand_damage)
 
     // Enchantments: the packed entries and then the counts, so the file never
     // contains padding and an unenchanted inventory costs one zero per slot.

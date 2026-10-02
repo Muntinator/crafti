@@ -56,31 +56,49 @@ ENTRY_SIZE = 16
 
 
 def category_for(rel_path):
-    """Map a source path to a mixer category."""
+    """Map a source path to a mixer category.
+
+    The categories are the sliders the settings screen exposes, so they have to
+    follow vanilla's split rather than the folders: the local player's own hurts
+    and eating belong to Player, their attacks to Combat, and a UI click must not
+    be attenuated like a mob. Anything entity shaped that is not the player is a
+    mob, and the misc `random/` pool is sorted by what the sound is for.
+    """
     parts = rel_path.split("/")
     top = parts[0]
     base = parts[-1].lower()
+    second = parts[1] if len(parts) > 1 else ""
 
     if top == "step":
         return CAT["Footsteps"]
     if top in ("dig", "block", "tile", "note", "portal", "fire", "liquid"):
         return CAT["Blocks"]
     if top == "ambient":
-        if len(parts) > 1 and parts[1] == "weather":
+        if second == "weather":
             return CAT["Weather"]
         return CAT["Ambience"]
     if top == "music":
         return CAT["Music"]
     if top in ("mob", "entity"):
+        # `entity/player` is the local player, not a mob: a hurt or an eat is the
+        # player slider, an attack swing is combat.
+        if top == "entity" and second == "player":
+            if len(parts) > 2 and parts[2] == "attack":
+                return CAT["Combat"]
+            return CAT["Player"]
         return CAT["Mobs"]
     if top == "damage":
         return CAT["Combat"]
+    if top == "item":
+        return CAT["Player"]
     if top == "random":
         if base.startswith(("explode", "fuse", "glass", "break", "fizz", "ignite")):
             return CAT["Blocks"]
+        if base.startswith(("bowhit", "classic_hurt", "successful_hit")):
+            return CAT["Combat"]
+        if base.startswith(("eat", "drink", "burp", "pop", "orb", "levelup", "breath")):
+            return CAT["Player"]
         return CAT["UI"]
-    if top == "item":
-        return CAT["Player"]
     return CAT["UI"]
 
 

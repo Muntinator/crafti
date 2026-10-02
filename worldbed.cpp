@@ -19,8 +19,6 @@
 
 #include "worldtask.h"
 
-#include "audio_manager.h"
-#include "audio_sounds.h"
 #include "bed.h"
 #include "world.h"
 #include "worldclock.h"
@@ -107,7 +105,8 @@ void WorldTask::updateSleep(GLFix dt)
 
     sleeping = false;
     setMessage(Bed::sleepMessage(Bed::CanSleep));
-    GameAudio::playSound(GameAudio::Sound::RandomLevelup);
+    // Waking is silent, as it is in vanilla: nothing is played when a bed's night
+    // is skipped, and `random/levelup` belongs to an experience level crossing.
 }
 
 void WorldTask::renderSleepFade()

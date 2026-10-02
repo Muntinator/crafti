@@ -10,17 +10,20 @@ void drawString(const char *str, COLOR color, TEXTURE &tex, unsigned int x, unsi
  * it to centre a logo and a button label before either is drawn.
  */
 unsigned int measureString(const char *str);
-/**
- * drawString() at a whole-number scale: every glyph pixel becomes a scale x scale
- * block. This is how the title screen draws its wordmark out of the same 14-pixel
- * font as the rest of the game rather than shipping a second bitmap of text.
- *
- * Unlike drawString(), the scaled version never writes outside the texture: a
- * logo is wide enough to run off the edge of a calculator screen, and clipping it
- * is the caller's expectation rather than a corrupt frame.
- */
-unsigned int drawStringScaled(const char *str, COLOR color, TEXTURE &tex,
-                              unsigned int x, unsigned int y, unsigned int scale);
 unsigned int fontHeight();
+
+/**
+ * The same text, magnified by a whole number. Vanilla draws the death screen's
+ * "You Died!" at twice the GUI scale, and its font is the same 8-pixel atlas at
+ * any size, so the two functions below are the scaled counterparts of the pair
+ * above: every source pixel becomes an `scale` x `scale` block. A scale of 1 is
+ * the ordinary draw.
+ */
+void drawStringScaled(const char *str, COLOR color, TEXTURE &tex, unsigned int x, unsigned int y,
+                      unsigned int scale);
+void drawStringCenterScaled(const char *str, COLOR color, TEXTURE &tex, unsigned int x,
+                           unsigned int y, unsigned int scale);
+/** The width of scaled text, which is measureString() times the scale. */
+unsigned int measureStringScaled(const char *str, unsigned int scale);
 
 #endif // FONT_H

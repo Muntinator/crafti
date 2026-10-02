@@ -1,0 +1,115 @@
+# GUI screens: the title screen, the pause menu, the settings screen, the player
+# inventory, the containers and the HUD, captured for a side-by-side look.
+#
+#   MUNT_SIM_SHOTS=/tmp/gui sh tools/pcsim/play.sh tools/pcsim/gui.txt
+#
+# Containers are opened by using the block under the crosshair, which is the same
+# action the left mouse button drives on a desktop. Three details make that
+# reliable: the player has to be dropped onto the ground rather than teleported
+# into it (a stuck player cannot use a block at all), the crosshair has to be on
+# the block, which `aim` sets exactly, and the block is replaced one at a time in
+# front of the player so the heading never has to change. On the desktop build a
+# container is closed with `t` (the key that opens the player inventory); `esc`
+# there would open the pause menu instead.
+#
+#   aim <yaw> <pitch>   points the camera at a known heading, in degrees
+
+0.0    step 120
+0.0    caption The title screen: the panorama, the wordmark with its edition strip, the tilted splash and the vanilla button column.
+1.0    shot 01-title
+
+1.4    key space tap
+6.0    command gamemode creative
+6.1    command time set noon
+6.2    command weather clear
+6.8    step 33
+7.2    caption The HUD with an empty hotbar: hearts, hunger and the hotbar itself.
+7.4    shot 02-hud-empty
+
+# A few items in the hotbar, so the icon and the count show up in the widget.
+7.6    command give "diamond sword"
+7.7    command give planks 64
+8.0    command give "iron pickaxe"
+8.4    caption The HUD with items: the held item's name above the hotbar.
+8.6    shot 03-hud-items
+
+# --- the player inventory -------------------------------------------------
+9.2    key t tap
+10.0   caption The player inventory: the official 176x166 window, its four armour slots, the 2x2 grid and the result slot.
+10.2   shot 04-inventory
+11.0   key t tap
+
+# --- the containers -------------------------------------------------------
+# Dropped from above so the player lands cleanly instead of being teleported
+# inside the ground, then aimed a little downwards at a block at foot height.
+11.6   command teleport 0 18 0
+13.0   step 60
+13.2   command setblock 0 16 2 chest
+13.4   aim 0 20
+13.6   command give diamond 64
+13.8   caption A chest placed in front of the player.
+14.0   shot 05-blocks
+
+14.6   btn left tap
+15.4   caption The chest window: the official generic_54 pane, its slots and the player's own inventory below it.
+15.6   shot 06-chest
+16.2   key t tap
+
+16.6   command setblock 0 16 2 crafting_table
+16.8   btn left tap
+17.6   caption The crafting table window: the official 3x3 grid and its result slot.
+17.8   shot 07-crafting-table
+18.4   key t tap
+
+18.8   command setblock 0 16 2 furnace
+19.0   btn left tap
+19.8   caption The furnace window, its flame and its smelting arrow.
+20.0   shot 08-furnace
+20.6   key t tap
+
+# --- the pause menu and the options screen --------------------------------
+21.0   key esc tap
+21.8   caption The pause menu: vanilla's grid -- "Game Menu" over the world washed in the dark gradient, a full-width "Back to Game", three rows of two (Help / Block List, Save World / Sound Test..., Options... / Player Inventory) and a full-width "Save and Quit to Title".
+22.0   shot 09-pause
+
+# "Options..." is the sixth entry, so five downs reach it and 5 (space) takes it.
+22.4   key s tap
+22.9   key s tap
+23.3   key s tap
+23.7   key s tap
+24.1   key s tap
+24.5   key space tap
+24.9   caption The options screen: vanilla dirt, the two-column widget grid of sliders, checkboxes and list buttons, and the Done button.
+25.1   shot 10-settings
+
+# Tick an on/off row, so the checked half of the checkbox sheet is captured too:
+# the first view only has unchecked toggles on screen. Three downs reach "Fast
+# mode", and 5 (space) toggles it.
+25.4   key s tap
+26.0   key s tap
+26.6   key s tap
+27.0   key space tap
+27.4   caption The options screen with "Fast mode" ticked: a vanilla checkbox in its checked, highlighted state.
+27.6   shot 10b-settings-checked
+
+# Closing Options returns to the pause menu, as it does in vanilla, rather than
+# dropping the player into the world.
+28.2   key esc tap
+29.0   caption Back at the pause menu: closing Options returns here, and the selection has reset to "Back to Game" the way it does whenever the screen is entered again.
+29.2   shot 11-pause-again
+
+# --- the loading screen ---------------------------------------------------
+# Saving draws the loading screen and flushes the buffer itself, because the
+# frame's own render fills over it before nglDisplay would have shown it. That
+# flush is an SDL_UpdateRect, so a shot queued in the very tick that starts the
+# save captures the loading screen rather than the world behind it. "Save World"
+# is the fourth entry, so three downs reach it.
+29.8   key s tap
+30.4   key s tap
+31.0   key s tap
+31.5   caption The loading screen: the dirt backdrop, "Loading terrain..." and its progress bar.
+31.55  shot 12-loading
+31.55  key space tap
+32.4   caption Back in the world after saving.
+32.6   shot 13-world-saved
+33.0   end

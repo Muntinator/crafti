@@ -67,6 +67,19 @@ public:
      */
     void setExperience(int amount) { total_xp = amount < 0 ? 0 : amount; }
 
+    // --- the score (deathtask.cpp, worldcommands.cpp) -----------------------
+
+    /**
+     * The player's score, which is vanilla's `Player.getScore()` -- the value the
+     * death screen's "Score:" line shows. It is *not* experience: vanilla keeps
+     * the two apart, and its score is the scoreboard's, which starts at zero in a
+     * world that has no scoreboard. This engine has no scoreboard either, so the
+     * score starts at zero, is left alone by a respawn (vanilla keeps a player's
+     * score across death) and is only reset when a new world is made.
+     */
+    int score() const { return player_score; }
+    void setScore(int amount) { player_score = amount < 0 ? 0 : amount; }
+
     // --- debug commands (worldcommands.cpp, commandtask.cpp) ----------------
 
     /**
@@ -286,6 +299,9 @@ private:
 
     /** Accumulated experience; the HUD level and bar are derived from it. */
     int total_xp = 0;
+
+    /** The player's score, which the death screen shows. See score(). */
+    int player_score = 0;
 
     /**
      * Cap on the survival ticks a single frame may advance by. One second is

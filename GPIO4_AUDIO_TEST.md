@@ -8,7 +8,8 @@ remains unverified.
 
 ## Features
 
-- **Music** – 8 streaming tracks, started/stopped from the menu and gameplay.
+- **Music** – 16 streaming tracks, started/stopped from the menu and gameplay:
+  the complete vanilla overworld soundtrack plus the menu music.
 - **SFX one-shots** – 1103 short sounds across player, combat and world events.
 - **Footsteps** – distance-accumulated while walking, chosen by the block's
   material family (grass, stone, wood, gravel, sand, snow, cloth, wet grass,
@@ -20,6 +21,10 @@ remains unverified.
 - **Ambience** – looping beds plus occasional cave/underwater cues, and water/
   cave ambience driven from the world task.
 - **Weather** – looping weather beds (rain etc.) plus timed thunder cues.
+- **Vanilla gameplay one-shots** – the cues the game itself raises are named
+  after the sound they are (hurt, attack, fall, eat, level-up, pickup, chest and
+  door open/close) and resolve to the official samples, so no gameplay code has
+  to know a pack id.
 - **UI sounds** – menu clicks and other interface events.
 - **Volume controls** – master plus per-category (music, effects, ambience)
   settings rows, stored with the save and applied live.
@@ -80,8 +85,9 @@ the per-sound peak-normalisation gain.
 ### Building the pack
 
 Requires `ffmpeg` on `PATH` and the extracted sources
-(the `sounds_trimmed.zip` → `extracted/` OGGs and `minecraft-essentials-music.zip`
-MP3s):
+(the `sounds_trimmed.zip` → `extracted/` OGGs plus the two music archives,
+`minecraft-essentials-music.zip` and `minecraft-vanilla-music.zip`, which share
+one `music/` directory):
 
     python3 tools/audio/build_audio_pack.py \
         --sounds /tmp/audiosrc/extracted \
@@ -94,19 +100,19 @@ script peak-normalises each sound, assigns ids in a deterministic order, writes
 the pack and regenerates `audio_sounds.h` (the C++ `GameAudio::Sound::Id` enum,
 numbered exactly like the pack index so there is no runtime lookup).
 
-Current output: **1111 sounds, 10 733 494 bytes**. Category breakdown:
+Current output: **1119 sounds, 15 380 982 bytes**. Category breakdown:
 
 | category | sounds |
 | --- | --- |
-| Mobs | 443 |
+| Mobs | 417 |
 | Blocks | 417 |
-| Player | 131 |
-| UI | 58 |
+| Player | 151 |
+| UI | 44 |
 | Footsteps | 33 |
+| Combat | 25 |
 | Ambience | 10 |
-| Music | 8 |
+| Music | 16 |
 | Weather | 6 |
-| Combat | 5 |
 
 ### Deploying the pack
 
@@ -216,8 +222,9 @@ What has been verified here:
   0 failures (register setup, timer reload/clock, the modulator toggling the
   pin, a 440 Hz WAVE round-trip analysed for zero crossings, the polled tone
   touching only the pin, and teardown restoring GPIO/VIC/timer/vector),
-  `audio_manager_test` 0 failures against the real pack, `audio_output_test`
-  OK.
+  `audio_manager_test` 0 failures against the real pack (volume, music, voice
+  teardown, and every vanilla cue proving it reaches a sample in its own mixer
+  category), `audio_output_test` OK.
 - **Simulation**: the identical GPIO4 backend code runs on the host against a
   simulated register file (`GameAudioGpio4::Sim`), which can even decode the
   pin stream back into a WAV.
@@ -236,8 +243,8 @@ What has **not** been verified:
 
 ## Licensing caveat
 
-The two source archives (`sounds_trimmed.zip`, `minecraft-essentials-music.zip`)
-contain **no license or credits file**. The assets are used locally for
+The three source archives (`sounds_trimmed.zip`, `minecraft-essentials-music.zip`,
+`minecraft-vanilla-music.zip`) contain **no license or credits file**. The assets are used locally for
 development only and must not be redistributed or bundled without confirming
 permission. That is why the generated `crafti.audp` is gitignored.
 

@@ -16,9 +16,12 @@ LDFLAGS = -lm -lz -lpng -lSDL $(GCSECTIONSFLAG)
 GCCFLAGS += -I$(BREW_PREFIX)/include -I$(BREW_PREFIX)/opt/zlib/include
 LDFLAGS += -L$(BREW_PREFIX)/lib -L$(BREW_PREFIX)/opt/zlib/lib
 EXE = crafti
-OBJS = $(patsubst %.c, %.o, $(shell find . -name \*.c))
-OBJS += $(patsubst %.cpp, %.o, $(shell find . -name \*.cpp))
-OBJS += $(patsubst %.S, %.o, $(shell find . -name \*.S))
+# Everything but tools/, which is host-side development tooling (the headless
+# harness and the emulator shim) and must not be linked into the game.
+GAME_SOURCES = $(shell find . -not -path './tools/*' -a \( -name \*.c -o -name \*.cpp -o -name \*.S \))
+OBJS = $(patsubst %.c, %.o, $(filter %.c,$(GAME_SOURCES)))
+OBJS += $(patsubst %.cpp, %.o, $(filter %.cpp,$(GAME_SOURCES)))
+OBJS += $(patsubst %.S, %.o, $(filter %.S,$(GAME_SOURCES)))
 
 all: $(EXE).elf
 

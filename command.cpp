@@ -31,6 +31,8 @@ namespace
         {"seed",     "seed",                                 "Show the world seed"},
         {"gamemode", "gamemode <survival|creative>",         "Switch the play mode"},
         {"enchant",  "enchant [1|2|3]",                      "Enchant the held item at a table"},
+        // Appended last so the indices the dispatch switches on do not move.
+        {"score",    "score [value]",                        "Show or set the player's score"},
     };
 
     constexpr int command_count = static_cast<int>(sizeof(commands) / sizeof(commands[0]));

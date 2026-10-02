@@ -122,6 +122,75 @@ bool testMixAndStopAllClearsVoices()
     CHECK(allZero(samples, 256));
     return true;
 }
+
+typedef void (*Cue)();
+
+struct CueCase
+{
+    Cue fire;
+    GameAudio::Category category;
+    const char *name;
+};
+
+// Drives `fire` and reports whether anything it started is audible over the
+// next 512 ms. When `mute` is true the cue's own category is zeroed first, so
+// the same call proves the sample is routed to the category it belongs to.
+bool cueAudible(Cue fire, GameAudio::Category category, bool mute)
+{
+    resetVolumes();
+    if(mute)
+        GameAudio::setCategoryVolume(category, 0);
+
+    fire();
+
+    int16_t samples[512] = {};
+    bool heard = false;
+    for(int block = 0; block < 8; ++block)
+    {
+        GameAudio::mixMono(samples, 512);
+        if(anyNonzero(samples, 512))
+            heard = true;
+    }
+    return heard;
+}
+
+bool testVanillaCues()
+{
+    if(!pack_ready)
+        return true; // no pack next to the tests: only the fallback tones exist
+
+    // Every cue the game raises, with the mixer category the pack files it
+    // under. A cue has to reach a real sample (audible with its category on)
+    // and only that category (silent once the category is muted).
+    const CueCase cases[] = {
+        { [](){ GameAudio::uiClick(); }, GameAudio::CategoryUI, "uiClick" },
+        { [](){ GameAudio::playerHurt(); }, GameAudio::CategoryCombat, "playerHurt" },
+        { [](){ GameAudio::playerAttack(false); }, GameAudio::CategoryCombat, "playerAttack" },
+        { [](){ GameAudio::playerFall(false); }, GameAudio::CategoryCombat, "playerFall" },
+        { [](){ GameAudio::playerEat(); }, GameAudio::CategoryPlayer, "playerEat" },
+        { [](){ GameAudio::playerLevelUp(); }, GameAudio::CategoryPlayer, "playerLevelUp" },
+        { [](){ GameAudio::itemPickup(); }, GameAudio::CategoryPlayer, "itemPickup" },
+        { [](){ GameAudio::chestOpen(); }, GameAudio::CategoryUI, "chestOpen" },
+        { [](){ GameAudio::chestClose(); }, GameAudio::CategoryUI, "chestClose" },
+        { [](){ GameAudio::doorOpen(); }, GameAudio::CategoryUI, "doorOpen" },
+        { [](){ GameAudio::doorClose(); }, GameAudio::CategoryUI, "doorClose" }
+    };
+
+    for(size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i)
+    {
+        if(!cueAudible(cases[i].fire, cases[i].category, false))
+        {
+            printf("cue %s produced no audio\n", cases[i].name);
+            return false;
+        }
+        if(cueAudible(cases[i].fire, cases[i].category, true))
+        {
+            printf("cue %s is not routed to its category\n", cases[i].name);
+            return false;
+        }
+    }
+    return true;
+}
 }
 
 int main()
@@ -135,6 +204,7 @@ int main()
     if(!testVolumeControls()) { printf("FAIL testVolumeControls\n"); ++failures; }
     if(!testMusicStartMuteAndStop()) { printf("FAIL testMusicStartMuteAndStop\n"); ++failures; }
     if(!testMixAndStopAllClearsVoices()) { printf("FAIL testMixAndStopAllClearsVoices\n"); ++failures; }
+    if(!testVanillaCues()) { printf("FAIL testVanillaCues\n"); ++failures; }
     printf("%d failures\n", failures);
     return failures == 0 ? 0 : 1;
 }

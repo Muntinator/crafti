@@ -8,7 +8,8 @@
 #include "chunk.h" // registerVillagesNearColumn
 #include "fastmath.h"
 #include "gl.h"
-#include "textures/steve.h" // the humanoid skin, shared with nothing else
+#include "mobmodel.h"
+#include "textures/villager.h" // the official villager skin
 #include "terrain.h"
 #include "textures/items.h"
 #include "world.h"
@@ -187,71 +188,30 @@ namespace
 		}
 	}
 
-	// --- humanoid model: the same box layout the player is drawn with --------
-
-	TextureAtlasEntry skinArea(int u, int v, int w, int h)
-	{
-		return { static_cast<unsigned>(u), static_cast<unsigned>(u + w),
-		         static_cast<unsigned>(v), static_cast<unsigned>(v + h) };
-	}
-
-	TextureAtlasEntry mirrorU(TextureAtlasEntry t)
-	{
-		const unsigned tmp = t.left;
-		t.left = t.right;
-		t.right = tmp;
-		return t;
-	}
-
-	void emitQuad(
-		GLFix ax, GLFix ay, GLFix az,
-		GLFix bx, GLFix by, GLFix bz,
-		GLFix cx, GLFix cy, GLFix cz,
-		GLFix dx, GLFix dy, GLFix dz,
-		const TextureAtlasEntry &tex)
-	{
-		const COLOR flags = TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE;
-		nglAddVertex({ ax, ay, az, GLFix(static_cast<int>(tex.left)),  GLFix(static_cast<int>(tex.bottom)), flags });
-		nglAddVertex({ bx, by, bz, GLFix(static_cast<int>(tex.left)),  GLFix(static_cast<int>(tex.top)),    flags });
-		nglAddVertex({ cx, cy, cz, GLFix(static_cast<int>(tex.right)), GLFix(static_cast<int>(tex.top)),    flags });
-		nglAddVertex({ dx, dy, dz, GLFix(static_cast<int>(tex.right)), GLFix(static_cast<int>(tex.bottom)), flags });
-	}
-
-	void drawBipedBox(
-		GLFix bx, GLFix by, GLFix bz,
-		GLFix bw, GLFix bh, GLFix bd,
-		int u0, int v0, int wp, int hp, int dp,
-		bool mirror = false)
-	{
-		auto top = skinArea(u0 + dp, v0, wp, dp);
-		auto bot = skinArea(u0 + dp + wp, v0, wp, dp);
-		auto rgt = skinArea(u0, v0 + dp, dp, hp);
-		auto frt = skinArea(u0 + dp, v0 + dp, wp, hp);
-		auto lft = skinArea(u0 + dp + wp, v0 + dp, dp, hp);
-		auto bck = skinArea(u0 + dp + wp + dp, v0 + dp, wp, hp);
-
-		if(mirror)
-		{
-			top = mirrorU(top);
-			bot = mirrorU(bot);
-			TextureAtlasEntry tmp = mirrorU(rgt);
-			rgt = mirrorU(lft);
-			lft = tmp;
-			frt = mirrorU(frt);
-			bck = mirrorU(bck);
-		}
-
-		const GLFix x0 = bx, x1 = bx + bw;
-		const GLFix y0 = by, y1 = by + bh;
-		const GLFix z0 = bz, z1 = bz + bd;
-
-		emitQuad(x0, y0, z0, x0, y1, z0, x1, y1, z0, x1, y0, z0, frt);
-		emitQuad(x1, y0, z1, x1, y1, z1, x0, y1, z1, x0, y0, z1, bck);
-		emitQuad(x0, y0, z1, x0, y1, z1, x0, y1, z0, x0, y0, z0, rgt);
-		emitQuad(x1, y0, z0, x1, y1, z0, x1, y1, z1, x1, y0, z1, lft);
-		emitQuad(x0, y1, z0, x0, y1, z1, x1, y1, z1, x1, y1, z0, top);
-		emitQuad(x1, y0, z0, x1, y0, z1, x0, y0, z1, x0, y0, z0, bot);
-	}
+	// --- the vanilla villager (ModelVillager, 64x64) -------------------------
+	//
+	// A box is one addBox() and a part one ModelRenderer, in vanilla model units
+	// (y = 24 is the ground), so this reads against ModelVillager directly. The
+	// nose rides on the head's pivot so it turns with it.
+	const Mob::MobBox villager_boxes[] = {
+		{  0,  0, 8, 10, 8, -4, -10, -4 }, // head
+		{ 24,  0, 2,  4, 2, -1,  -3, -6 }, // nose
+		{ 16, 20, 8, 12, 6, -4,   0, -3 }, // torso
+		{  0, 38, 8, 18, 6, -4,   0, -3 }, // robe
+		{ 44, 22, 4,  8, 4, -8,  -2, -2 }, // left arm
+		{ 44, 22, 4,  8, 4,  4,  -2, -2 }, // right arm
+		{ 40, 38, 8,  4, 4, -4,   2, -2 }, // sleeves
+		{  0, 22, 4, 12, 4, -2,   0, -2 }, // legs
+		{  0, 22, 4, 12, 4, -2,   0, -2 },
+	};
+	const Mob::MobPart villager_parts[] = {
+		{ 0,  0,  0,   0, 0, 2, Mob::Pose::Head },   // head and nose
+		{ 0,  0,  0,   0, 2, 2, Mob::Pose::Static }, // torso and robe
+		{ 0,  3, -1, -43, 4, 3, Mob::Pose::Static }, // the folded arms
+		{ -2, 12, 0,   0, 7, 1, Mob::Pose::LegFrontLeft },
+		{  2, 12, 0,   0, 8, 1, Mob::Pose::LegFrontRight },
+	};
+	const Mob::MobModel villager_model = { 64, 64, 5, villager_parts, 9, villager_boxes };
 
 	/** Ground block Y of the village centre, used to place villagers on the plaza. */
 	bool spawnSpotFor(const Village::Plan &plan, int index, int &out_bx, int &out_by, int &out_bz)
@@ -580,7 +540,7 @@ void VillagerEntity::render() const
 	render_yaw.normaliseAngle();
 
 	glPushMatrix();
-	glTranslatef(x, y + VillagerHeight / 2, z);
+	glTranslatef(x, y, z);
 	nglRotateY(render_yaw);
 
 	if(health <= 0 && death_time > 0)
@@ -594,67 +554,13 @@ void VillagerEntity::render() const
 		nglRotateZ(GLFix(f * 90.0f));
 	}
 
-	const GLFix px = GLFix(BLOCK_SIZE) / GLFix(16);
-
-	const GLFix head_w = GLFix(8) * px, head_h = GLFix(8) * px, head_d = GLFix(8) * px;
-	const GLFix body_w = GLFix(8) * px, body_h = GLFix(12) * px, body_d = GLFix(4) * px;
-	const GLFix arm_w = GLFix(4) * px, arm_h = GLFix(12) * px, arm_d = GLFix(4) * px;
-	const GLFix leg_w = GLFix(4) * px, leg_h = GLFix(12) * px, leg_d = GLFix(4) * px;
-	const GLFix torso_y = GLFix(0);
-	const GLFix head_y = torso_y + body_h / 2 + head_h / 2;
-	const GLFix leg_y = torso_y - body_h / 2 - leg_h / 2;
-	const GLFix shoulder_y = torso_y + body_h / 2 - arm_h / 2;
+	// The vanilla villager is drawn at 15/16 scale, which is what brings the
+	// model's 34 units down to the ~1.95-block collider the entity uses.
+	const GLFix px = GLFix(BLOCK_SIZE) / GLFix(16) * GLFix(15) / GLFix(16);
 
 	const GLFix swing = fast_sin(walk_timer) * GLFix(35) * swing_intensity;
-	const GLFix swing_op = fast_sin(walk_timer + GLFix(180)) * GLFix(35) * swing_intensity;
 
-	// Head with the characteristic big nose sticking out of the face.
-	drawBipedBox(-head_w / 2, head_y - head_h / 2, -head_d / 2,
-	             head_w, head_h, head_d,
-	             0, 0, 8, 8, 8, false);
-
-	const GLFix nose_w = GLFix(4) * px, nose_h = GLFix(4) * px, nose_d = GLFix(3) * px;
-	drawBipedBox(-nose_w / 2, head_y - nose_h / 2, -head_d / 2 - nose_d,
-	             nose_w, nose_h, nose_d,
-	             11, 10, 4, 4, 3, false);
-
-	// Body (a taller robe for the blacksmith and librarian would need a second
-	// skin, so all three share this torso and differ only by the tint).
-	drawBipedBox(-body_w / 2, torso_y - body_h / 2, -body_d / 2,
-	             body_w, body_h, body_d,
-	             16, 16, 8, 12, 4, false);
-
-	glPushMatrix();
-	glTranslatef(-body_w / 2 - arm_w / 2, shoulder_y, 0);
-	nglRotateX(swing);
-	drawBipedBox(-arm_w / 2, -arm_h / 2, -arm_d / 2,
-	             arm_w, arm_h, arm_d,
-	             40, 16, 4, 12, 4, false);
-	glPopMatrix();
-
-	glPushMatrix();
-	glTranslatef(body_w / 2 + arm_w / 2, shoulder_y, 0);
-	nglRotateX(swing_op);
-	drawBipedBox(-arm_w / 2, -arm_h / 2, -arm_d / 2,
-	             arm_w, arm_h, arm_d,
-	             32, 48, 4, 12, 4, true);
-	glPopMatrix();
-
-	glPushMatrix();
-	glTranslatef(-leg_w / 2, leg_y, 0);
-	nglRotateX(swing_op);
-	drawBipedBox(-leg_w / 2, -leg_h / 2, -leg_d / 2,
-	             leg_w, leg_h, leg_d,
-	             0, 16, 4, 12, 4, false);
-	glPopMatrix();
-
-	glPushMatrix();
-	glTranslatef(leg_w / 2, leg_y, 0);
-	nglRotateX(swing);
-	drawBipedBox(-leg_w / 2, -leg_h / 2, -leg_d / 2,
-	             leg_w, leg_h, leg_d,
-	             16, 48, 4, 12, 4, true);
-	glPopMatrix();
+	Mob::draw(villager_model, px, swing, GLFix(0));
 
 	glPopMatrix();
 
@@ -792,7 +698,7 @@ void renderVillagerEntities()
 	if(!any)
 		return;
 
-	glBindTexture(&steve_tex);
+	glBindTexture(&villager_tex);
 	glBegin(GL_QUADS);
 	for(const VillagerEntity &e : villager_entities)
 	{

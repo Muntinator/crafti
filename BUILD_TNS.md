@@ -152,23 +152,27 @@ Audio pack (optional, for real sounds)
 --------------------------------------
 
 Crafti's audio engine plays an on-calculator pack, `crafti.audp`, built from the
-two provided asset archives:
+three provided asset archives:
 
 | archive | contents | used for |
 | --- | --- | --- |
 | `sounds_trimmed.zip` | `extracted/**/*.ogg` (1103 files) | all sound effects |
 | `minecraft-essentials-music.zip` | `music/*.mp3` (8 files) | music tracks |
+| `minecraft-vanilla-music.zip` | `music/*.ogg` (8 files) | the rest of the soundtrack and the menu music |
 
 It needs `ffmpeg` on `PATH`:
 
     sudo apt-get install -y ffmpeg
 
-Unpack both archives (the script expects the layout they already have, so no
-renaming or flattening is needed), then build the pack:
+Unpack all three archives (the script expects the layout they already have, so
+no renaming or flattening is needed; the two music archives share the `music/`
+directory on purpose, which is what puts all 16 tracks in one pack), then build
+the pack:
 
     mkdir -p audiosrc && cd audiosrc
-    unzip -q /path/to/sounds_trimmed.zip          # -> extracted/**/*.ogg
-    unzip -q /path/to/minecraft-essentials-music.zip   # -> music/*.mp3
+    unzip -q /path/to/sounds_trimmed.zip              # -> extracted/**/*.ogg
+    unzip -q /path/to/minecraft-essentials-music.zip  # -> music/*.mp3
+    unzip -q /path/to/minecraft-vanilla-music.zip     # -> music/*.ogg
     cd ..
 
     python3 tools/audio/build_audio_pack.py \
@@ -177,19 +181,19 @@ renaming or flattening is needed), then build the pack:
         --out    crafti.audp \
         --header audio_sounds.h
 
-This writes `crafti.audp` (~10.7 MB, **1111 sounds** = 1103 effects + 8 music,
+This writes `crafti.audp` (~15.0 MB, **1119 sounds** = 1103 effects + 16 music,
 8-bit unsigned mono 8 kHz) and regenerates `audio_sounds.h` with the id table
-(1112 entries: `None = 0` plus ids 1..1111, contiguous and in the same order as
+(1120 entries: `None = 0` plus ids 1..1119, contiguous and in the same order as
 the pack index, so the engine needs no runtime name lookup).
 
 Sanity check the result before copying it, so a partially decoded archive cannot
 slip through. The three counts must agree:
 
-    # sound ids in the generated header (1..1111, so 1111 lines with a comment)
-    grep -cE '^ *[A-Za-z0-9_]+ *= *[0-9]+, *//' audio_sounds.h    # 1111
+    # sound ids in the generated header (1..1119, so 1119 lines with a comment)
+    grep -cE '^ *[A-Za-z0-9_]+ *= *[0-9]+, *//' audio_sounds.h    # 1119
     # pack sound count, read straight from the AUD1 header
-    python3 -c "import struct;print(struct.unpack('<4sHHHHIII',open('crafti.audp','rb').read(24))[4])"   # 1111
-    # and the sources: 1103 .ogg + 8 .mp3 in the two archives
+    python3 -c "import struct;print(struct.unpack('<4sHHHHIII',open('crafti.audp','rb').read(24))[4])"   # 1119
+    # and the sources: 1103 .ogg + 8 .mp3 + 8 .ogg in the three archives
 
 Copy the pack to the calculator next to the game:
 

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "aabb.h"
+#include "audio_manager.h"
 #include "blockrenderer.h"
 #include "fastmath.h"
 #include "gl.h"
@@ -226,7 +227,10 @@ void updateGroundDrops(unsigned int elapsed_ms)
         // used, and it goes back to the ground untouched when there is no room.
         if(in_range && ItemRules::dropPickupable(static_cast<int>(d.age_ms))
            && current_inventory.addItemWithDamage(d.stack, d.count, d.damage))
+        {
+            GameAudio::itemPickup();
             ground_drops.erase(ground_drops.begin() + i);
+        }
         else
             ++i;
     }

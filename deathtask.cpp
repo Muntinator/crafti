@@ -1,7 +1,10 @@
 #include "deathtask.h"
 
+#include <stdio.h>
+
 #include "texturetools.h"
 #include "font.h"
+#include "menuui.h"
 
 #include "worldtask.h"
 #include "starttask.h"
@@ -26,79 +29,44 @@ void DeathTask::makeCurrent()
     Task::makeCurrent();
 }
 
-static void fillRect(TEXTURE &tex, int x, int y, int w, int h, COLOR c)
-{
-    if(x >= (int)tex.width || y >= (int)tex.height || w <= 0 || h <= 0)
-        return;
-
-    if(x < 0)
-    {
-        w += x;
-        x = 0;
-    }
-    if(y < 0)
-    {
-        h += y;
-        y = 0;
-    }
-
-    if(x + w > (int)tex.width)
-        w = tex.width - x;
-    if(y + h > (int)tex.height)
-        h = tex.height - y;
-
-    for(int yy = 0; yy < h; ++yy)
-    {
-        COLOR *line = tex.bitmap + (y + yy) * tex.width + x;
-        for(int xx = 0; xx < w; ++xx)
-            line[xx] = c;
-    }
-}
-
 void DeathTask::render()
 {
     drawBackground();
 
-    // Darken background
-    for(int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; ++i)
-    {
-        COLOR c = screen->bitmap[i];
-        screen->bitmap[i] = (c & 0xF7DE) >> 1;
-    }
+    // Vanilla washes the world in red when the player dies; the gradient is the
+    // same dark-to-bright red its DeathScreen fills, baked in because nGL cannot
+    // blend.
+    MenuUI::drawDeathOverlay(*screen);
 
-    drawStringCenter("You Died", 0xFFFF, *screen, SCREEN_WIDTH / 2, 30);
+    const MenuUI::DeathLayout layout = MenuUI::deathLayout();
 
-    // Where the player is going back to. A bed that was slept in is easy to
-    // forget about, so saying it here is what stops "the bed is my respawn point"
-    // from being a rule the player has to have read about.
+    // "You Died!" at twice the GUI scale, which is the size vanilla draws it.
+    MenuUI::drawHeadingScaled(MenuUI::deathHeading, *screen, layout.title_y, layout.title_scale);
+
+    // Where vanilla prints the cause of death. A bed that was slept in is easy to
+    // forget about, so this line says which spawn the player is going back to
+    // instead -- the same slot, carrying the one fact the screen needs to carry.
     drawStringCenter(world_task.bedSpawn().valid ? "You will respawn at your bed" : "You will respawn at the world spawn",
-                     0x8410, *screen, SCREEN_WIDTH / 2, 44);
+                     MenuUI::Text, *screen, SCREEN_WIDTH / 2, layout.message_y);
 
-    const char *items[DEATH_ITEM_MAX] = { "Respawn", "Quit to Title" };
+    // Vanilla's score line under the cause of death. It shows the player's score
+    // (vanilla's `Player.getScore()`), not their experience: a world with no
+    // scoreboard -- which is every world here -- starts at zero, exactly as
+    // vanilla's does.
+    char score[32];
+    snprintf(score, sizeof(score), "Score: %d", world_task.score());
+    drawStringCenter(score, MenuUI::Text, *screen, SCREEN_WIDTH / 2, layout.score_y);
 
-    int start_y = 60;
-    int button_w = 200;
-    int button_h = 20;
-    int button_x = (SCREEN_WIDTH - button_w) / 2;
+    const char *items[DEATH_ITEM_MAX] = { MenuUI::deathRespawnLabel, MenuUI::deathTitleLabel };
+    const MenuUI::ButtonColumn &buttons = layout.buttons;
 
     for(int i = 0; i < DEATH_ITEM_MAX; ++i)
     {
-        int y = start_y + i * 26;
-        COLOR label_color = 0xFFFF;
+        const int y = buttons.buttonY(i);
+        const bool focused = (i == death_selected_item);
 
-        if(i == death_selected_item)
-        {
-            fillRect(*screen, button_x, y, button_w, button_h, 0x7BEF);
-            drawRectangle(*screen, button_x, y, button_w, button_h, 0xFFFF);
-            label_color = 0x0000;
-        }
-        else
-        {
-            fillRect(*screen, button_x, y, button_w, button_h, 0x4208);
-            drawRectangle(*screen, button_x, y, button_w, button_h, 0x8410);
-        }
-
-        drawStringCenter(items[i], label_color, *screen, SCREEN_WIDTH / 2, y + 4);
+        MenuUI::drawButton(*screen, buttons.x, y, buttons.w, buttons.h, focused);
+        MenuUI::drawButtonLabel(items[i], *screen, buttons.x, y, buttons.w, buttons.h, focused);
     }
 }
 
@@ -149,4 +117,3 @@ void DeathTask::logic(GLFix /*dt*/)
         key_held_down = true;
     }
 }
-

@@ -17,10 +17,13 @@ chest, or written to the save. Four enchantments fit on one item (`MaxPerItem`),
 each packed into one byte — the id in the low five bits, the level in the top
 three — which is why the whole of it fits beside a 16-bit stack.
 
-The save format is **version 13**: 36 inventory slots and the four worn pieces
-each carry their set after the stack they belong to. The sets of a stack that is
-not there are cleared, so a tool that passes through the crafting grid or the
-furnace does not come back enchanted.
+The save format is **version 14** (enchantments arrived in 13; 14 added the
+offhand stack): 36 inventory slots and the four worn pieces each carry their set
+after the stack they belong to. The sets of a stack that is not there are
+cleared, so a tool that passes through the crafting grid or the furnace does not
+come back enchanted. The offhand carries no set of its own, because an item that
+leaves it goes through the same pickup path as any other slot, which drops the
+enchantments with the stack.
 
 ## Getting enchantments: `/enchant`
 

@@ -7,6 +7,7 @@
 #endif
 
 #include "font.h"
+#include "menuui.h"
 #include "world.h"
 #include "worldtask.h"
 #include "starttask.h"
@@ -66,37 +67,45 @@ void GraphTask::makeCurrent()
 
 void GraphTask::render()
 {
-    for(unsigned int i = 0; i < screen->width * screen->height; ++i)
-        screen->bitmap[i] = 0x0000;
+    const int scale = MenuUI::uiScale();
 
-    drawStringCenter("Graphing Mode", 0xFFFF, *screen, SCREEN_WIDTH / 2, 8);
-    drawStringCenter("Type z=f(x,y) and press Enter", 0xFFFF, *screen, SCREEN_WIDTH / 2, 24);
+    // The dirt all the vanilla menus use, a vanilla heading, and the expression
+    // box drawn the way vanilla draws a text field: a black field inside a light
+    // grey border.
+    MenuUI::drawMenuBackground(*screen);
+    MenuUI::drawHeading("Graphing Mode", *screen, MenuUI::headingY());
+    drawStringCenter("Type z=f(x,y) and press Enter", MenuUI::Text, *screen, SCREEN_WIDTH / 2, 22 * scale);
 
-    drawRectangle(*screen, 12, 42, SCREEN_WIDTH - 24, 24, 0xFFFF);
-    drawString("z=", 0xFFFF, *screen, 18, 49);
-    drawString(expression, 0xFFFF, *screen, 38, 49);
+    const int box_x = 12 * scale;
+    const int box_y = 40 * scale;
+    const int box_w = SCREEN_WIDTH - 24 * scale;
+    const int box_h = 20 * scale;
+    MenuUI::fillRect(*screen, box_x, box_y, box_w, box_h, 0x0000);
+    drawRectangle(*screen, box_x, box_y, box_w, box_h, MenuUI::TextDisabled);
+    drawString("z=", MenuUI::Text, *screen, box_x + 4 * scale, box_y + 6 * scale);
+    drawString(expression, MenuUI::Text, *screen, box_x + 22 * scale, box_y + 6 * scale);
 
     static const char charset[] = "xyz0123456789+-*/^()., sincoartbpe";
     const char selected = charset[charset_index];
 
     char selected_text[20] = "Current char: ' '";
     selected_text[15] = selected;
-    drawStringCenter(selected_text, 0xFFFF, *screen, SCREEN_WIDTH / 2, 80);
+    drawStringCenter(selected_text, MenuUI::Text, *screen, SCREEN_WIDTH / 2, 80 * scale);
 
     char preset_text[64];
     snprintf(preset_text, sizeof(preset_text), "Preset: %s", k_graph_presets[preset_index].label);
-    drawStringCenter(preset_text, 0xFFFF, *screen, SCREEN_WIDTH / 2, 92);
+    drawStringCenter(preset_text, MenuUI::Text, *screen, SCREEN_WIDTH / 2, 92 * scale);
 
-    drawString("8/2: char  5/Space: append  7: backspace", 0xFFFF, *screen, 10, 106);
-    drawString("4/6: preset  1: apply preset", 0xFFFF, *screen, 10, 120);
+    drawString("8/2: char  5/Space: append  7: backspace", MenuUI::Text, *screen, 10 * scale, 106 * scale);
+    drawString("4/6: preset  1: apply preset", MenuUI::Text, *screen, 10 * scale, 120 * scale);
     char fill_text[48];
     snprintf(fill_text, sizeof(fill_text), "+/-: fill depth n = %d", world.graphFillDepth());
-    drawString(fill_text, 0xFFFF, *screen, 10, 132);
-    drawString("9: clear   Enter/T: start graph", 0xFFFF, *screen, 10, 146);
-    drawString("ESC: back", 0xFFFF, *screen, 10, 160);
+    drawString(fill_text, MenuUI::Text, *screen, 10 * scale, 132 * scale);
+    drawString("9: clear   Enter/T: start graph", MenuUI::Text, *screen, 10 * scale, 146 * scale);
+    drawString("ESC: back", MenuUI::TextDisabled, *screen, 10 * scale, 160 * scale);
 
-    drawString("Range: x,y in [-30,30]", 0xFFFF, *screen, 10, 174);
-    drawString("Tip: c:* for domain, i:* for implicit", 0xFFFF, *screen, 10, 188);
+    drawString("Range: x,y in [-30,30]", MenuUI::Text, *screen, 10 * scale, 174 * scale);
+    drawString("Tip: c:* for domain, i:* for implicit", MenuUI::Text, *screen, 10 * scale, 188 * scale);
 }
 
 void GraphTask::logic(GLFix /*dt*/)

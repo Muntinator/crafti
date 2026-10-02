@@ -81,9 +81,10 @@ day, rather than leaving the player asleep in the morning they are already in.
 While asleep, `WorldTask::logic()` stops after `updateClock()`/`updateWeather()`,
 so the player lies still, and a short fade runs in real time (900 ms, `bed.h`'s
 `FadeTotalMs`): the screen darkens to 232/256 at the middle and clears again, with
-"Good morning" and the level-up chime at the end of it. Real time rather than
-frames matters here -- a fade counted in frames would take seven seconds on the
-CX's three steps a second and a third of a second on a desktop.
+"Good morning" at the end of it and no sound -- as in vanilla, skipping a night
+is silent. Real time rather than frames matters here -- a fade counted in frames
+would take seven seconds on the CX's three steps a second and a third of a second
+on a desktop.
 
 ## The respawn point
 
@@ -118,15 +119,17 @@ know between frames.
 
 ## Art
 
-The bed has no art in the atlas files, so its four tiles are painted at load time
-into row 5 (the chest took row 4) by `terrain.cpp`'s `paintBedTile()`:
+A bed is a block entity in Minecraft, so there is no bed texture in the block
+textures: its art is a model unwrap (`textures/entity/bed/red.png`). The four
+tiles this engine needs are cut out of that, into columns 4..7 of atlas row 4,
+by `tools/textures/gen_block_textures.py`:
 
 | tile | column | what it is |
 |------|--------|------------|
-| head top | 0 | the blanket with the pillow pad inset |
-| underside | 1 | plain planks, which is what a bed is built on |
-| side | 2 | the blanket turned over the wooden frame |
-| foot top | 3 | the blanket on its own |
+| head top | 4 | the blanket with the pillow pad |
+| underside | 5 | the wooden frame, which is what a bed is built on |
+| side | 6 | the frame with the blanket turned over its top |
+| foot top | 7 | the blanket on its own |
 
 Every tile is left-right symmetric and only the side has a meaningful top and
 bottom, so no tile has to be turned to follow which way the bed points -- which is

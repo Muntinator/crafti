@@ -1,5 +1,5 @@
-// Generated from textures/creeper.png (64x32 mob skin; UVs match ModelCreeper)
-// Regenerate: make -C textures creeper.h   OR   python3 gen_creeper_h.py
+// Generated from textures/entity/creeper/creeper.png (Minecraft 1.17.1) -- do not edit by hand.
+// Regenerate: python3 tools/textures/gen_entity_textures.py
 static uint16_t creeper_data[] = {
     0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x3d66, 0x868e, 0xae94, 0x9eb2,
     0xb695, 0x4c88, 0xbef6, 0x6e4a, 0x5e09, 0xbe96, 0x5ea9, 0x6e6b, 0x548a, 0xaef4, 0xc717, 0xbe96,

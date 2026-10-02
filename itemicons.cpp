@@ -27,7 +27,8 @@ void drawItemIcon(BLOCK_WDATA block, TEXTURE &dest, int x, int y, int size)
     if(src_x < 0 || src_y < 0 || src_x + item_tile_size > tex_items.width || src_y + item_tile_size > tex_items.height)
         return;
 
-    // items_texture.h has no transparency metadata, so treat 0x0000 as transparent manually.
+    // The atlas is blitted by hand here (for the arbitrary destination sizes the
+    // UI asks for), so the transparent colour is filtered here too.
     for(int dy = 0; dy < size; ++dy)
     {
         const int dst_y = y + dy;

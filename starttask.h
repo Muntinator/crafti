@@ -33,6 +33,9 @@ public:
     void setHasSavedWorld(bool exists) { has_saved_world = exists; }
 
 private:
+    /** Runs the focused button: the click cue, then whatever it opens. */
+    void activate();
+
     int selected_item = NEW_TERRAIN;
     bool has_saved_world = false;
 };

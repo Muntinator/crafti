@@ -7,9 +7,11 @@
 // there is no per-screen copy of the contents to keep in step, which is also why
 // closing the screen cannot lose an item.
 //
-// The panel is drawn from rectangles rather than from a GUI sprite: the three
-// atlases the game ships do not contain a chest window, and a slot is two
-// rectangles and an item icon either way.
+// The window is the official gui/container/generic_54.png, whose two halves are
+// exactly what a chest needs: the chest's own rows on top, and -- blitted below
+// them -- the player's inventory part, which is the same picture for a chest of
+// any size. A chest is the one container whose height changes with its contents,
+// and vanilla's own sheet is laid out to be cut that way.
 
 #include "inventorytask.h"
 
@@ -26,54 +28,68 @@
 #include "inventory.h"
 #include "itemicons.h"
 #include "itemrules.h"
+#include "texturetools.h"
 #include "worlditems.h" // ensureChestAt
 #include "worldtask.h"
+
+#include "textures/armor_slots.h"
+#include "textures/chest_player.h"
+#include "textures/chest_top.h"
 
 namespace
 {
     constexpr int inv_src_slot_size = 16;
     constexpr int inv_src_slot_gap = 2;
+    constexpr int inv_src_pitch = inv_src_slot_size + inv_src_slot_gap; // 18
 #ifdef _TINSPIRE
     constexpr int inv_draw_scale = 1;
 #else
     constexpr int inv_draw_scale = 2;
 #endif
     constexpr int inv_draw_slot_size = inv_src_slot_size * inv_draw_scale;
-    constexpr int inv_draw_pitch = (inv_src_slot_size + inv_src_slot_gap) * inv_draw_scale;
-
-    constexpr int panel_padding = 6 * inv_draw_scale;
-    constexpr int panel_title_height = 14 * inv_draw_scale;
-    constexpr int panel_grid_gap = 6 * inv_draw_scale;
-    constexpr int panel_hotbar_gap = 2 * inv_draw_scale;
+    constexpr int inv_draw_pitch = inv_src_pitch * inv_draw_scale;
 
     constexpr int chest_columns = 9;
 
-    /** A filled rectangle: drawRectangle() only draws the outline. */
-    void fillRect(TEXTURE &tex, int x, int y, int w, int h, COLOR c)
+    // The window sheet's own geometry (GenericContainerScreen). The chest's rows
+    // start at (8,18) of the top pane, whose height is the number of rows times a
+    // slot plus one 17-pixel band; below that band the sheet carries the player's
+    // own inventory as a 96-pixel patch, in which the three rows of storage start
+    // 14 pixels down and the hotbar 68 -- which is where the second blit of that
+    // patch puts them, wherever the chest's own rows ended.
+    constexpr int window_src_width = 176;
+    constexpr int slot_src_x = 8;
+    constexpr int chest_first_row_src_y = 18;
+    constexpr int pane_band = 17;
+    constexpr int player_part_src_height = 96;
+    constexpr int player_first_row_offset = 14;
+    constexpr int player_hotbar_offset = 68;
+
+    // The four armour slots are part of the player's window too, down its left
+    // edge at (8,8) one per 18-pixel row, so the worn widgets are placed on the
+    // sheet's own slots rather than in a strip of their own.
+    constexpr int armor_first_src_x = 8;
+    constexpr int armor_first_src_y = 8;
+    constexpr int armor_title_src_y = 6; // the height vanilla centres a container title at
+
+    // The offhand slot, at the (77,62) vanilla's InventoryMenu hands its shield
+    // slot. Only the player's own window has it; the crafting table's sheet has
+    // no well there, which is why render() does not call it for that screen.
+    constexpr int offhand_src_x = 77;
+    constexpr int offhand_src_y = 62;
+
+    /** How many rows of nine slots the open chest has. */
+    int chestRowCount(int slot_count)
     {
-        if(w <= 0 || h <= 0)
-            return;
+        if(slot_count <= 0)
+            slot_count = ChestStore::SlotCount;
+        return slot_count / chest_columns;
+    }
 
-        if(x < 0)
-        {
-            w += x;
-            x = 0;
-        }
-        if(y < 0)
-        {
-            h += y;
-            y = 0;
-        }
-        if(x + w > static_cast<int>(tex.width))
-            w = static_cast<int>(tex.width) - x;
-        if(y + h > static_cast<int>(tex.height))
-            h = static_cast<int>(tex.height) - y;
-        if(w <= 0 || h <= 0)
-            return;
-
-        for(int py = y; py < y + h; ++py)
-            for(int px = x; px < x + w; ++px)
-                tex.bitmap[px + py * tex.width] = c;
+    /** The height of the chest's own pane, in sheet pixels. */
+    int chestPaneHeight(int rows)
+    {
+        return rows * inv_src_pitch + pane_band;
     }
 
     /** Anything that cannot wear must not carry a damage value into the store. */
@@ -114,21 +130,10 @@ int InventoryTask::chestSlotCount() const
 
 void InventoryTask::chestPanelRect(int &x, int &y, int &w, int &h) const
 {
-    int slot_count = chestSlotCount();
-    if(slot_count <= 0)
-        slot_count = ChestStore::SlotCount;
-    const int chest_rows = slot_count / chest_columns;
+    const int rows = chestRowCount(chestSlotCount());
 
-    w = panel_padding * 2 + (chest_columns - 1) * inv_draw_pitch + inv_draw_slot_size;
-    h = panel_padding * 2 + panel_title_height
-      + chest_rows * inv_draw_pitch
-      + panel_grid_gap
-      + 3 * inv_draw_pitch + panel_hotbar_gap + inv_draw_pitch;
-
-    if(w > SCREEN_WIDTH)
-        w = SCREEN_WIDTH;
-    if(h > SCREEN_HEIGHT)
-        h = SCREEN_HEIGHT;
+    w = window_src_width * inv_draw_scale;
+    h = (chestPaneHeight(rows) + player_part_src_height) * inv_draw_scale;
 
     x = (SCREEN_WIDTH - w) / 2;
     y = (SCREEN_HEIGHT - h) / 2;
@@ -146,8 +151,8 @@ void InventoryTask::chestSlotBounds(int chest_slot, int &x, int &y, int &w, int 
     const int column = chest_slot % chest_columns;
     const int row = chest_slot / chest_columns;
 
-    x = panel_x + panel_padding + column * inv_draw_pitch;
-    y = panel_y + panel_padding + panel_title_height + row * inv_draw_pitch;
+    x = panel_x + (slot_src_x + column * inv_src_pitch) * inv_draw_scale;
+    y = panel_y + (chest_first_row_src_y + row * inv_src_pitch) * inv_draw_scale;
     w = inv_draw_slot_size;
     h = inv_draw_slot_size;
 }
@@ -157,10 +162,7 @@ void InventoryTask::chestPlayerSlotBounds(int player_slot, int &x, int &y, int &
     int panel_x = 0, panel_y = 0, panel_w = 0, panel_h = 0;
     chestPanelRect(panel_x, panel_y, panel_w, panel_h);
 
-    int slot_count = chestSlotCount();
-    if(slot_count <= 0)
-        slot_count = ChestStore::SlotCount;
-    const int chest_rows = slot_count / chest_columns;
+    const int rows = chestRowCount(chestSlotCount());
 
     // Slots 0..8 are the hotbar and go in the bottom row, exactly like the player
     // inventory screen, so a stack does not move around between the two screens.
@@ -169,10 +171,11 @@ void InventoryTask::chestPlayerSlotBounds(int player_slot, int &x, int &y, int &
     const int row = hotbar ? 3 : index / chest_columns;
     const int column = hotbar ? index : index % chest_columns;
 
-    const int grid_top = panel_y + panel_padding + panel_title_height + chest_rows * inv_draw_pitch + panel_grid_gap;
+    const int part_top = chestPaneHeight(rows)
+                       + (hotbar ? player_hotbar_offset : player_first_row_offset + row * inv_src_pitch);
 
-    x = panel_x + panel_padding + column * inv_draw_pitch;
-    y = grid_top + row * inv_draw_pitch + (hotbar ? panel_hotbar_gap : 0);
+    x = panel_x + (slot_src_x + column * inv_src_pitch) * inv_draw_scale;
+    y = panel_y + part_top * inv_draw_scale;
     w = inv_draw_slot_size;
     h = inv_draw_slot_size;
 }
@@ -317,25 +320,16 @@ bool InventoryTask::armorWidgetBounds(int index, int &x, int &y, int &w, int &h)
     if(index < 0 || index >= Inventory::armor_slot_count)
         return false;
 
-    // The widgets go in the empty strip to the left of the inventory window: the
-    // window is centred and narrower than the screen on both platforms, so
-    // nothing else is drawn there and a click cannot be ambiguous.
-    const int gap = 4 * inv_draw_scale;
-    const int block_w = 2 * inv_draw_slot_size + gap;
-
-    int origin_x = InventoryTask::inventoryWindowX() - block_w - 2 * gap;
-    if(origin_x < 2)
-        origin_x = 2;
-
-    const int column = index % 2;
-    const int row = index / 2;
-    const int origin_y = InventoryTask::inventoryWindowY() + inv_draw_pitch;
-
-    x = origin_x + column * (inv_draw_slot_size + gap);
-    y = origin_y + row * (inv_draw_slot_size + gap);
+    // The window already draws the four empty armour slots, so the widget for a
+    // worn piece is just that slot's rectangle. Both the player window and the
+    // crafting table's carry them at the same place, and the furnace window (the
+    // one screen this is not called for) does not carry them at all.
+    x = InventoryTask::inventoryWindowX() + armor_first_src_x * inv_draw_scale;
+    y = InventoryTask::inventoryWindowY()
+      + (armor_first_src_y + index * inv_src_pitch) * inv_draw_scale;
     w = inv_draw_slot_size;
     h = inv_draw_slot_size;
-    return x + w <= SCREEN_WIDTH && y + h <= SCREEN_HEIGHT;
+    return true;
 }
 
 int InventoryTask::armorSlotFromMouse(int mouse_x, int mouse_y) const
@@ -392,21 +386,141 @@ void InventoryTask::armorHandleClick(int index)
 
 void InventoryTask::renderArmorWidgets()
 {
+    // The slots themselves are already painted by whichever vanilla window is
+    // showing, so only the worn piece has to be drawn on top of its slot.
     for(int i = 0; i < Inventory::armor_slot_count; ++i)
     {
         int x, y, w, h;
         if(!armorWidgetBounds(i, x, y, w, h))
             continue;
 
-        fillRect(*screen, x, y, w, h, 0x8C71);
-        drawRectangle(*screen, x, y, w, h, 0x4208);
-
         const BLOCK_WDATA worn = current_inventory.armorBlock(i);
         if(getBLOCK(worn) == BLOCK_AIR || current_inventory.armorCount(i) == 0)
+        {
+            // An empty armour slot shows the faint outline of the piece that
+            // belongs there, which is vanilla's Slot.getNoItemIcon. The five
+            // outlines are stitched into one strip in the order the slots run
+            // down, so the piece's own index picks its cell.
+            drawTexture(armor_slots, *screen,
+                        static_cast<uint16_t>(i * inv_src_slot_size), static_cast<uint16_t>(0),
+                        static_cast<uint16_t>(inv_src_slot_size), static_cast<uint16_t>(inv_src_slot_size),
+                        static_cast<uint16_t>(x), static_cast<uint16_t>(y),
+                        static_cast<uint16_t>(w), static_cast<uint16_t>(h));
             continue;
+        }
 
         drawStackItem(*screen, worn, 1, current_inventory.armorDamage(i), x, y, w);
     }
+}
+
+bool InventoryTask::offhandWidgetBounds(int &x, int &y, int &w, int &h) const
+{
+    // The window's own art already draws the empty well, so this is just that
+    // slot's rectangle -- where vanilla's InventoryMenu puts its shield slot.
+    x = InventoryTask::inventoryWindowX() + offhand_src_x * inv_draw_scale;
+    y = InventoryTask::inventoryWindowY() + offhand_src_y * inv_draw_scale;
+    w = inv_draw_slot_size;
+    h = inv_draw_slot_size;
+    return true;
+}
+
+int InventoryTask::offhandSlotFromMouse(int mouse_x, int mouse_y) const
+{
+    int x, y, w, h;
+    offhandWidgetBounds(x, y, w, h);
+    if(mouse_x >= x && mouse_x < x + w && mouse_y >= y && mouse_y < y + h)
+        return OFFHAND_SLOT;
+
+    return INVALID_SLOT;
+}
+
+void InventoryTask::offhandHandleClick(bool right_click)
+{
+    const BLOCK_WDATA off_block = current_inventory.offhandBlock();
+    const unsigned int off_count = current_inventory.offhandCount();
+    const unsigned short off_damage = current_inventory.offhandDamage();
+
+    // The offhand takes any item, so it behaves exactly as a plain inventory
+    // slot does: a left click moves the whole stack, a right click half of it.
+    if(!isHoldingItem())
+    {
+        if(getBLOCK(off_block) == BLOCK_AIR || off_count == 0)
+            return;
+
+        if(right_click)
+        {
+            const unsigned int picked = (off_count + 1) / 2;
+            const unsigned int remaining = off_count - picked;
+            held_block = off_block;
+            held_count = picked;
+            held_damage = off_damage;
+            current_inventory.setOffhand(remaining == 0 ? BLOCK_AIR : off_block, remaining, off_damage);
+        }
+        else
+        {
+            held_block = off_block;
+            held_count = off_count;
+            held_damage = off_damage;
+            current_inventory.setOffhand(BLOCK_AIR, 0, 0);
+        }
+        return;
+    }
+
+    const unsigned int placed = right_click ? 1 : held_count;
+
+    if(getBLOCK(off_block) == BLOCK_AIR || off_count == 0)
+    {
+        current_inventory.setOffhand(held_block, placed, held_damage);
+        held_count -= placed;
+        if(held_count == 0)
+        {
+            held_block = BLOCK_AIR;
+            held_damage = 0;
+        }
+    }
+    else if(off_block == held_block && ItemRules::maxStackSize(off_block) > 1)
+    {
+        current_inventory.setOffhand(off_block, off_count + placed, off_damage);
+        held_count -= placed;
+        if(held_count == 0)
+        {
+            held_block = BLOCK_AIR;
+            held_damage = 0;
+        }
+    }
+    else if(!right_click)
+    {
+        // Two different items: they trade places, wear and all, like a slot.
+        current_inventory.setOffhand(held_block, held_count, held_damage);
+        held_block = off_block;
+        held_count = off_count;
+        held_damage = off_damage;
+    }
+}
+
+void InventoryTask::renderOffhandWidget()
+{
+    int x, y, w, h;
+    if(!offhandWidgetBounds(x, y, w, h))
+        return;
+
+    const BLOCK_WDATA item = current_inventory.offhandBlock();
+    if(getBLOCK(item) == BLOCK_AIR || current_inventory.offhandCount() == 0)
+    {
+        // The offhand's own no-item icon is the shield outline; vanilla's
+        // InventoryMenu overrides the slot's getNoItemIcon() with it. It is the
+        // fifth cell of the armour-slot strip, just past the four worn pieces.
+        drawTexture(armor_slots, *screen,
+                    static_cast<uint16_t>(Inventory::armor_slot_count * inv_src_slot_size),
+                    static_cast<uint16_t>(0),
+                    static_cast<uint16_t>(inv_src_slot_size), static_cast<uint16_t>(inv_src_slot_size),
+                    static_cast<uint16_t>(x), static_cast<uint16_t>(y),
+                    static_cast<uint16_t>(w), static_cast<uint16_t>(h));
+        return;
+    }
+
+    drawStackItem(*screen, item, current_inventory.offhandCount(),
+                  current_inventory.offhandDamage(), x, y, w);
 }
 
 void InventoryTask::renderChestPanel()
@@ -414,36 +528,39 @@ void InventoryTask::renderChestPanel()
     int panel_x = 0, panel_y = 0, panel_w = 0, panel_h = 0;
     chestPanelRect(panel_x, panel_y, panel_w, panel_h);
 
-    // The window, then the two rows of slots in it.
-    fillRect(*screen, panel_x, panel_y, panel_w, panel_h, 0xC618);
-    drawRectangle(*screen, panel_x, panel_y, panel_w, panel_h, 0x4208);
-    drawRectangle(*screen, panel_x + 1, panel_y + 1, panel_w - 2, panel_h - 2, 0xFFFF);
+    const int rows = chestRowCount(chestSlotCount());
+    const int pane_h = chestPaneHeight(rows);
+    const int draw_w = panel_w;
+    const int player_h = panel_h - pane_h * inv_draw_scale; // the 96-pixel part
 
-    // How many items are inside, so a chest can be checked without looking in it.
-    char title[32];
-    snprintf(title, sizeof(title), "%s (%u items)",
-             chestSlotCount() > ChestStore::SlotCount ? "Large Chest" : "Chest",
-             ChestStore::itemCount(chest_bx, chest_by, chest_bz));
-    drawString(title, 0x4208, *screen, panel_x + panel_padding, panel_y + panel_padding);
+    // The chest's own pane, then the player's inventory part below it: the two
+    // halves of generic_54.png, stitched together exactly as vanilla's chest
+    // screen does -- the top pane carries the chest rows for however many rows the
+    // chest has, and the bottom pane is the same 96-pixel picture for every chest.
+    drawTexture(chest_top, *screen,
+                static_cast<uint16_t>(0), static_cast<uint16_t>(0),
+                static_cast<uint16_t>(window_src_width), static_cast<uint16_t>(pane_h),
+                static_cast<uint16_t>(panel_x), static_cast<uint16_t>(panel_y),
+                static_cast<uint16_t>(draw_w), static_cast<uint16_t>(pane_h * inv_draw_scale));
+    drawTexture(chest_player, *screen,
+                static_cast<uint16_t>(0), static_cast<uint16_t>(0),
+                static_cast<uint16_t>(window_src_width), static_cast<uint16_t>(player_part_src_height),
+                static_cast<uint16_t>(panel_x),
+                static_cast<uint16_t>(panel_y + pane_h * inv_draw_scale),
+                static_cast<uint16_t>(draw_w),
+                static_cast<uint16_t>(player_h));
+
+    // "Chest" or "Large Chest", centred on the window's top edge, which is where
+    // vanilla draws a container's title.
+    const char *title = chestSlotCount() > ChestStore::SlotCount ? "Large Chest" : "Chest";
+    const int title_w = static_cast<int>(measureString(title));
+    drawString(title, 0x4208, *screen,
+               panel_x + (draw_w - title_w) / 2,
+               panel_y + armor_title_src_y * inv_draw_scale);
 
     const int slot_count = chestSlotCount();
-    for(int i = 0; i < slot_count; ++i)
-    {
-        int sx, sy, sw, sh;
-        chestSlotBounds(i, sx, sy, sw, sh);
-        fillRect(*screen, sx, sy, sw, sh, 0x8C71);
-        drawRectangle(*screen, sx, sy, sw, sh, 0x4208);
-    }
 
-    for(int s = 0; s < Inventory::slot_count; ++s)
-    {
-        int sx, sy, sw, sh;
-        chestPlayerSlotBounds(s, sx, sy, sw, sh);
-        fillRect(*screen, sx, sy, sw, sh, 0x8C71);
-        drawRectangle(*screen, sx, sy, sw, sh, 0x4208);
-    }
-
-    // The items, on top of the empty slots.
+    // The items, on top of the empty slots the sheet just drew.
     for(int i = 0; i < slot_count; ++i)
     {
         const ChestStore::Stack stack = ChestStore::stackAt(chest_bx, chest_by, chest_bz, i);

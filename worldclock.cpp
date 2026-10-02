@@ -44,13 +44,49 @@ namespace WorldClock
 			return degrees;
 		}
 
-		float clamp01(float value)
+		/**
+		 * How lit the world is, as a pure function of the sun's height: 0 in full
+		 * night, 1 in full daylight.
+		 *
+		 * The shape is the point, not the endpoints. A plain ramp in the sun's
+		 * height spends most of its range on the middle of the day: the sun is 45
+		 * degrees up at 09:00 and at 15:00, so anything that has not reached full
+		 * brightness by then leaves the world semi-dim for hours on either side of
+		 * noon, and the afternoon reads as a permanent dusk rather than as an
+		 * afternoon. So the middle is flat -- everything from DaylightElevation up
+		 * is full daylight and everything at or below NightElevation is full night --
+		 * and the golden hour between them is a smoothstep, which has zero slope at
+		 * both ends and therefore no seam where it meets the plateau.
+		 *
+		 * NightElevation is reused rather than given a second value: the threshold
+		 * that says night has fallen (isNight) is the same one that says the light
+		 * has finished falling, so the two can never disagree.
+		 */
+		float daylight(int elevation)
 		{
-			if(value < 0.0f)
-				return 0.0f;
-			if(value > 1.0f)
+			if(elevation >= DaylightElevation)
 				return 1.0f;
-			return value;
+			if(elevation <= NightElevation)
+				return 0.0f;
+
+			const float t = static_cast<float>(elevation - NightElevation)
+				/ static_cast<float>(DaylightElevation - NightElevation);
+			return t * t * (3.0f - 2.0f * t);
+		}
+
+		/**
+		 * The warm horizon glow of dawn and dusk, 0 away from it and 1 with the sun
+		 * on the horizon. Wider than the flat part of daylight(), on purpose: the
+		 * sky starts to colour well before the sun rises and keeps its colour for a
+		 * while after it sets, which is what makes dawn and dusk their own times of
+		 * day instead of a dimmer noon and a slightly earlier night.
+		 */
+		float twilightGlow(int elevation)
+		{
+			const int distance = elevation < 0 ? -elevation : elevation;
+			if(distance >= TwilightGlowDegrees)
+				return 0.0f;
+			return 1.0f - static_cast<float>(distance) / static_cast<float>(TwilightGlowDegrees);
 		}
 
 		/** Mixes two colours (linear, a in 0..1). */
@@ -228,11 +264,7 @@ namespace WorldClock
 
 	int skyLightLevel()
 	{
-		// Normalised sun height: -1 at midnight, +1 at noon.
-		const float height = static_cast<float>(sunElevationDegrees()) / 90.0f;
-		// Full brightness from well above the horizon, sliding to the floor once
-		// the sun is a little below it so dusk is a gradual fade.
-		const float lit = clamp01((height + 0.15f) / 0.65f);
+		const float lit = daylight(sunElevationDegrees());
 		return MinSkyLight + static_cast<int>(lit * static_cast<float>(MaxSkyLight - MinSkyLight) + 0.5f);
 	}
 
@@ -262,17 +294,15 @@ namespace WorldClock
 		// Sunrise/sunset red-orange.
 		const SkyColor twilight = { 0.95f, 0.55f, 0.25f };
 
-		const float height = static_cast<float>(sunElevationDegrees()) / 90.0f;
-		const float lit = clamp01((height + 0.15f) / 0.65f);
-
-		SkyColor out = mix(night, day, lit);
-		// Lay the horizon glow over the day/night blend near dawn and dusk.
+		// The background follows the same curve as the light the terrain gets, so
+		// the sky and the ground can never disagree about what time it is.
 		const int elevation = sunElevationDegrees();
-		if(elevation > -14 && elevation < 14)
-		{
-			const float fade = 1.0f - (static_cast<float>(elevation < 0 ? -elevation : elevation) / 14.0f);
-			out = mix(out, twilight, fade * 0.7f);
-		}
+		SkyColor out = mix(night, day, daylight(elevation));
+		// Lay the warm horizon glow over that blend, strongest with the sun on the
+		// horizon and fading out over a wider band than the daylight curve uses.
+		const float glow = twilightGlow(elevation);
+		if(glow > 0.0f)
+			out = mix(out, twilight, glow * TwilightGlowStrength);
 		return out;
 	}
 
