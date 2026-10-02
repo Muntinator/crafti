@@ -110,6 +110,32 @@ static void testBytesDriveTheClock()
 	GameAudioTx::disable();
 }
 
+static void testSilenceHasNoIdleTone()
+{
+	// Digital silence must produce a perfectly alternating bit stream: a first
+	// order sigma-delta whose two feedback steps are the same size holds its
+	// accumulator at the centre of its range, so every idle byte is 0x55 and the
+	// wire has the most transitions a byte-paced 8N1 frame can have. An asymmetric
+	// modulator (the high step one smaller than the low step) instead gains half an
+	// LSB per bit, drifts for about a second and then slips -- an audible thump at
+	// the reset. Over two seconds of silence the drift would show up as a lost
+	// transition and an unbalanced high/low count, so this pins the symmetry.
+	GameAudioTx::Sim::reset();
+	GameAudio::initialize();
+	CHECK(GameAudioTx::enable());
+
+	// No voices are playing, so the ring stays empty and every frame is silence.
+	GameAudioTx::Sim::advanceCarrierTicks(16000); // 16000 bytes = 2 seconds
+
+	const uint32_t bytes = GameAudioTx::Sim::bytesTransmitted();
+	CHECK(bytes == 16000);
+	CHECK(GameAudioTx::Sim::lineHighCount() == bytes * 5);
+	CHECK(GameAudioTx::Sim::lineLowCount() == bytes * 5);
+	CHECK(GameAudioTx::Sim::lineTransitions() == bytes * 10 - 1);
+
+	GameAudioTx::disable();
+}
+
 static void testModulatorDrivesTheLine()
 {
 	GameAudioTx::Sim::reset();
@@ -268,6 +294,7 @@ int main()
 
 	testRegisterSetup();
 	testBytesDriveTheClock();
+	testSilenceHasNoIdleTone();
 	testModulatorDrivesTheLine();
 	testWaveformRoundTrip();
 	testPolledToneOnlyTouchesTheUart();

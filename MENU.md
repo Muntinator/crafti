@@ -358,7 +358,7 @@ test, plus the pause menu keeping its selection across a child screen. See
 
 The game is called Muntcraft everywhere a player can read the name except the
 wordmark itself, which is the real Minecraft logo: the version line
-(`Muntcraft 1.9.0`), the credits, the help heading and the file. The save file
+(`Muntcraft 1.9.1`), the credits, the help heading and the file. The save file
 keeps the name `crafti.map.tns` it has always had, because that is the name the
 calculator's file association is registered under and renaming it would orphan
 every world that already exists.

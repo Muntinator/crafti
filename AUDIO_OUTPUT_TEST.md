@@ -193,6 +193,12 @@ drive headphones or a speaker directly. The backend drives it as a 1-bit DAC:
   times a second instead of once per output bit. The bit clock is the UART's
   baud generator, so playback timing is set by hardware and cannot drift with
   FPS.
+- The modulator's two feedback steps are **the same size (32768)**. An
+  asymmetric pair (subtracting 32767 but adding 32768) gains half an LSB of bias
+  per bit on a flat signal, so the accumulator drifts for about a second and then
+  slips, adding a slow sawtooth with a sharp reset -- an audible thump every
+  second or so **even in silence**. Symmetric feedback holds digital silence as a
+  perfectly alternating bit stream, which is what the idle-tone host test pins.
 - This is the classic calculator "beeper" technique, moved from a GPIO pin to the
   UART; it is audible with a buffered/isolated output stage or a high-impedance
   probe. The UART's fixed framing bits add a quiet 8 kHz whistle under the
@@ -243,8 +249,9 @@ What has been verified here:
 - **CX build**: `make -j2` (clean) exits 0 and produces `crafti.elf` and
   `crafti.tns` (`PRG\0`, compressed).
 - **Host tests**: `make -C tests` passes every binary – `audio_pack_test`
-  48 checks / 0 failures, `audio_tx_test` 68 checks / 0 failures (register
-  setup, the bytes pacing the sample clock, the modulator toggling the line, a
+  48 checks / 0 failures, `audio_tx_test` 73 checks / 0 failures (register
+  setup, the bytes pacing the sample clock, silence staying a perfectly
+  alternating idle stream with no drift, the modulator toggling the line, a
   440 Hz WAVE round-trip analysed for zero crossings, the polled tone touching
   only the UART and restoring it, and teardown restoring UART/VIC/power/vector),
   `audio_manager_test` 0 failures against the real pack (volume, music, voice

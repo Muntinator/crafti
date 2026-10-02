@@ -258,6 +258,14 @@ namespace
 	 * Turns one mixer sample into the eight data bits of one UART byte with a
 	 * first-order sigma-delta modulator: the density of ones in the byte is what
 	 * the far end averages back into the sample.
+	 *
+	 * The two feedback steps must be the same size (32768) so that a bit is
+	 * weighted equally whichever way it went. If the high step is one smaller than
+	 * the low step, the accumulator gains a net 1/2 LSB per bit on a flat signal,
+	 * drifts up to the top of its range over about a second and then slips -- a
+	 * slow sawtooth in the average with a sharp reset, heard as a thump every
+	 * second or so even while nothing is playing. Symmetric feedback makes digital
+	 * silence a perfectly alternating bit stream and removes the idle tone.
 	 */
 	void emitByte()
 	{
@@ -280,7 +288,7 @@ namespace
 			sd_acc += level;
 			if(sd_acc >= 0)
 			{
-				sd_acc -= 32767;
+				sd_acc -= 32768;
 				byte |= 1u << b;
 			}
 			else
