@@ -26,6 +26,9 @@ public:
     void setDirty(bool dirty = true) { build_dirty = dirty; }
     bool isDirty() { return build_dirty; }
     bool isBuildDirty() const { return build_dirty; }
+    /** Queue membership bookkeeping for World::build_queue (see world.cpp). */
+    bool isBuildQueued() const { return build_queued; }
+    void setBuildQueued(bool queued) { build_queued = queued; }
     void buildGeometryAsync(); // Used by build queue
     void swapMeshes(); // Swap build and render mesh buffers
     BLOCK_WDATA getLocalBlock(const int x, const int y, const int z) const;
@@ -153,6 +156,9 @@ private:
     //Rendering - double buffered (render_* is displayed, build_* is being built)
     bool build_dirty = true;
     bool build_complete = false;
+    //Set while this chunk sits in World::build_queue, so queue membership is an
+    //O(1) test instead of walking the queue for every dirty chunk each frame.
+    bool build_queued = false;
     static int pos_indices[SIZE + 1][SIZE + 1][SIZE + 1];
     BLOCK_SIDE_BITFIELD sides_rendered[SIZE][SIZE][SIZE] = {}; //It could be that other chunks already rendered parts of our blocks
     

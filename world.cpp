@@ -930,8 +930,15 @@ bool World::blockAction(const int x, const int y, const int z)
 bool World::intersect(AABB &other) const
 {
     for(Chunk *c : visible_chunks)
+    {
+        // Reject on the chunk's own bounds before calling in: entity collision
+        // asks this dozens of times a frame, and almost every chunk loses here.
+        if(!c->getAABB().intersects(other))
+            continue;
+
         if(c->intersects(other))
             return true;
+    }
 
     return false;
 }
@@ -1056,24 +1063,15 @@ bool World::saveToFile(gzFile file) const
 
 void World::processBuildQueue()
 {
-    // Add dirty chunks to the build queue (avoiding duplicates)
+    // Add dirty chunks to the build queue. Membership is tracked on the chunk
+    // itself: walking the queue to deduplicate was O(visible * queued) list
+    // dereferences every frame and dominated the whole render loop.
     for(Chunk *c : visible_chunks)
     {
-        if(c->isBuildDirty())
+        if(c->isBuildDirty() && !c->isBuildQueued())
         {
-            // Check if already in queue
-            bool already_queued = false;
-            for(Chunk *q : build_queue)
-            {
-                if(q == c)
-                {
-                    already_queued = true;
-                    break;
-                }
-            }
-
-            if(!already_queued)
-                build_queue.push_back(c);
+            c->setBuildQueued(true);
+            build_queue.push_back(c);
         }
     }
 
@@ -1088,6 +1086,7 @@ void World::processBuildQueue()
 
         Chunk *c = build_queue.front();
         build_queue.pop_front();
+        c->setBuildQueued(false);
         c->buildGeometryAsync();
     }
 }

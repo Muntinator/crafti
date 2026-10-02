@@ -389,17 +389,23 @@ COLOR colorRGB(const GLFix r, const GLFix g, const GLFix b)
 }
 
 static GLFix ngl_tex_mod_r(1), ngl_tex_mod_g(1), ngl_tex_mod_b(1);
+// Cached identity test for the per-texel modulator: the inner rasterizer loop
+// calls ngl_modulate_texel for every texel, so the three GLFix compares are
+// folded into one flag here instead.
+static bool ngl_tex_mod_active = false;
 
 void nglSetTextureModulate(const GLFix r, const GLFix g, const GLFix b)
 {
     ngl_tex_mod_r = r;
     ngl_tex_mod_g = g;
     ngl_tex_mod_b = b;
+    ngl_tex_mod_active = !(r == GLFix(1) && g == GLFix(1) && b == GLFix(1));
 }
 
 void nglResetTextureModulate()
 {
     ngl_tex_mod_r = ngl_tex_mod_g = ngl_tex_mod_b = GLFix(1);
+    ngl_tex_mod_active = false;
 }
 
 static unsigned int ngl_global_shade = 256;
@@ -414,9 +420,9 @@ unsigned int nglGlobalShade()
     return ngl_global_shade;
 }
 
-static COLOR ngl_modulate_texel(COLOR c)
+static inline COLOR ngl_modulate_texel(COLOR c)
 {
-    if(ngl_tex_mod_r == GLFix(1) && ngl_tex_mod_g == GLFix(1) && ngl_tex_mod_b == GLFix(1))
+    if(__builtin_expect(!ngl_tex_mod_active, 1))
         return c;
     RGB rgb = rgbColor(c);
     rgb.r = rgb.r * ngl_tex_mod_r;
