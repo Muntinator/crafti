@@ -51,6 +51,13 @@ namespace
 #ifndef _TINSPIRE
     /** The left button's state last frame, so a click is an edge and not a hold. */
     bool left_mouse_was_down = false;
+    /**
+     * The pointer's position last frame. Vanilla only hands a button the focus
+     * when the mouse *moves* onto it, so a pointer that is merely resting on a
+     * button must not keep pulling the highlight back onto it while the keyboard
+     * is stepping somewhere else.
+     */
+    int last_mouse_x = -1, last_mouse_y = -1;
 #endif
 
     /**
@@ -175,6 +182,13 @@ void StartTask::makeCurrent()
     selected_item = has_saved_world ? CONTINUE : NEW_TERRAIN;
     current_splash = MenuUI::splashLines[static_cast<unsigned int>(rand()) % MenuUI::splashLineCount];
     GameAudio::stopMusic();
+#ifndef _TINSPIRE
+    // The point the pointer already sits at does not count as a move: the screen
+    // opens on the button vanilla opens it on, and the mouse only takes over when
+    // it is actually moved.
+    SDL_PumpEvents();
+    SDL_GetMouseState(&last_mouse_x, &last_mouse_y);
+#endif
     Task::makeCurrent();
 }
 
@@ -296,7 +310,13 @@ void StartTask::logic(GLFix dt)
             hovered = i;
     }
 
-    if(hovered >= 0 && itemEnabled(hovered))
+    // Only a pointer that has moved takes the focus; a resting pointer leaves the
+    // keyboard in charge. A click still takes whatever is under it.
+    const bool mouse_moved = (mouse_x != last_mouse_x || mouse_y != last_mouse_y);
+    last_mouse_x = mouse_x;
+    last_mouse_y = mouse_y;
+
+    if(mouse_moved && hovered >= 0 && itemEnabled(hovered))
         selected_item = hovered;
 
     if(left_down && !left_mouse_was_down)
@@ -314,7 +334,7 @@ void StartTask::logic(GLFix dt)
 #endif
 
     if(key_held_down)
-        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_ENTER);
+        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_CLICK) || keyPressed(KEY_NSPIRE_ENTER);
     else if(keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_8))
     {
         do
@@ -335,7 +355,7 @@ void StartTask::logic(GLFix dt)
         } while(!itemEnabled(selected_item));
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_5))
+    else if(keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_CLICK) || keyPressed(KEY_NSPIRE_ENTER))
     {
         if(!itemEnabled(selected_item))
         {

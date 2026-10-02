@@ -68,9 +68,11 @@ void HelpTask::render()
 
 void HelpTask::logic(GLFix /*dt*/)
 {
+    // Esc leaves the screen; Enter does too, so the calculator's Enter key acts
+    // like vanilla's Back button rather than doing nothing.
     if(key_held_down)
-        key_held_down = keyPressed(KEY_NSPIRE_ESC);
-    else if(keyPressed(KEY_NSPIRE_ESC))
+        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_ENTER);
+    else if(keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_ENTER))
     {
         close();
 

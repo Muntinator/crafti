@@ -69,7 +69,7 @@ approximation" rather than "exact copy":
 | wordmark | the official `gui/title/minecraft.png` wordmark (`textures/title_logo.h`), the two 155x44 halves vanilla blits at `(0,0)` and `(0,45)` joined into one 274x44 image, centred (`width/2 - 137`) with its top at y 30; `edition.png` ("Java Edition") is centred with its top at y 67, over the wordmark's lower band |
 | splash | vanilla's own lines (`texts/splashes.txt`, a hundred kept verbatim), rendered once into a small texture and blitted **tilted ≈ −20°** and pulsing, **centred** at `(width/2 + 90, 70)` (slid left only when a long line would overflow) |
 | buttons | vanilla's block — three full-width (200) from `height / 4 + 48` at pitch 24, then two 98-wide on a shared row `72 + 12` below, at `width/2 - 100` and `width/2 + 2`; `Continue` disabled with no save, and disabled buttons cannot take the highlight |
-| small print | bottom-left `Muntcraft 1.8.9` and bottom-right `Copyright Munt. Do not distribute!`, both at vanilla's `height - 10` (from x 2 and ending 2 inside the right edge); the old input-hint and audio-status lines are gone (the audio pack reports itself on the sound test screen) |
+| small print | bottom-left `Muntcraft 1.9.0` and bottom-right `Copyright Munt. Do not distribute!`, both at vanilla's `height - 10` (from x 2 and ending 2 inside the right edge); the old input-hint and audio-status lines are gone (the audio pack reports itself on the sound test screen) |
 | input | `Up`/`Down`/`8`/`2` move focus, `5`/`Enter` activate, `Esc` resumes the last world or quits; on the desktop a mouse hovers to set focus and a click activates |
 
 ### 2.2 Pause menu — `menutask.cpp`
@@ -314,7 +314,9 @@ follow-on screens and verification.
     (`tools/pcsim/titlemenu.txt`), the pause menu with its button interactions
     (`tools/pcsim/pausemenu.txt`), the screens behind the pause menu
     (`tools/pcsim/ui.txt`) and the title/pause/options/loading set
-    (`tools/pcsim/gui.txt`, 14 frames), and individual frames are verified
+    (`tools/pcsim/gui.txt`, 14 frames), plus `tools/pcsim/controls.txt` for the
+    control edge cases (focus handoff, wrapping, a disabled button, a held key,
+    child-screen return), and individual frames are verified
     numerically against the source art (the pause buttons against `menu_button`,
     the loading bar against its own colours, the pause overlay's gradient and
     the grid's focus states against the layout); a frame-for-frame comparison

@@ -35,6 +35,12 @@ void MenuTask::makeCurrent()
     if(!background_saved)
         saveBackground();
 
+#ifndef _TINSPIRE
+    // The point the pointer already sits at does not count as a move: the menu
+    // opens on "Back to Game", and the mouse only takes over when it is moved.
+    SDL_PumpEvents();
+    SDL_GetMouseState(&last_mouse_x, &last_mouse_y);
+#endif
     Task::makeCurrent();
 }
 
@@ -138,7 +144,13 @@ void MenuTask::logic(GLFix /*dt*/)
             hovered = i;
     }
 
-    if(hovered >= 0)
+    // Only a pointer that has moved takes the focus; a resting pointer leaves the
+    // keyboard in charge. A click still takes whatever is under it.
+    const bool mouse_moved = (mouse_x != last_mouse_x || mouse_y != last_mouse_y);
+    last_mouse_x = mouse_x;
+    last_mouse_y = mouse_y;
+
+    if(mouse_moved && hovered >= 0)
         menu_selected_item = hovered;
 
     if(left_down && !left_mouse_was_down)
@@ -172,7 +184,7 @@ void MenuTask::logic(GLFix /*dt*/)
 
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_CLICK))
+    else if(keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_CLICK) || keyPressed(KEY_NSPIRE_ENTER))
     {
         activate();
         key_held_down = true;

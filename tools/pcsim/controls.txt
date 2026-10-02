@@ -1,0 +1,94 @@
+# Menu controls: the focus handoff between pointer and keyboard, the ends of a
+# list, a disabled button, a held key and a child screen coming back.
+#
+#   MUNT_SIM_SHOTS=/tmp/controls sh tools/pcsim/play.sh tools/pcsim/controls.txt
+#
+# The point of this scenario is the edge cases the tour scenarios do not reach:
+#
+#   - the pointer is parked on an enabled button and the keyboard then steps
+#     away; the highlight must follow the key rather than snap back to the
+#     button the pointer is still resting on (vanilla only gives a button the
+#     focus when the mouse *moves*, not every frame),
+#   - moving the pointer still takes the focus, so the handoff works both ways,
+#   - stepping up from the first button wraps to the last and down from the last
+#     wraps to the first,
+#   - with no saved world "Continue" is disabled, so stepping onto it skips it,
+#   - holding a direction steps exactly once, and releasing and pressing again
+#     steps exactly once more (the held-key latch), and
+#   - Enter takes the highlighted button, and a child screen closed with Esc
+#     comes back to this screen (not into the game).
+#
+# Title buttons at the harness' 640x480: three full-width buttons at y 216..256,
+# 264..304 and 312..352 (Continue, New Flat World, New Terrain World), then two
+# half-width ones at y 384..424 (Graphing Mode x 120..316, Quit Game x 324..520).
+
+0.0    step 120
+0.0    caption The title screen. With no saved world the selection opens on "New Terrain World" and "Continue" is greyed.
+1.0    shot 01-title
+
+# --- pointer -> keyboard handoff -----------------------------------------
+# Park the pointer on an enabled button, then step away with the keyboard. The
+# pointer never moves again, so the highlight must stay where the key put it.
+1.4    mpos 320 284
+1.8    caption The pointer is moved onto "New Flat World" and lights it.
+2.0    shot 02-hover
+2.4    key s tap
+2.8    caption The keyboard steps down to "New Terrain World" while the pointer stays on "New Flat World": the highlight follows the key instead of snapping back to the hovered button.
+3.0    shot 03-key-after-hover
+
+# --- wrap at the ends -----------------------------------------------------
+3.4    key w tap
+3.8    key w tap
+4.2    caption Up from the second button lands on the first (Continue); one more up wraps to the last button.
+4.4    shot 04-wrap-top
+4.8    key s tap
+5.2    caption One down from the last button wraps back to the first enabled one.
+5.4    shot 05-wrap-bottom
+
+# --- a disabled button is skipped ----------------------------------------
+5.8    key w tap
+6.2    caption Stepping up from "New Flat World" skips the disabled "Continue" and lands on the last button.
+6.4    shot 06-skip-disabled
+
+# --- pointer still takes the focus when it moves -------------------------
+6.8    mpos 320 332
+7.2    caption The pointer can still take the focus when it is actually moved: it is moved onto "New Terrain World".
+7.4    shot 07-pointer-takes
+
+# --- a held key steps once -----------------------------------------------
+7.8    key s down
+8.2    caption A direction held down steps once, not once per frame -- the highlight has moved a single button, onto "Graphing Mode".
+8.6    shot 08-held-once
+9.0    key s up
+9.4    key s tap
+9.8    caption Releasing and pressing again steps exactly once more.
+10.0   shot 09-after-release
+
+# --- start a world, then the pause menu ----------------------------------
+10.4   mpos 320 332
+10.8   btn left tap
+15.6   command gamemode creative
+15.7   command time set noon
+15.8   command weather clear
+16.4   step 40
+16.8   caption The world, for reference.
+17.0   shot 10-world
+
+17.6   key esc tap
+18.4   caption The pause menu.
+18.6   shot 11-pause
+
+# Enter takes the highlighted button. The pointer is resting on "Save and Quit to
+# Title", which is exactly the trap this scenario exists for: with focus-by-hover
+# running every frame, two downs would be undone and Enter would quit the world.
+19.0   key s tap
+19.4   key s tap
+19.8   key enter tap
+20.6   caption Enter takes the highlighted button exactly like 5 or Space: two downs from "Back to Game" reach "Block List" and it is open, even though the pointer is resting on "Save and Quit to Title".
+20.8   shot 12-enter-blocklist
+
+# Closing the child comes back here, not into the game.
+21.4   key esc tap
+22.2   caption Closing a child screen returns to the pause menu, with the selection reset to "Back to Game".
+22.4   shot 13-pause-return
+22.8   end

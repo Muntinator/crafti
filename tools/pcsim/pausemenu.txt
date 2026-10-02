@@ -62,7 +62,7 @@
 13.0   shot 06-pause-options
 
 13.6   key esc tap
-14.2   caption Closing Options returns to the pause menu, as it does in vanilla -- the screen was opened as a child of the pause menu, not of the world, so Esc comes back here rather than dropping the player into the game. The pointer is still over "Options...", so that button carries the highlight.
+14.2   caption Closing Options returns to the pause menu, as it does in vanilla -- the screen was opened as a child of the pause menu, not of the world, so Esc comes back here rather than dropping the player into the game. The menu re-opens on "Back to Game"; the pointer, still resting on "Options...", does not pull the highlight back onto it until it is actually moved.
 14.4   shot 07-pause-return
 
 # --- the player inventory, opened from the pause menu ---------------------

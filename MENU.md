@@ -327,13 +327,16 @@ catalogue of blocks and items), and this game's `Save World`, `Sound Test...` an
 a reference display are `tools/pcsim/titlemenu.txt` (the main menu),
 `tools/pcsim/pausemenu.txt` (the pause menu), `tools/pcsim/inventory.txt` (the
 player inventory and its model) and `tools/pcsim/ui.txt` (the screens behind
-them). See `GUI_VANILLA_PORT.md`.
+them). `tools/pcsim/controls.txt` covers the menu controls themselves: the
+pointer/keyboard focus handoff, wrapping at the ends of a list, skipping a
+disabled button, a held key stepping once instead of once per frame, and a child
+screen coming back to its parent. See `GUI_VANILLA_PORT.md`.
 
 ## Muntcraft
 
 The game is called Muntcraft everywhere a player can read the name except the
 wordmark itself, which is the real Minecraft logo: the version line
-(`Muntcraft 1.8.9`), the credits, the help heading and the file. The save file
+(`Muntcraft 1.9.0`), the credits, the help heading and the file. The save file
 keeps the name `crafti.map.tns` it has always had, because that is the name the
 calculator's file association is registered under and renaming it would orphan
 every world that already exists.

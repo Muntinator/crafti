@@ -44,6 +44,13 @@ private:
 #ifndef _TINSPIRE
     /** The left button's state last frame, so a click is an edge, not a hold. */
     bool left_mouse_was_down = false;
+    /**
+     * The pointer's position last frame. Vanilla only hands a button the focus
+     * when the mouse *moves* onto it, so a pointer that is merely resting on a
+     * button must not keep pulling the highlight back onto it while the keyboard
+     * is stepping somewhere else.
+     */
+    int last_mouse_x = -1, last_mouse_y = -1;
 #endif
 };
 
