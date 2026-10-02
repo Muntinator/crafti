@@ -45,10 +45,24 @@ public:
 private:
 	void setStatus(const char *text);
 
+	/**
+	 * The box of one row of the packed button column. Rendered and hit-tested
+	 * through this, so the pointer and the drawing cannot disagree about where a
+	 * button is.
+	 */
+	void buttonRect(unsigned int item, int &x, int &y, int &w, int &h) const;
+
 	Task *return_task = nullptr;
 	int selected_item = 0;
 	unsigned int status_timeout = 0;
 	char status[64] = {0};
+
+#ifndef _TINSPIRE
+	/** The left button's state last frame, so a click is an edge, not a hold. */
+	bool left_mouse_was_down = false;
+	/** The pointer's position last frame; only a move takes the focus. */
+	int last_mouse_x = -1, last_mouse_y = -1;
+#endif
 };
 
 extern AudioTestTask audio_test_task;

@@ -28,6 +28,10 @@ private:
     /** Esc hands control back to the screen that opened this one, or the world. */
     void close();
     Task *return_task = nullptr;
+#ifndef _TINSPIRE
+    /** The left button's state last frame, so a click is an edge, not a hold. */
+    bool left_mouse_was_down = false;
+#endif
 };
 
 extern HelpTask help_task;

@@ -591,6 +591,15 @@ void Inventory::importLegacyCounts()
     }
 }
 
+void Inventory::setCurrentSlotIndex(int index)
+{
+    if(index < 0)
+        index = 0;
+    if(index >= hotbar_slot_count)
+        index = hotbar_slot_count - 1;
+    current_slot = index;
+}
+
 void Inventory::previousSlot()
 {
     --current_slot;

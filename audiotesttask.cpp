@@ -10,6 +10,10 @@
 #include "starttask.h"
 #include "texturetools.h"
 
+#ifndef _TINSPIRE
+#include <SDL/SDL.h>
+#endif
+
 AudioTestTask audio_test_task;
 
 namespace
@@ -48,7 +52,24 @@ void AudioTestTask::makeCurrent()
 	selected_item = 0;
 	status_timeout = 0;
 	setStatus(GameAudio::packAvailable() ? "Audio pack loaded" : "No audio pack (tones only)");
+
+#ifndef _TINSPIRE
+	// A resting pointer is not a move, and the click that opened the screen must
+	// not also take a row on the first frame.
+	SDL_PumpEvents();
+	const Uint8 buttons = SDL_GetMouseState(&last_mouse_x, &last_mouse_y);
+	left_mouse_was_down = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
+#endif
 	Task::makeCurrent();
+}
+
+void AudioTestTask::buttonRect(unsigned int item, int &x, int &y, int &w, int &h) const
+{
+	const int scale = MenuUI::uiScale();
+	w = SCREEN_WIDTH - 16;
+	h = 16 * scale;
+	x = (SCREEN_WIDTH - w) / 2;
+	y = 26 * scale + static_cast<int>(item) * (h + 2 * scale);
 }
 
 void AudioTestTask::setStatus(const char *text)
@@ -159,19 +180,16 @@ void AudioTestTask::render()
 	// Ten rows do not fit a standard 24-pixel button column on a 240-pixel
 	// screen, so the buttons are packed a little tighter -- but they are still the
 	// vanilla widget sheet's button, in its plain and highlighted states.
-	const int button_w = SCREEN_WIDTH - 16;
-	const int button_h = 16 * MenuUI::uiScale();
-	const int button_x = (SCREEN_WIDTH - button_w) / 2;
-	int y = 26 * MenuUI::uiScale();
-
 	for(unsigned int i = 0; i < ITEM_MAX; ++i)
 	{
+		int button_x = 0, y = 0, button_w = 0, button_h = 0;
+		buttonRect(i, button_x, y, button_w, button_h);
 		const bool selected = (static_cast<int>(i) == selected_item);
 		MenuUI::drawButton(*screen, button_x, y, button_w, button_h, selected);
 		MenuUI::drawButtonLabel(item_labels[i], *screen, button_x, y, button_w, button_h, selected);
-		y += button_h + 2 * MenuUI::uiScale();
 	}
 
+	int y = 26 * MenuUI::uiScale() + static_cast<int>(ITEM_MAX) * (16 * MenuUI::uiScale() + 2 * MenuUI::uiScale());
 	y += 4;
 	drawString("Audio pack:", MenuUI::TextDisabled, *screen, 8, y);
 	drawString(GameAudio::packStatus(), MenuUI::Text, *screen, 100, y);
@@ -194,6 +212,43 @@ void AudioTestTask::logic(GLFix /*dt*/)
 {
 	if(status_timeout > 0)
 		--status_timeout;
+
+#ifndef _TINSPIRE
+	// Vanilla's pointer: hovering a row lights it, a click runs it.
+	SDL_PumpEvents();
+	int mouse_x = 0, mouse_y = 0;
+	const Uint8 buttons = SDL_GetMouseState(&mouse_x, &mouse_y);
+	const bool left_down = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
+
+	int hovered = -1;
+	for(unsigned int i = 0; i < ITEM_MAX; ++i)
+	{
+		int x = 0, y = 0, w = 0, h = 0;
+		buttonRect(i, x, y, w, h);
+		if(mouse_x >= x && mouse_x < x + w && mouse_y >= y && mouse_y < y + h)
+			hovered = static_cast<int>(i);
+	}
+
+	const bool mouse_moved = (mouse_x != last_mouse_x || mouse_y != last_mouse_y);
+	last_mouse_x = mouse_x;
+	last_mouse_y = mouse_y;
+
+	if(mouse_moved && hovered >= 0)
+		selected_item = hovered;
+
+	if(left_down && !left_mouse_was_down)
+	{
+		left_mouse_was_down = true;
+		if(hovered >= 0)
+		{
+			selected_item = hovered;
+			runItem(static_cast<unsigned int>(hovered));
+			return;
+		}
+	}
+	if(!left_down)
+		left_mouse_was_down = false;
+#endif
 
 	if(key_held_down)
 		key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN)

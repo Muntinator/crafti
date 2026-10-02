@@ -87,8 +87,9 @@
 20.6   caption Enter takes the highlighted button exactly like 5 or Space: two downs from "Back to Game" reach "Block List" and it is open, even though the pointer is resting on "Save and Quit to Title".
 20.8   shot 12-enter-blocklist
 
-# Closing the child comes back here, not into the game.
+# Closing the child comes back here, not into the game -- and vanilla keeps the
+# button that opened the child focused, so the selection is still "Block List".
 21.4   key esc tap
-22.2   caption Closing a child screen returns to the pause menu, with the selection reset to "Back to Game".
+22.2   caption Closing a child screen returns to the pause menu, which still shows the button that opened it ("Block List") rather than resetting to "Back to Game".
 22.4   shot 13-pause-return
 22.8   end

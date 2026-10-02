@@ -85,10 +85,13 @@ Vanilla's `PauseScreen`, geometry and all:
 | entries | vanilla's own slots in vanilla's own order -- `Back to Game` / `Help`, `Block List` / `Save World`, `Sound Test...` / `Options...`, `Player Inventory` / `Save and Quit to Title` |
 | children | `Help`, `Block List` and `Options...` open as children of the pause menu (`openFrom()`), so closing one returns here, not to the game |
 
-The focus opens on `Back to Game`. `Save World` and the three stand-ins (`Help`
-for "Advancements", `Block List` for "Statistics", `Player Inventory` in the
-"Share to LAN" slot) fill vanilla's slots that this engine cannot back; a desktop
-adds vanilla's focus-by-hover (the pointer lights the button and a click takes it).
+The focus opens on `Back to Game`, and the menu **keeps its selection** when it is
+re-entered -- returning from a child leaves the button that opened it focused, as
+vanilla's screens do -- so `makeCurrent()` does not reset it. `Save World` and the
+three stand-ins (`Help` for "Advancements", `Block List` for "Statistics",
+`Player Inventory` in the "Share to LAN" slot) fill vanilla's slots that this
+engine cannot back; a desktop adds vanilla's focus-by-hover (the pointer lights
+the button when it *moves*, and a click takes it).
 
 ### 2.3 Buttons — `MenuUI::drawButton` / `drawButtonLabel`
 
@@ -285,9 +288,17 @@ follow-on screens and verification.
     Advancements, `Block List` for Statistics, and this game's `Save World`,
     `Sound Test...` and `Player Inventory` fill the remaining slots. The grid is
     built by `MenuUI::pauseMenuLayout()`, so the drawing and the click hit test
-    read the same boxes; the focus opens on `Back to Game`. `Options...`, `Help`
-    and `Block List` open as children (`openFrom()`) and close back to the pause
-    menu, as they do in vanilla. *Captured by `tools/pcsim/pausemenu.txt`.*
+    read the same boxes; the focus opens on `Back to Game` and is kept when the
+    menu is re-entered, so a child comes back to the button that opened it.
+    `Options...`, `Help` and `Block List` open as children (`openFrom()`) and close
+    back to the pause menu, as they do in vanilla. *Captured by
+    `tools/pcsim/pausemenu.txt`.*
+    *Done (pointer):* the pointer support the port gave the title and pause screens
+    now reaches the screens behind them too -- the options screen (hover, click,
+    slider drag), the block list (tab hover, slot and hotbar clicks), the help
+    screen (click to dismiss) and the sound test (hover and click) -- each using
+    the move-only-hover rule so a resting pointer does not fight the keyboard.
+    *Captured by `tools/pcsim/pointer.txt`.*
 15. **Options**: rebuild `settingstask.cpp` from vanilla widgets — dirt
     background, a title, and button/slider/checkbox rows drawn from
     `widgets.png`/`checkbox.png` (confirm the 1.17 sheet offsets while
@@ -316,7 +327,9 @@ follow-on screens and verification.
     (`tools/pcsim/ui.txt`) and the title/pause/options/loading set
     (`tools/pcsim/gui.txt`, 14 frames), plus `tools/pcsim/controls.txt` for the
     control edge cases (focus handoff, wrapping, a disabled button, a held key,
-    child-screen return), and individual frames are verified
+    child-screen return) and `tools/pcsim/pointer.txt` for the pointer on the
+    options/block-list/help/sound-test screens and the pause menu's retained
+    selection, and individual frames are verified
     numerically against the source art (the pause buttons against `menu_button`,
     the loading bar against its own colours, the pause overlay's gradient and
     the grid's focus states against the layout); a frame-for-frame comparison

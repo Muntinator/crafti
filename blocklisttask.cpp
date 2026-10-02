@@ -32,6 +32,10 @@
 #include "textures/creative_tabs.h"
 #include "textures/creative_scroll.h"
 
+#ifndef _TINSPIRE
+#include <SDL/SDL.h>
+#endif
+
 BlockListTask block_list_task;
 
 namespace
@@ -269,6 +273,13 @@ void BlockListTask::makeCurrent()
     if(!background_saved)
         saveBackground();
 
+#ifndef _TINSPIRE
+    // A resting pointer is not a move, and the click that opened the screen must
+    // not also grab a slot on the first frame.
+    SDL_PumpEvents();
+    const Uint8 buttons = SDL_GetMouseState(&last_mouse_x, &last_mouse_y);
+    left_mouse_was_down = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
+#endif
     Task::makeCurrent();
 }
 
@@ -496,6 +507,89 @@ void BlockListTask::render()
 
 void BlockListTask::logic(GLFix /*dt*/)
 {
+#ifndef _TINSPIRE
+    // The desktop gets the creative inventory's own pointer handling: a tab is
+    // switched the moment the pointer moves onto it, a slot is highlighted by
+    // hovering it and taken by a click, and a hotbar slot is made active by a
+    // click. The calculator keeps the keys.
+    SDL_PumpEvents();
+    int mouse_x = 0, mouse_y = 0;
+    const Uint8 buttons = SDL_GetMouseState(&mouse_x, &mouse_y);
+    const bool left_down = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
+    const Layout l = layout();
+
+    // Which tab, grid slot and hotbar slot the pointer is over.
+    int hovered_tab = -1;
+    for(int i = 0; i < selectable_page_count; ++i)
+    {
+        if(mouse_x >= l.tabX(i) && mouse_x < l.tabX(i) + l.tab_w
+            && mouse_y >= l.tab_y && mouse_y < l.tab_y + l.tab_h)
+            hovered_tab = i;
+    }
+
+    // C++ integer division truncates toward zero, so a pointer left of or above
+    // the grid would otherwise report column/row 0. The bounds are checked before
+    // dividing to keep that from happening.
+    const int over_col = mouse_x >= l.grid_x ? (mouse_x - l.grid_x) / l.slot_pitch : -1;
+    const int over_row = mouse_y >= l.grid_y ? (mouse_y - l.grid_y) / l.slot_pitch : -1;
+
+    int hovered_slot = -1;
+    if(over_col >= 0 && over_col < GridColumns && over_row >= 0 && over_row < visible_rows)
+    {
+        const int index = (scroll + over_row) * GridColumns + over_col;
+        if(index < selectable_pages[current_page].count)
+            hovered_slot = index;
+    }
+
+    int hovered_hotbar = -1;
+    if(mouse_y >= l.hotbar_y && mouse_y < l.hotbar_y + l.slot_pitch
+        && over_col >= 0 && over_col < Inventory::hotbar_slot_count)
+        hovered_hotbar = over_col;
+
+    const bool mouse_moved = (mouse_x != last_mouse_x || mouse_y != last_mouse_y);
+    last_mouse_x = mouse_x;
+    last_mouse_y = mouse_y;
+
+    if(mouse_moved)
+    {
+        // Vanilla's creative tabs switch on hover, before any click.
+        if(hovered_tab >= 0 && hovered_tab != current_page)
+        {
+            current_page = hovered_tab;
+            current_selection = 0;
+            scroll = 0;
+        }
+        else if(hovered_slot >= 0)
+            current_selection = hovered_slot;
+    }
+
+    if(left_down && !left_mouse_was_down)
+    {
+        left_mouse_was_down = true;
+
+        if(hovered_tab >= 0)
+        {
+            current_page = hovered_tab;
+            current_selection = 0;
+            scroll = 0;
+            return;
+        }
+        if(hovered_hotbar >= 0)
+        {
+            current_inventory.setCurrentSlotIndex(hovered_hotbar);
+            return;
+        }
+        if(hovered_slot >= 0)
+        {
+            current_selection = hovered_slot;
+            current_inventory.setCurrentSlot(selectable_pages[current_page].entries[current_selection], 64);
+            return;
+        }
+    }
+    if(!left_down)
+        left_mouse_was_down = false;
+#endif
+
     if(key_held_down)
         key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_PERIOD) || keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_4) || keyPressed(KEY_NSPIRE_6) || keyPressed(KEY_NSPIRE_7) || keyPressed(KEY_NSPIRE_9) || keyPressed(KEY_NSPIRE_1) || keyPressed(KEY_NSPIRE_3) || keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_LEFT) || keyPressed(KEY_NSPIRE_RIGHT)  || keyPressed(KEY_NSPIRE_CLICK) || keyPressed(KEY_NSPIRE_ENTER);
     else if(keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_PERIOD))

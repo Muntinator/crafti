@@ -91,6 +91,13 @@ private:
 
     void drawEntry(unsigned int entry, int x, int y, int w, int h);
 
+    /**
+     * Sets a slider row's value from where the pointer is along its track, which
+     * is what vanilla does when a slider is clicked or dragged: the handle jumps
+     * to the pointer rather than only stepping with the arrow keys.
+     */
+    void setValueFromX(unsigned int entry, int mouse_x, int box_x, int box_w);
+
     void applyAudioSettings();
     void applyGameplaySettings();
 
@@ -102,6 +109,17 @@ private:
     /** The top row of the grid that is on screen; see MenuUI::optionsLayout(). */
     int scroll = 0;
     bool changed_something;
+
+#ifndef _TINSPIRE
+    /** The left button's state last frame, so a click is an edge, not a hold. */
+    bool left_mouse_was_down = false;
+    /**
+     * The pointer's position last frame. As in the pause menu, only a pointer
+     * that has *moved* takes the focus, so a resting pointer does not fight the
+     * keyboard for the selection.
+     */
+    int last_mouse_x = -1, last_mouse_y = -1;
+#endif
 };
 
 extern SettingsTask settings_task;

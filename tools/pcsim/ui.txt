@@ -8,8 +8,10 @@
 # is the hub between the screens: each one is reached by moving the selection
 # down from "Back to Game" and pressing space, exactly as a player would. The
 # pause menu opens each screen as a child, as vanilla does, so closing one comes
-# back to the pause menu (and resets the selection to "Back to Game") rather than
-# dropping the player into the world.
+# back to the pause menu (keeping the button that opened it focused, as vanilla's
+# screens do) rather than dropping the player into the world. Because the
+# selection is kept, each following screen is one step further round the grid,
+# not reached from "Back to Game" again.
 #
 # The pause grid is vanilla's, in vanilla's order: Back to Game / Help, Block
 # List / Save World, Sound Test... / Options..., Player Inventory / Save and Quit
@@ -50,14 +52,13 @@
 11.6   key space tap
 12.4   caption The help screen: the same dirt every vanilla menu sits on, a centred heading and the control list.
 12.6   shot 03-help
-# Closing Help returns to the pause menu, as it does in vanilla; entering it again
-# resets the selection to "Back to Game", so two downs reach "Block List".
+# Closing Help returns to the pause menu, as it does in vanilla. The menu keeps
+# the selection, so it comes back on "Help"; one more down reaches "Block List".
 13.2   key esc tap
 
 # --- the block list -------------------------------------------------------
 14.0   key s tap
-14.4   key s tap
-14.8   key space tap
+14.4   key space tap
 15.6   caption The block list: the vanilla creative inventory -- the official 195x136 window with its 9x5 slot grid and hotbar, the three tabs across the top with the selected one lit, the cursor frame on the held entry, and the scrollbar beside the grid.
 15.8   shot 04-blocklist
 # The tabs are the pages; 9 steps forward to the second tab, "Items" (q here).
@@ -78,13 +79,11 @@
 22.4   key esc tap
 
 # --- the sound test -------------------------------------------------------
-# Back at the pause menu and reset to "Back to Game"; "Sound Test..." is the
-# fifth entry, so four downs reach it.
+# Back at the pause menu, still on "Block List"; "Sound Test..." is the fifth
+# entry, so two downs reach it from there.
 23.0   key s tap
 23.4   key s tap
-23.8   key s tap
-24.2   key s tap
-24.6   key space tap
+23.8   key space tap
 25.4   caption The sound test: the official widget button in its plain and highlighted states, over the vanilla backdrop.
 25.6   shot 07-audiotest
 26.2   key esc tap

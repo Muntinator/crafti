@@ -1,0 +1,126 @@
+# Pointer support in the front-end menus, and the pause menu's selection.
+#
+#   MUNT_SIM_SHOTS=/tmp/pointer sh tools/pcsim/play.sh tools/pcsim/pointer.txt
+#
+# The pause menu and the title screen already take the pointer; this scenario
+# checks that the screens opened *from* them do too, the way vanilla's do:
+#
+#   - the options screen lights a row when the pointer moves onto it, a click
+#     flips a toggle, and a click on a slider drags its handle to the pointer,
+#   - the creative inventory (the block list) switches tabs on hover, takes a
+#     slot on click, and makes a hotbar slot active on click,
+#   - the help screen is dismissed by a click anywhere (vanilla's Back button),
+#   - the audio test runs the row under a click,
+#   - and the pause menu keeps the focused button when it is re-entered, so
+#     returning from a child leaves the same button lit. The shot after "Done"
+#     proves this by being pixel-identical to the same button focused by a hover.
+#
+# The harness runs at 640x480 (GUI scale 2). Pause grid: wide x116..524 at y136,
+# then pairs at y184/232/280 (left x116..312, right x328..524), then a wide button
+# at y328. Options: left column x10..310, right x330..630, first row y56, pitch 48,
+# Done x120..520 y432. Block list window: x125 y104, 390x272; tabs x125/183/241 at
+# y48..112; grid at (143,140) on a 36-pixel pitch; hotbar y328.
+
+0.0   step 120
+0.0   caption The title screen.
+1.0   shot 01-title
+
+# Start a world, then give it a still, clear, creative noon so every frame below
+# has the same background to compare against.
+1.4   key space tap
+6.0   command gamemode creative
+6.1   command time set noon
+6.2   command weather clear
+6.8   step 33
+
+# --- the options screen, opened and driven by the pointer -----------------
+7.2   key esc tap
+7.8   mpos 200 300
+8.0   btn left tap
+8.6   caption The pointer clicked "Options..." on the pause menu; the options screen opens on top of it, with "Leaves" focused by default.
+8.8   shot 02-options
+
+9.2   mpos 480 76
+9.6   caption The pointer is moved onto "Speed": the highlight moves off "Leaves" and onto the row under the pointer.
+9.8   shot 03-hover-speed
+
+10.2  mpos 480 124
+10.4  btn left tap
+11.0  caption A click on "Fast mode" lights it and flips the toggle on.
+11.2  shot 04-toggle-on
+
+11.6  btn left tap
+12.2  caption A second click on the same row flips the toggle back off.
+12.4  shot 05-toggle-off
+
+12.8  mpos 340 268
+13.0  btn left tap
+13.6  caption A click near the left of the "Audio master" slider drags its handle there, the way vanilla's slider jumps to the pointer.
+13.8  shot 06-slider-left
+
+14.2  mpos 620 268
+14.4  btn left tap
+15.0  caption A click near the right drags it the other way.
+15.2  shot 07-slider-right
+
+15.8  mpos 320 452
+16.0  btn left tap
+16.6  caption Clicking "Done" leaves the options screen. Because the pause menu now keeps its selection, the button that opened Options -- "Options..." -- is still the focused one on return.
+16.8  shot 08-options-done
+
+# Prove that retained focus: moving the pointer onto "Back to Game" focuses that
+# instead, then moving it back onto "Options..." reproduces the returned screen
+# exactly. If the pause menu had reset to "Back to Game", 08 and 10 would differ.
+17.2  mpos 320 156
+17.6  caption The pointer moved onto "Back to Game", which takes the focus.
+17.8  shot 09-focus-resume
+18.2  mpos 200 300
+18.6  caption The pointer moved back onto "Options...": this is the same focus the menu came back with, so this frame matches the one before it.
+18.8  shot 10-focus-options
+
+# --- the block list (creative inventory), opened and driven by the pointer -
+19.2  mpos 426 204
+19.4  btn left tap
+20.0  caption The pointer clicked "Block List". It opens on the "Blocks" tab.
+20.2  shot 11-blocklist
+
+20.6  mpos 211 80
+21.2  caption Moving onto the "Items" tab switches to it before any click, which is how the creative inventory's tabs behave.
+21.4  shot 12-tab-items
+
+21.8  mpos 159 156
+22.0  btn left tap
+22.6  caption A click on a grid slot takes that item into the active hotbar slot.
+22.8  shot 13-slot-taken
+
+23.2  mpos 305 346
+23.4  btn left tap
+24.0  caption A click on a hotbar slot makes it the active one, moving the selection frame.
+24.2  shot 14-hotbar
+
+24.6  key esc tap
+25.2  caption Esc closes the block list back to the pause menu, which is still showing the button that opened it -- "Block List".
+25.4  shot 15-blocklist-back
+
+# --- the help screen, dismissed by the pointer ----------------------------
+25.8  mpos 200 204
+26.0  btn left tap
+26.6  caption The pointer clicked "Help".
+26.8  shot 16-help
+27.2  btn left tap
+27.8  caption A click anywhere dismisses the help screen, standing in for vanilla's Back button.
+28.0  shot 17-help-back
+
+# --- the audio test, run by the pointer -----------------------------------
+28.4  mpos 426 252
+28.6  btn left tap
+29.2  caption The pointer clicked "Sound Test..." on the pause menu.
+29.4  shot 18-audio
+29.8  mpos 320 104
+30.2  caption Hovering a row lights it.
+30.4  shot 19-audio-hover
+30.8  mpos 320 392
+31.0  btn left tap
+31.6  caption Clicking "Back" returns to the pause menu.
+31.8  shot 20-audio-back
+32.2  end

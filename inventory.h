@@ -43,6 +43,8 @@ public:
     /** Wear of the held stack: 0 for a fresh tool, maxDamage() when it breaks. */
     unsigned short currentSlotDamage() const;
     int currentSlotIndex() const { return current_slot; }
+    /** Selects the active hotbar slot directly (e.g. from a pointer click). */
+    void setCurrentSlotIndex(int index);
 
     void setCurrentSlot(BLOCK_WDATA block, unsigned int count = 1);
     bool addItem(BLOCK_WDATA block, unsigned int count = 1);

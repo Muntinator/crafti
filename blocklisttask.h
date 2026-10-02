@@ -104,6 +104,13 @@ private:
     /** The top row on screen, which the selection is kept inside. */
     int scroll = 0;
     Task *return_task = nullptr;
+
+#ifndef _TINSPIRE
+    /** The left button's state last frame, so a click is an edge, not a hold. */
+    bool left_mouse_was_down = false;
+    /** The pointer's position last frame; only a move takes the focus. */
+    int last_mouse_x = -1, last_mouse_y = -1;
+#endif
 };
 
 extern BlockListTask block_list_task;

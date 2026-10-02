@@ -30,7 +30,12 @@ MenuTask::~MenuTask()
 void MenuTask::makeCurrent()
 {
     GameAudio::stopMusic();
-    menu_selected_item = RESUME;
+
+    // The selection is deliberately *not* reset here: vanilla keeps the focused
+    // button when the screen is re-entered, so walking into a child (Options,
+    // Statistics, Advancements) and pressing Esc comes back with the button that
+    // opened it still lit. The default (RESUME) is the start-up value; a fresh
+    // pause menu shows it, a re-opened one shows where the player left off.
 
     if(!background_saved)
         saveBackground();

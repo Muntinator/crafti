@@ -179,6 +179,15 @@ Quit to Title` writes the world and returns to the title screen. A desktop also
 gets vanilla's focus-by-hover: the pointer lights the button under it and a click
 takes it.
 
+Unlike a freshly opened screen, the pause menu **keeps its selection** when it is
+re-entered: walking into a child and pressing Esc comes back with the button that
+opened it still focused, which is what vanilla's screens do. `MenuTask` therefore
+does not reset `menu_selected_item` in `makeCurrent()`; the start-up value is
+`Back to Game`, and a menu that has already been used shows where the player left
+off. The pointer only takes the focus when it actually *moves*, in this screen and
+all the others, so a pointer resting on a button does not pull the highlight back
+onto it while the keyboard steps somewhere else.
+
 `tools/pcsim/pausemenu.txt` is the frame script for this screen. It captures the
 menu over the world, the keyboard stepping the selection and the pointer hovering
 a button, `Options...` opening and closing back to the pause menu, `Player
@@ -207,6 +216,11 @@ The GUI scale is a new entry, appended last so old save files keep loading. It
 is vanilla's own list (Auto, 1x, 2x, 3x, 4x), and changing it moves the
 front-end immediately; on the calculator every choice above 1x collapses to the
 scale the screen can actually hold, which is what `MenuUI::uiScale()` reports.
+
+On the desktop the screen takes the pointer the way vanilla's options screen does:
+hovering a row lights it, a click flips a toggle or cycles a list, and a click (or
+a drag) on a slider moves its handle to the pointer rather than only stepping with
+the arrow keys. A click on `Done` leaves, exactly like the action key.
 
 ## The loading screen
 
@@ -246,9 +260,11 @@ as the screens that do. Each is drawn on the dirt every vanilla menu is tiled wi
 uses the official widget button instead of a hand-drawn box:
 
 - **help** lost its dark panel and its stale `PureBDcraft` texture credit, which
-  was wrong once the textures became vanilla's;
+  was wrong once the textures became vanilla's; a click anywhere on the desktop
+  dismisses it, standing in for vanilla's Back button;
 - **sound test** draws its ten rows with the real button art (packed tighter than
-  the standard pitch, because ten rows do not fit a 240-pixel screen otherwise);
+  the standard pitch, because ten rows do not fit a 240-pixel screen otherwise),
+  and a desktop hover lights a row and a click runs it;
 - **graphing mode** draws its expression box the way vanilla draws a text field --
   a black box inside a light grey border -- on the menu backdrop;
 - **the command console** is a vanilla chat-style panel: the world is dimmed by
@@ -270,7 +286,9 @@ top, and the `tabs` scrollbar handle beside the grid.
   from the sheet's lighter band -- vanilla's own two-band layout. A tab's icon is
   its category item, drawn 6 pixels in and 9 down (the top row's own offset);
 - the three pages (`Blocks`, `Items`, `Tools`) are the three tabs, so 7/9 switch
-  tabs and switch pages at the same time;
+  tabs and switch pages at the same time -- and on the desktop the pointer switches
+  a tab the moment it moves onto it, and a click on a slot takes that item or makes
+  a clicked hotbar slot active, which is the creative screen's own pointer handling;
 - a page taller than the five visible rows scrolls a row at a time to keep the
   cursor on screen, and the scrollbar handle sweeps the track by
   `(112 - 17)` pixels, vanilla's own travel;
@@ -330,7 +348,11 @@ player inventory and its model) and `tools/pcsim/ui.txt` (the screens behind
 them). `tools/pcsim/controls.txt` covers the menu controls themselves: the
 pointer/keyboard focus handoff, wrapping at the ends of a list, skipping a
 disabled button, a held key stepping once instead of once per frame, and a child
-screen coming back to its parent. See `GUI_VANILLA_PORT.md`.
+screen coming back to its parent. `tools/pcsim/pointer.txt` covers the pointer on
+the screens behind those: hovering, toggling and sliding on the options screen,
+tabs and slots in the block list, dismissing the help screen and running the sound
+test, plus the pause menu keeping its selection across a child screen. See
+`GUI_VANILLA_PORT.md`.
 
 ## Muntcraft
 

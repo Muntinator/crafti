@@ -9,6 +9,10 @@
 #include "worldclock.h"
 #include "worldtask.h"
 
+#ifndef _TINSPIRE
+#include <SDL/SDL.h>
+#endif
+
 SettingsTask settings_task;
 
 const char *leaves_values[] = {
@@ -166,6 +170,12 @@ void SettingsTask::makeCurrent()
     scroll = 0;
     changed_something = false;
 
+#ifndef _TINSPIRE
+    // The point the pointer already sits at is not a move, so opening the screen
+    // does not let a resting pointer steal the focus from the keyboard.
+    SDL_PumpEvents();
+    SDL_GetMouseState(&last_mouse_x, &last_mouse_y);
+#endif
     Task::makeCurrent();
 }
 
@@ -361,8 +371,109 @@ void SettingsTask::leave()
     key_held_down = true;
 }
 
+void SettingsTask::setValueFromX(unsigned int entry, int mouse_x, int box_x, int box_w)
+{
+    SettingsEntry &e = settings[entry];
+    const int max = static_cast<int>(e.values_count) - 1;
+    const int min = static_cast<int>(e.min_value);
+    if(max <= min || box_w <= 0)
+        return;
+
+    int value = min + (max - min) * (mouse_x - box_x) / box_w;
+
+    // Sliders move in their own step (the near plane steps by 16, the volumes by
+    // 10), so the value snaps to the nearest step the arrow keys would reach.
+    if(e.step > 0)
+    {
+        const int step = static_cast<int>(e.step);
+        value = min + ((value - min + step / 2) / step) * step;
+    }
+
+    if(value < min)
+        value = min;
+    if(value > max)
+        value = max;
+    if(static_cast<unsigned int>(value) == e.current_value)
+        return;
+
+    e.current_value = static_cast<unsigned int>(value);
+    changed_something = true;
+
+    if(isAudioEntry(entry))
+        applyAudioSettings();
+    if(entry == VILLAGE_FREQUENCY || entry == DAY_LENGTH)
+        applyGameplaySettings();
+    if(entry == GUI_SCALE)
+        MenuUI::setGuiScale(static_cast<int>(settings[GUI_SCALE].current_value));
+}
+
 void SettingsTask::logic(GLFix /*dt*/)
 {
+#ifndef _TINSPIRE
+    // The desktop gets vanilla's pointer: hovering a row lights it and a click
+    // takes it, exactly as the pause menu does. The calculator keeps the keys.
+    SDL_PumpEvents();
+    int mouse_x = 0, mouse_y = 0;
+    const Uint8 buttons = SDL_GetMouseState(&mouse_x, &mouse_y);
+    const bool left_down = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
+
+    const int total = static_cast<int>(settings.size());
+    const MenuUI::OptionsLayout layout = MenuUI::optionsLayout(total, scroll);
+
+    int hovered = -1;
+    for(int row = layout.first_visible; row < layout.rows && layout.rowVisible(row); ++row)
+    {
+        const int y = layout.rowY(row);
+        for(int col = 0; col < 2; ++col)
+        {
+            const int index = row * 2 + col;
+            if(index >= total)
+                break;
+            const int x = layout.columnX(col);
+            if(mouse_x >= x && mouse_x < x + layout.button_w
+                && mouse_y >= y && mouse_y < y + layout.button_h)
+                hovered = index;
+        }
+    }
+    if(mouse_x >= layout.done_x && mouse_x < layout.done_x + layout.done_w
+        && mouse_y >= layout.done_y && mouse_y < layout.done_y + layout.done_h)
+        hovered = total;
+
+    const bool mouse_moved = (mouse_x != last_mouse_x || mouse_y != last_mouse_y);
+    last_mouse_x = mouse_x;
+    last_mouse_y = mouse_y;
+
+    if(mouse_moved && hovered >= 0)
+        current_selection = static_cast<unsigned int>(hovered);
+
+    if(left_down && !left_mouse_was_down)
+    {
+        left_mouse_was_down = true;
+        if(hovered >= 0)
+        {
+            current_selection = static_cast<unsigned int>(hovered);
+
+            if(hovered >= total)
+                leave();
+            else if(rowKind(hovered) == RowKind::Slider)
+                setValueFromX(static_cast<unsigned int>(hovered), mouse_x,
+                              layout.columnX(hovered % 2), layout.button_w);
+            else
+                activate();
+            return;
+        }
+    }
+
+    // Holding the button on a slider drags the handle, which is vanilla's own
+    // behaviour (a slider responds to a drag, not just a single click).
+    if(left_down && hovered >= 0 && hovered < total && rowKind(hovered) == RowKind::Slider)
+        setValueFromX(static_cast<unsigned int>(hovered), mouse_x,
+                      layout.columnX(hovered % 2), layout.button_w);
+
+    if(!left_down)
+        left_mouse_was_down = false;
+#endif
+
     if(key_held_down)
         key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN)
             || keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_LEFT)

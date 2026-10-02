@@ -93,9 +93,10 @@
 27.6   shot 10b-settings-checked
 
 # Closing Options returns to the pause menu, as it does in vanilla, rather than
-# dropping the player into the world.
+# dropping the player into the world. The menu keeps its selection, so it comes
+# back on "Options...".
 28.2   key esc tap
-29.0   caption Back at the pause menu: closing Options returns here, and the selection has reset to "Back to Game" the way it does whenever the screen is entered again.
+29.0   caption Back at the pause menu: closing Options returns here, and the menu keeps the selection, so "Options..." is still the focused button.
 29.2   shot 11-pause-again
 
 # --- the loading screen ---------------------------------------------------
@@ -103,10 +104,10 @@
 # frame's own render fills over it before nglDisplay would have shown it. That
 # flush is an SDL_UpdateRect, so a shot queued in the very tick that starts the
 # save captures the loading screen rather than the world behind it. "Save World"
-# is the fourth entry, so three downs reach it.
-29.8   key s tap
-30.4   key s tap
-31.0   key s tap
+# is the fourth entry; the menu came back on "Options..." (the sixth), so two ups
+# reach it.
+29.8   key w tap
+30.4   key w tap
 31.5   caption The loading screen: the dirt backdrop, "Loading terrain..." and its progress bar.
 31.55  shot 12-loading
 31.55  key space tap
