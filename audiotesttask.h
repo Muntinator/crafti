@@ -7,8 +7,9 @@
  * Interactive audio diagnostic.
  *
  * Exercises the whole feature set (UI, footsteps, block material, mobs,
- * weather, music) and all three output paths: the interrupt driven sigma-delta
- * sweep that gameplay audio uses (on the UART pin or on GPIO 22), and a
+ * weather, music) and every output path: the interrupt driven sigma-delta
+ * sweep that gameplay audio uses (on the UART pin or on GPIO 22), the
+ * square-wave buzzer drive for a piezoelectric buzzer on GPIO 22, and a
  * blocking square wave that only touches the dock's UART pin.
  */
 class AudioTestTask : public Task
@@ -26,6 +27,7 @@ public:
 		ITEM_UART_POLLED,
 		ITEM_UART_SWEEP,
 		ITEM_GPIO_SWEEP,
+		ITEM_GPIO_BUZZER,
 		ITEM_BACK,
 		ITEM_MAX
 	};

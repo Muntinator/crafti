@@ -35,6 +35,8 @@ namespace
 	int32_t current_level = 0;
 
 	bool enabled_ = false;
+	/** Square-wave drive for a piezoelectric buzzer instead of the sigma-delta. */
+	bool buzzer_drive_ = false;
 	int vector_slot_ = -1;
 	/** Whether the OS already had the timer's IRQ unmasked before enable(). */
 	bool vic_mask_had_timer_ = false;
@@ -235,19 +237,34 @@ namespace
 			}
 		}
 
-		int32_t acc = sd_acc + current_level;
 		uint32_t bit;
-		if(acc >= 0)
+		if(buzzer_drive_)
 		{
-			acc -= 32768;
-			bit = 1;
+			// The classic direct drive for a piezoelectric buzzer: a full-swing
+			// square wave whose polarity follows the sample (one-bit hard
+			// limiting), so the buzzer is driven rail to rail at the audio's own
+			// pitch with no filter and no amplifier. Silence holds the pin low,
+			// so an idle game is electrically silent too -- no carrier and no
+			// idle tone for the buzzer to hiss at. What is lost is loudness
+			// dynamics: a buzzer is a tone device, so quiet and loud both come
+			// out at full swing.
+			bit = current_level > 0 ? 1u : 0u;
 		}
 		else
 		{
-			acc += 32768;
-			bit = 0;
+			int32_t acc = sd_acc + current_level;
+			if(acc >= 0)
+			{
+				acc -= 32768;
+				bit = 1;
+			}
+			else
+			{
+				acc += 32768;
+				bit = 0;
+			}
+			sd_acc = acc;
 		}
-		sd_acc = acc;
 
 		++bits_emitted;
 		setPin(bit);
@@ -360,6 +377,8 @@ void disable()
 
 bool active() { return enabled_; }
 int vectorSlot() { return vector_slot_; }
+void setBuzzerDrive(bool on) { buzzer_drive_ = on; }
+bool buzzerDrive() { return buzzer_drive_; }
 uint32_t bitRateHz() { return BitRateHz; }
 uint32_t ringUnderruns() { return underrun_count; }
 
@@ -395,10 +414,10 @@ const char *lastError() { return error_; }
 const char *status()
 {
 	snprintf(status_buffer, sizeof(status_buffer),
-		"GPIO %u (dock pin 18): %s, %u Hz bit rate, vector slot %d, %u underruns",
+		"GPIO %u (dock pin 18): %s, %s drive, %u Hz bit rate, vector slot %d, %u underruns",
 		static_cast<unsigned int>(AudioGpioNumber), enabled_ ? "on" : "off",
-		static_cast<unsigned int>(BitRateHz), vector_slot_,
-		static_cast<unsigned int>(underrun_count));
+		buzzer_drive_ ? "buzzer" : "sigma-delta", static_cast<unsigned int>(BitRateHz),
+		vector_slot_, static_cast<unsigned int>(underrun_count));
 	return status_buffer;
 }
 
@@ -439,6 +458,53 @@ int testSweep(uint32_t duration_ms)
 
 	const uint32_t underruns = underrun_count;
 	disable();
+	return underruns == 0 ? 0 : static_cast<int>(underruns);
+}
+
+int testBuzzerTone(uint32_t frequency_hz, uint32_t duration_ms)
+{
+	if(frequency_hz == 0 || duration_ms == 0)
+		return -1;
+	if(duration_ms > MaxSweepMilliseconds)
+		duration_ms = MaxSweepMilliseconds;
+	// A square wave cannot be represented above the mixer's Nyquist rate, and a
+	// piezo's resonance is a few kHz anyway.
+	if(frequency_hz > SampleRateHz / 2 - 200)
+		frequency_hz = SampleRateHz / 2 - 200;
+
+	const bool previous_drive = buzzer_drive_;
+	buzzer_drive_ = true;
+	if(!enable())
+	{
+		buzzer_drive_ = previous_drive;
+		return -1;
+	}
+
+	// The beep is square-wave samples: in buzzer drive their polarity alone is
+	// the output, so the pin plays exactly this tone at full swing.
+	const uint32_t total_frames = (SampleRateHz * duration_ms) / 1000u;
+	uint32_t produced = 0;
+	uint32_t phase = 0;
+
+	while(produced < total_frames)
+	{
+		while(produced < total_frames && ring_head - ring_tail < RingFrames - 128)
+		{
+			phase += static_cast<uint32_t>((static_cast<uint64_t>(frequency_hz) << 16) / SampleRateHz);
+			const int32_t sample = (phase & 0x8000u) ? 12000 : -12000;
+			pcm_ring[ring_head & (RingFrames - 1)] = static_cast<int16_t>(sample);
+			++ring_head;
+			++produced;
+		}
+		waitOneMillisecond();
+	}
+
+	while(ring_head != ring_tail)
+		waitOneBit();
+
+	const uint32_t underruns = underrun_count;
+	disable();
+	buzzer_drive_ = previous_drive;
 	return underruns == 0 ? 0 : static_cast<int>(underruns);
 }
 

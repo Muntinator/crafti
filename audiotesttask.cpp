@@ -30,6 +30,7 @@ namespace
 		"UART test: polled tone",
 		"UART test: sweep",
 		"GPIO 22: sweep",
+		"GPIO 22: buzzer tone",
 		"Back"
 	};
 
@@ -69,11 +70,11 @@ void AudioTestTask::buttonRect(unsigned int item, int &x, int &y, int &w, int &h
 {
 	const int scale = MenuUI::uiScale();
 	w = SCREEN_WIDTH - 16;
-	// Eleven rows plus the status block have to fit a 240-pixel screen, so the
-	// buttons are packed at a 15-pixel pitch (13 pixels of button, 2 of gap).
+	// Twelve rows plus the status block have to fit a 240-pixel screen, so the
+	// buttons are packed at a 14-pixel pitch (13 pixels of button, 1 of gap).
 	h = 13 * scale;
 	x = (SCREEN_WIDTH - w) / 2;
-	y = 26 * scale + static_cast<int>(item) * 15 * scale;
+	y = 26 * scale + static_cast<int>(item) * 14 * scale;
 }
 
 void AudioTestTask::setStatus(const char *text)
@@ -197,6 +198,22 @@ void AudioTestTask::runItem(unsigned int item)
 		}
 		break;
 
+	case ITEM_GPIO_BUZZER:
+	{
+		// A fixed beep in the buzzer drive: the square wave a piezoelectric
+		// buzzer plays at full swing, near the resonance most of them have.
+		const int result = GameAudioGpio::testBuzzerTone(2000, 800);
+		if(result == 0)
+			snprintf(buffer, sizeof(buffer), "Buzzer tone done (2 kHz square wave)");
+		else if(result > 0)
+			snprintf(buffer, sizeof(buffer), "Buzzer tone: %d underruns", result);
+		else
+			snprintf(buffer, sizeof(buffer), "Buzzer tone failed: %s",
+				GameAudioGpio::lastError() != nullptr ? GameAudioGpio::lastError() : "unavailable");
+		setStatus(buffer);
+		break;
+	}
+
 	case ITEM_BACK:
 	default:
 		(return_task != nullptr ? return_task : &start_task)->makeCurrent();
@@ -210,7 +227,7 @@ void AudioTestTask::render()
 	MenuUI::drawMenuBackground(*screen);
 	MenuUI::drawHeading("Audio Test", *screen, MenuUI::headingY());
 
-	// Eleven rows do not fit a standard 24-pixel button column on a 240-pixel
+	// Twelve rows do not fit a standard 24-pixel button column on a 240-pixel
 	// screen, so the buttons are packed a little tighter -- but they are still the
 	// vanilla widget sheet's button, in its plain and highlighted states.
 	for(unsigned int i = 0; i < ITEM_MAX; ++i)

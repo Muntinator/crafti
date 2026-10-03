@@ -275,6 +275,30 @@ A GPIO line has no baud generator, so the CPU timer paces the bits instead:
 - Like the UART line, this is a **digital output**, not an analog one: it needs
   the same RC low-pass filter / buffered output stage to become audible.
 
+### Buzzer drive (piezoelectric buzzer)
+
+The sigma-delta stream assumes an RC low-pass filter and an amplifier at the
+far end. A **piezoelectric buzzer** wired straight to the pin has neither: it
+is a full-swing tone device. **Settings → Audio output → GPIO 22 (buzzer)**
+switches the same backend to the classic direct drive:
+
+- The pin is driven with a **square wave whose polarity follows the mixer
+  sample** (one-bit hard limiting), rail to rail at 3.3 V, so the buzzer is
+  driven as loudly as the pin allows and needs no filter and no amplifier --
+  a series capacitor (100 nF..1 uF) to block DC is optional but kind to the
+  element.
+- **Silence holds the pin low with no switching at all**: no carrier, no idle
+  tone, nothing for the buzzer to hiss at when the game is quiet (the
+  sigma-delta's alternating idle stream would hiss at it constantly).
+- What is lost is loudness dynamics: a buzzer is a tone device, so quiet and
+  loud both come out at full swing -- the cue's envelopes survive as the
+  density and pitch of the square wave, which is what a buzzer can express.
+- Everything else is shared with the sigma-delta drive: the same timer, the
+  same vector slot, the same PCM ring, the same snapshot/restore teardown.
+  The Audio Test screen's **"GPIO 22: buzzer tone"** plays a clean 2 kHz
+  square beep -- near the resonance most piezo elements have -- as the
+  on-device check.
+
 ### Opt-in semantics
 
 Same contract as the UART backend: `GameAudioGpio::enable()` snapshots the GPIO
@@ -301,6 +325,7 @@ the whole feature set and all three output paths:
 | **UART test: polled tone** | blocking 1 kHz square wave, **only** drives the pin – no interrupts, fully reversible |
 | **UART test: sweep** | enables the full backend and plays a generated sweep through the sigma-delta modulator for 2 s, then restores everything |
 | **GPIO 22: sweep** | the same sweep through the GPIO 22 backend (dock pin 18) |
+| **GPIO 22: buzzer tone** | a 2 kHz square-wave beep through the buzzer drive, for a piezoelectric buzzer wired to the pin |
 
 The screen also shows the pack status, the active output backend and the UART
 status/error string. Up/Down moves, 5/Return runs a row, Esc goes back.
@@ -324,21 +349,23 @@ What has been verified here:
   the CX interrupt map itself: no writes to the FIQ routing register or
   classic-only offsets, OS vector slots untouched, end-of-interrupt writes
   from the service routine, and a clean failure when no slot is free),
-  `audio_gpio_test` 87 checks / 0 failures (the same register map questions for
+  `audio_gpio_test` 105 checks / 0 failures (the same register map questions for
   the GPIO backend: the pin becoming an output with its neighbours untouched,
   the timer programmed at one interrupt per bit, silence staying a perfectly
   alternating bit stream over a full second, mixer samples consumed at exactly
   the mixer rate over 205 bit periods, every port write a read-modify-write that
   only touches bit 6, teardown restoring GPIO/timer/VIC/slot in both mask
-  directions, level-triggered catch-up after an interrupt stall, and the same
-  clean no-slot failure), `audio_manager_test` 0 failures against the real pack
+  directions, level-triggered catch-up after an interrupt stall, the same
+  clean no-slot failure -- and the buzzer drive: silence holding the pin dead
+  low with zero switching, a 2 kHz tone flipping the pin exactly twice per
+  period, and the drive selection restored after a diagnostic), `audio_manager_test` 0 failures against the real pack
   (volume, music, voice teardown, and every vanilla cue proving it reaches a
   sample in its own mixer category), `audio_output_test` OK.
 - **Simulation**: the identical UART backend code runs on the host against a
   simulated register file and wire (`GameAudioTx::Sim`), which can even decode
   the transmitted byte stream back into a WAV; the GPIO backend has the same
-  kind of host simulation (`GameAudioGpio::Sim`) down to the timer's countdown
-  and the shared-port read-modify-write discipline.
+  kind of host simulation (`GameAudioGpio::Sim`) down to the timer's countdown,
+  the shared-port read-modify-write discipline and the buzzer square wave.
 
 What has **not** been verified:
 

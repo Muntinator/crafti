@@ -270,6 +270,62 @@ static void testInterruptBodyRunsAndAcknowledge()
 	GameAudioGpio::disable();
 }
 
+static void testBuzzerDriveIsSquareWave()
+{
+	// A piezoelectric buzzer is wired straight to the pin: no filter, no
+	// amplifier. The drive is a full-swing square wave whose polarity follows
+	// the sample, and -- unlike the sigma-delta -- silence must hold the pin
+	// LOW with no switching at all, or the buzzer would hiss at the idle
+	// carrier whenever the game is quiet.
+	GameAudioGpio::Sim::reset();
+	GameAudio::initialize();
+	GameAudioGpio::setBuzzerDrive(true);
+	CHECK(GameAudioGpio::buzzerDrive());
+	CHECK(GameAudioGpio::enable());
+
+	const uint32_t transitions_before = GameAudioGpio::Sim::pinTransitions();
+	const uint32_t low_before = GameAudioGpio::Sim::pinLowCount();
+
+	// No voices: two seconds of silence.
+	GameAudioGpio::Sim::advanceBitTicks(16384);
+
+	CHECK(GameAudioGpio::Sim::bitsEmitted() == 16384);
+	CHECK(GameAudioGpio::Sim::pinTransitions() == transitions_before); // dead quiet
+	CHECK(GameAudioGpio::Sim::pinLevel() == 0);
+	CHECK(GameAudioGpio::Sim::pinLowCount() - low_before == 16384);
+	CHECK(GameAudioGpio::Sim::badPeripheralWrites() == 0);
+
+	GameAudioGpio::disable();
+	GameAudioGpio::setBuzzerDrive(false);
+}
+
+static void testBuzzerToneIsSquareWave()
+{
+	GameAudioGpio::Sim::reset();
+	GameAudioGpio::setBuzzerDrive(false); // the tone drives its own mode
+
+	// 2 kHz of square-wave samples for 125 ms: 1000 samples, four samples per
+	// period, and in buzzer drive the pin is the sample's polarity -- so the
+	// pin flips twice per period and plays exactly this tone at full swing.
+	const int result = GameAudioGpio::testBuzzerTone(2000, 125);
+	CHECK(result == 0); // no underruns
+	CHECK(!GameAudioGpio::active()); // the tone always tears down after itself
+	CHECK(!GameAudioGpio::buzzerDrive()); // ...and restores the drive selection
+
+	// 250 periods, two flips each.
+	const uint32_t transitions = GameAudioGpio::Sim::pinTransitions();
+	CHECK(transitions >= 495 && transitions <= 505);
+	CHECK(GameAudioGpio::Sim::pinHighCount() > 0);
+	CHECK(GameAudioGpio::Sim::pinLowCount() > 0);
+	CHECK(GameAudioGpio::Sim::badPeripheralWrites() == 0);
+	CHECK(GameAudioGpio::Sim::badVicWrites() == 0);
+	CHECK(GameAudioGpio::Sim::vicFiqSelect() == 0);
+
+	// Bounds are clamped rather than trusted.
+	CHECK(GameAudioGpio::testBuzzerTone(0, 100) == -1);
+	CHECK(GameAudioGpio::testBuzzerTone(1000, 0) == -1);
+}
+
 static void testSweepRuns()
 {
 	GameAudioGpio::Sim::reset();
@@ -294,6 +350,8 @@ int main()
 	testTeardownRestoresEverything();
 	testEnableFailsWhenNoSlotFree();
 	testInterruptBodyRunsAndAcknowledge();
+	testBuzzerDriveIsSquareWave();
+	testBuzzerToneIsSquareWave();
 	testSweepRuns();
 
 	printf("%d checks, %d failures\n", checks, failures);

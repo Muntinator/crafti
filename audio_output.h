@@ -32,8 +32,13 @@ namespace GameAudioOutput
 	void disableUartTx();
 	bool uartTxActive();
 
-	/** Opt-in GPIO 22 output. The two opt-in backends are mutually exclusive. */
-	bool enableGpio();
+	/**
+	 * Opt-in GPIO 22 output. The two opt-in backends are mutually exclusive.
+	 * `buzzer` selects the full-swing square-wave drive for a piezoelectric
+	 * buzzer wired straight to the pin, instead of the sigma-delta stream that
+	 * expects an RC filter stage.
+	 */
+	bool enableGpio(bool buzzer = false);
 	void disableGpio();
 	bool gpioActive();
 

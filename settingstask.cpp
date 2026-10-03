@@ -55,7 +55,8 @@ const char *day_length_values[] = {
 const char *audio_output_values[] = {
     "Off",
     "UART pin 4",
-    "GPIO 22 (pin 18)"
+    "GPIO 22 (pin 18)",
+    "GPIO 22 (buzzer)"
 };
 
 // Must stay in the order of day_length_values.
@@ -85,7 +86,7 @@ SettingsTask::SettingsTask()
     // Appended last so older save files keep loading (see the comment above).
     // Both outputs take over an interrupt vector, so both stay opt-in. GPIO 22
     // exists because this calculator's dock pin 4 (UART Tx) is broken.
-    settings.push_back({"Audio output", audio_output_values, 3, 0, 0, 1});
+    settings.push_back({"Audio output", audio_output_values, 4, 0, 0, 1});
     // How often the infinite world places a village. Only chunks generated
     // after a change pick up the new value; already loaded terrain keeps the
     // village it was generated with.
@@ -540,7 +541,10 @@ void SettingsTask::applyAudioSettings()
         GameAudioOutput::enableUartTx();
         break;
     case 2:
-        GameAudioOutput::enableGpio();
+        GameAudioOutput::enableGpio(false);
+        break;
+    case 3: // the square-wave drive for a piezoelectric buzzer on the pin
+        GameAudioOutput::enableGpio(true);
         break;
     default:
         GameAudioOutput::disableUartTx();

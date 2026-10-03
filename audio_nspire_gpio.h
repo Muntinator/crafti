@@ -19,6 +19,13 @@
  * same symmetric sigma-delta modulator as the UART backend. The far end is the
  * same RC low-pass filter into an amplifier.
  *
+ * For a piezoelectric buzzer wired straight to the pin there is no filter and
+ * no amplifier: a buzzer is a full-swing tone device, so setBuzzerDrive()
+ * switches the modulator to the classic direct drive -- the pin is driven with
+ * a square wave whose polarity follows the sample (one-bit hard limiting),
+ * silence holds the pin low with no switching at all, and no RC stage is
+ * needed. Both drives share the timer, the vector slot and the PCM ring.
+ *
  * Like the UART backend this needs an interrupt service routine, so it is
  * strictly opt-in: enable() claims a free PL190 vector slot and disable()
  * gives it back, and every register it touches is snapshotted and restored.
@@ -50,8 +57,19 @@ namespace GameAudioGpio
 	uint32_t bitRateHz();
 	uint32_t ringUnderruns();
 
+	/**
+	 * Selects how the pin is driven. Off (default) is the sigma-delta stream for
+	 * an RC filter stage; on is the full-swing square wave for a piezoelectric
+	 * buzzer wired directly to the pin. Takes effect at the next output bit.
+	 */
+	void setBuzzerDrive(bool on);
+	bool buzzerDrive();
+
 	/** Interrupt driven diagnostic: plays a generated sweep through the modulator. */
 	int testSweep(uint32_t duration_ms);
+
+	/** Interrupt driven diagnostic: a fixed square-wave beep in buzzer drive. */
+	int testBuzzerTone(uint32_t frequency_hz, uint32_t duration_ms);
 
 #ifndef _TINSPIRE
 	/** Host-side simulation of the same register file, timer and pin. */

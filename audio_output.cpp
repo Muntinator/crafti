@@ -123,12 +123,18 @@ namespace GameAudioOutput
 		return false;
 	}
 
-	bool enableGpio()
+	bool enableGpio(bool buzzer)
 	{
 #ifdef _TINSPIRE
-		if(active_backend == BackendGpio)
+		if(active_backend == BackendGpio && GameAudioGpio::buzzerDrive() == buzzer)
 			return true;
 		disableUartTx(); // the two opt-in backends cannot share the mixer
+		if(active_backend == BackendGpio)
+		{
+			GameAudioGpio::disable(); // switching drive: rebuilt below
+			active_backend = BackendNone;
+		}
+		GameAudioGpio::setBuzzerDrive(buzzer);
 		if(GameAudioGpio::enable())
 		{
 			active_backend = BackendGpio;
@@ -181,7 +187,7 @@ namespace GameAudioOutput
 		case BackendUartTx:
 			return "UART";
 		case BackendGpio:
-			return "GPIO 22";
+			return GameAudioGpio::buzzerDrive() ? "GPIO buzzer" : "GPIO 22";
 		default:
 			return "none";
 		}
