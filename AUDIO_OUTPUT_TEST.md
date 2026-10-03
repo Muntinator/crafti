@@ -169,14 +169,20 @@ not guessed:
   IBRD 17, FBRD 37 exactly.
 - **Power management** `0x900B0018` gates peripheral bus access; **bit 17**
   disables the UART, so it has to be cleared before the UART answers anything.
-- **Interrupts** come from a PL190 at `0xDC000000`: `+00` masked status, `+04`
-  raw/sticky, `+08` enable (write 1s), `+0C` disable (write 1s), `+20` current
-  number, `+24` vector/ack, `+28` ack (read previous max priority), `+2C` max
-  priority. **The UART is IRQ 1.** Handling sequence: read `0xDC000024`, ack the
-  source, then restore max priority from `0xDC000028`.
-- **Vector table**: Boot1 ROM is mapped at 0 so the low vector at `0x00000018`
-  is often not writable; the ARM high vector lives at `0xFFFF0018`. Both are
-  probed at runtime.
+- **Interrupts** come from an ARM PrimeCell **PL190** at `0xDC000000`. Note
+  this is *not* the classic machine's controller (Hackspire: the detailed
+  register docs there are "for TI-Nspire classic. The CX has a PL190"), and the
+  two maps are a trap: `+0C` is the IRQ/FIQ **routing** register on the CX, not
+  a disable register. CX map: `+00` masked IRQ status, `+04` FIQ status, `+08`
+  raw status, `+0C` IRQ/FIQ select, `+10` enable (write 1s to set), `+14`
+  disable (write 1s to clear), `+30` vector/ack, `+34` default handler,
+  `+100+4*slot` vector addresses, `+200+4*slot` vector control (bit 5 enable,
+  bits 4:0 source). **The UART is IRQ 1.**
+- **Vector slots**: the OS's dispatcher reads `+30` and calls the address the
+  controller resolves, so a service routine is registered by claiming a free
+  vector slot and writing the function address to it – no interrupt vector or
+  OS code is patched at all. The handler serves its source and writes `+30`
+  once at the end (end of interrupt, per the PL190 TRM).
 
 ### How it makes sound
 
@@ -207,15 +213,16 @@ drive headphones or a speaker directly. The backend drives it as a 1-bit DAC:
 
 ### Opt-in semantics
 
-The backend takes over the interrupt vector and the UART, so it is **strictly
-opt-in** and off by default:
+The backend claims a PL190 vector slot and takes over the UART, so it is
+**strictly opt-in** and off by default:
 
 - `GameAudioTx::enable()` snapshots every register it touches (UART control, line
-  control, both baud divisors, FIFO levels, interrupt mask, the power-management
-  gate, the VIC mask, and the vector address and instruction) before writing
-  anything.
-- `disable()` restores all of them, so the OS's serial console, normal input,
-  rendering and save/load keep working.
+  control, both baud divisors, FIFO levels, interrupt mask, the
+  power-management gate) before writing anything, and claims the **highest
+  free** vector slot so audio sits at the lowest dispatch priority.
+- `disable()` releases the slot and restores every snapshot, and only the
+  UART's own bit is ever added to the OS's interrupt mask, so the OS's timers,
+  input, rendering and save/load keep working while audio is on.
 
 Enable it from **Settings → UART audio**, or run the test mode below.
 
@@ -249,11 +256,14 @@ What has been verified here:
 - **CX build**: `make -j2` (clean) exits 0 and produces `crafti.elf` and
   `crafti.tns` (`PRG\0`, compressed).
 - **Host tests**: `make -C tests` passes every binary – `audio_pack_test`
-  48 checks / 0 failures, `audio_tx_test` 73 checks / 0 failures (register
+  48 checks / 0 failures,  `audio_tx_test` 97 checks / 0 failures (register
   setup, the bytes pacing the sample clock, silence staying a perfectly
   alternating idle stream with no drift, the modulator toggling the line, a
   440 Hz WAVE round-trip analysed for zero crossings, the polled tone touching
-  only the UART and restoring it, and teardown restoring UART/VIC/power/vector),
+  only the UART and restoring it, teardown restoring UART/VIC/power/slot, and
+  the CX interrupt map itself: no writes to the FIQ routing register or
+  classic-only offsets, OS vector slots untouched, end-of-interrupt writes
+  from the service routine, and a clean failure when no slot is free),
   `audio_manager_test` 0 failures against the real pack (volume, music, voice
   teardown, and every vanilla cue proving it reaches a sample in its own mixer
   category), `audio_output_test` OK.

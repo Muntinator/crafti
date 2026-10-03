@@ -35,10 +35,7 @@ namespace
 	int32_t sd_acc = 0;
 
 	bool enabled_ = false;
-	VectorTable table_ = VectorNone;
-	uint32_t vector_address = 0;
-	uint32_t vector_original[2] = {0, 0};
-	unsigned int vector_words = 0;
+	int vector_slot_ = -1;
 	RegisterSnapshot snapshot_ = {};
 	uint32_t saved_cpsr = 0;
 	const char *error_ = nullptr;
@@ -101,96 +98,57 @@ namespace
 #endif
 	}
 
-	bool isBranchInstruction(uint32_t instruction)
-	{
-		return (instruction & 0x0F000000u) == 0x0A000000u;
-	}
+	extern "C" void txIsrBody();
 
-	uint32_t branchTarget(uint32_t address, uint32_t instruction)
-	{
-		int32_t offset = static_cast<int32_t>(instruction & 0x00FFFFFFu);
-		if(offset & 0x00800000)
-			offset |= static_cast<int32_t>(0xFF000000u);
-		return static_cast<uint32_t>(static_cast<int32_t>(address + 8) + (offset << 2));
-	}
-
-	/** Writes a B to `target`, verifying the write by reading it back. */
-	bool writeBranch(uint32_t address, uint32_t target)
-	{
-		const int32_t delta = static_cast<int32_t>(target) - static_cast<int32_t>(address + 8);
-		if((delta & 3) != 0)
-			return false;
-		if(delta < -(1 << 25) || delta >= (1 << 25))
-			return false;
-
-		const uint32_t instruction = 0x0A000000u | (static_cast<uint32_t>(delta >> 2) & 0x00FFFFFFu);
-		const uint32_t original = readReg(address);
-		writeReg(address, instruction);
-		if(readReg(address) == instruction)
-			return true;
-
-		writeReg(address, original);
-		return false;
-	}
-
-	/**
-	 * Installs the classic `ldr pc, [pc, #-4]` / address pair. A plain branch can
-	 * only reach +/-32 MiB, which is not enough if the OS keeps its handlers in a
-	 * page far from program memory, so the two word stub is the portable option.
-	 * It is only written to a decoded branch target inside a handler, never to a
-	 * vector entry itself (that would clobber the following vector).
-	 */
-	bool writeHookStub(uint32_t address, uint32_t target)
-	{
-		const uint32_t first = 0xE51FF004u; // ldr pc, [pc, #-4]
-		const uint32_t original0 = readReg(address);
-		const uint32_t original1 = readReg(address + 4);
-		if(original0 == 0 && original1 == 0)
-			return false;
-
-		writeReg(address, first);
-		writeReg(address + 4, target);
-		if(readReg(address) == first && readReg(address + 4) == target)
-		{
-			vector_address = address;
-			vector_original[0] = original0;
-			vector_original[1] = original1;
-			vector_words = 2;
-			return true;
-		}
-
-		writeReg(address, original0);
-		writeReg(address + 4, original1);
-		return false;
-	}
-
-#ifdef _TINSPIRE
-	extern "C" void txIsrTrampoline() __attribute__((naked));
-	extern "C" void txIsrTrampoline()
-	{
-		// A naked body: save what the C handler may clobber, run it, then return
-		// from the interrupt. Masking every other VIC source means the only IRQ
-		// that can land here is the UART, so no chaining is needed.
-		__asm__ volatile(
-			"stmfd sp!, {r0-r3, r12, lr}\n"
-			"bl txIsrBody\n"
-			"ldmfd sp!, {r0-r3, r12, lr}\n"
-			"subs pc, lr, #4\n");
-	}
-#else
-	extern "C" void txIsrTrampoline() {}
-#endif
-
-	/** Address handed to the interrupt branch. On the host this is a plausible
-	 *  SDRAM slot, because host code addresses cannot be reached by an ARM
-	 *  branch and the simulation never executes the trampoline anyway. */
-	uint32_t trampolineAddress()
+	/** Address of the interrupt body as the PL190 vector slot wants it. On the
+	 *  host this is a plausible SDRAM slot, because host code addresses are not
+	 *  ARM addresses and the simulation calls the body directly. */
+	uint32_t handlerAddress()
 	{
 #ifdef _TINSPIRE
-		return reinterpret_cast<uint32_t>(&txIsrTrampoline);
+		return reinterpret_cast<uint32_t>(&txIsrBody);
 #else
 		return 0x10002000u;
 #endif
+	}
+
+	/**
+	 * Claims a free PL190 vector slot for `handler` and points it at the UART.
+	 * The OS's interrupt dispatcher reads VICVECTADDR and calls whatever it
+	 * returns, so an ordinary function address is all a service routine needs:
+	 * no code is patched, no caches need flushing and every other interrupt
+	 * source keeps its own handler. The highest free slot is used because a
+	 * lower slot index means a higher dispatch priority, and audio must never
+	 * preempt the OS.
+	 */
+	int claimVectorSlot(uint32_t handler)
+	{
+		for(int slot = static_cast<int>(VicVectorSlots) - 1; slot >= 0; --slot)
+		{
+			const uint32_t ctrl_address = VicBase + VicVectorCtrl0 + 4u * static_cast<uint32_t>(slot);
+			if((readReg(ctrl_address) & VicVectorCtrlEnable) != 0)
+				continue; // the OS owns this slot
+
+			const uint32_t addr_address = VicBase + VicVectorAddr0 + 4u * static_cast<uint32_t>(slot);
+			writeReg(addr_address, handler);
+			writeReg(ctrl_address, VicVectorCtrlEnable | UartIrqNumber);
+			if(readReg(addr_address) == handler
+				&& readReg(ctrl_address) == (VicVectorCtrlEnable | UartIrqNumber))
+				return slot;
+
+			writeReg(ctrl_address, 0);
+			writeReg(addr_address, 0);
+		}
+
+		return -1;
+	}
+
+	void releaseVectorSlot(int slot)
+	{
+		if(slot < 0)
+			return;
+		writeReg(VicBase + VicVectorCtrl0 + 4u * static_cast<uint32_t>(slot), 0);
+		writeReg(VicBase + VicVectorAddr0 + 4u * static_cast<uint32_t>(slot), 0);
 	}
 
 	void busyWaitMicroseconds(uint32_t microseconds)
@@ -313,90 +271,32 @@ namespace
 	}
 }
 
-// The interrupt body is shared verbatim by the device trampoline and the host
+// The interrupt body is shared verbatim by the device vector slot and the host
 // simulation, so the modulator and the register sequence are the same code.
-// `externally_visible` matters under LTO: the only references from this file are
-// assembler strings in the trampoline, which link-time optimisation cannot see.
+// `externally_visible` matters under LTO: the PL190 slot holds its address as
+// data, which link-time optimisation cannot see.
 extern "C" void txIsrBody() __attribute__((used, externally_visible));
 extern "C" void txIsrBody()
 {
-	// PL190 acknowledgement sequence (Hackspire, "Handling Interrupts").
-	const uint32_t irq = readReg(VicBase + VicIrqVector);
-	const uint32_t previous_priority = readReg(VicBase + VicIrqAcknowledge);
-
-	if(irq == UartIrqNumber)
+	// Called through the PL190 vector slot by the OS's interrupt dispatcher,
+	// exactly like one of its own service routines: an ordinary function that
+	// serves its source and then signals end of interrupt.
+	const uint32_t pending = readReg(UartBase + UartMis);
+	if((pending & InterruptTx) != 0)
 	{
-		const uint32_t pending = readReg(UartBase + UartMis);
-		if((pending & InterruptTx) != 0)
-		{
-			writeReg(UartBase + UartIcr, InterruptTx);
-			fillTxFifo();
-		}
-		else if(pending != 0)
-		{
-			writeReg(UartBase + UartIcr, pending);
-		}
+		writeReg(UartBase + UartIcr, InterruptTx);
+		fillTxFifo();
+	}
+	else if(pending != 0)
+	{
+		writeReg(UartBase + UartIcr, pending);
 	}
 
-	writeReg(VicBase + VicIrqMaxPriority, previous_priority);
-}
-
-namespace
-{
-	/** Installs the interrupt branch, trying the vector and its branch target. */
-	bool installVector()
-	{
-		const uint32_t low = readReg(LowIrqVectorAddress);
-		const uint32_t high = readReg(HighIrqVectorAddress);
-		const uint32_t trampoline = trampolineAddress();
-
-		if(isBranchInstruction(low) && writeHookStub(branchTarget(LowIrqVectorAddress, low), trampoline))
-		{
-			table_ = VectorLow;
-			return true;
-		}
-		if(low != 0 && low != 0xFFFFFFFFu && writeBranch(LowIrqVectorAddress, trampoline))
-		{
-			vector_address = LowIrqVectorAddress;
-			vector_original[0] = low;
-			vector_original[1] = 0;
-			vector_words = 1;
-			table_ = VectorLow;
-			return true;
-		}
-
-		// Boot1 ROM is mapped at address 0, so a writable vector entry usually
-		// lives in the ARM high vector table instead.
-		if(isBranchInstruction(high) && writeHookStub(branchTarget(HighIrqVectorAddress, high), trampoline))
-		{
-			table_ = VectorHigh;
-			return true;
-		}
-		if(high != 0 && high != 0xFFFFFFFFu && writeBranch(HighIrqVectorAddress, trampoline))
-		{
-			vector_address = HighIrqVectorAddress;
-			vector_original[0] = high;
-			vector_original[1] = 0;
-			vector_words = 1;
-			table_ = VectorHigh;
-			return true;
-		}
-
-		return false;
-	}
-
-	void restoreVector()
-	{
-		if(vector_address == 0)
-			return;
-
-		writeReg(vector_address, vector_original[0]);
-		if(vector_words == 2)
-			writeReg(vector_address + 4, vector_original[1]);
-
-		vector_address = 0;
-		vector_words = 0;
-	}
+	// End of interrupt: writing VICVECTADDR tells the priority hardware the
+	// current interrupt is serviced, re-enabling lower/equal priority sources.
+	// A write can only ever enable more, so this stays harmless even if the
+	// dispatcher repeats it after the call, and it is required if it does not.
+	writeReg(VicBase + VicIrqVector, 0);
 }
 
 bool supported()
@@ -418,16 +318,17 @@ bool enable()
 	resetRing();
 
 	captureRegisters(snapshot_);
-	snapshot_.vic_mask = readReg(VicBase + VicIntEnable);
 
 	saved_cpsr = irqSave();
 	irqMask();
 
-	// The vector must be in place before any interrupt source is unmasked.
-	if(!installVector())
+	// The vector slot must be armed before the UART source is unmasked. Every
+	// other interrupt source keeps its own slot and handler: the OS dispatcher
+	// simply calls this one when the UART fires.
+	vector_slot_ = claimVectorSlot(handlerAddress());
+	if(vector_slot_ < 0)
 	{
-		error_ = "IRQ vector is not writable; use the polled test";
-		restoreVector();
+		error_ = "no free interrupt vector slot; use the polled test";
 		irqRestore(saved_cpsr);
 		return false;
 	}
@@ -439,13 +340,12 @@ bool enable()
 	writeReg(UartBase + UartImsc, InterruptTx);
 	fillTxFifo();
 
-	// Only the UART may interrupt while audio owns the vector.
-	writeReg(VicBase + VicIntDisable, VicAllIrqs);
+	// Add only the UART's bit to the OS's interrupt mask; nothing else is
+	// touched, so the OS keeps running exactly as before.
 	writeReg(VicBase + VicIntEnable, 1u << UartIrqNumber);
-	(void)readReg(VicBase + VicIrqAcknowledge);
 
 	enabled_ = true;
-	irqRestore(saved_cpsr & ~0x80u); // clear the I bit: interrupts on
+	irqRestore(saved_cpsr);
 
 	return true;
 }
@@ -463,11 +363,10 @@ void disable()
 	writeReg(UartBase + UartIcr, InterruptTx | InterruptRx);
 	writeReg(UartBase + UartCr, 0);
 
-	writeReg(VicBase + VicIntDisable, VicAllIrqs);
-	restoreVector();
+	writeReg(VicBase + VicIntDisable, 1u << UartIrqNumber);
+	releaseVectorSlot(vector_slot_);
+	vector_slot_ = -1;
 	restoreRegisters(snapshot_);
-	writeReg(VicBase + VicIntEnable, snapshot_.vic_mask);
-	(void)readReg(VicBase + VicIrqAcknowledge);
 
 	resetRing();
 	enabled_ = false;
@@ -477,7 +376,7 @@ void disable()
 }
 
 bool active() { return enabled_; }
-VectorTable vectorTable() { return table_; }
+int vectorSlot() { return vector_slot_; }
 uint32_t carrierHz() { return CarrierHz; }
 uint32_t ringUnderruns() { return underrun_count; }
 
@@ -512,22 +411,9 @@ const char *lastError() { return error_; }
 
 const char *status()
 {
-	const char *vector_name = "none";
-	switch(table_)
-	{
-	case VectorLow:
-		vector_name = "low";
-		break;
-	case VectorHigh:
-		vector_name = "high";
-		break;
-	default:
-		break;
-	}
-
 	snprintf(status_buffer, sizeof(status_buffer),
-		"UART dock pin 4: %s, %u Hz carrier, vector %s, %u underruns",
-		enabled_ ? "on" : "off", static_cast<unsigned int>(CarrierHz), vector_name,
+		"UART dock pin 4: %s, %u Hz carrier, vector slot %d, %u underruns",
+		enabled_ ? "on" : "off", static_cast<unsigned int>(CarrierHz), vector_slot_,
 		static_cast<unsigned int>(underrun_count));
 	return status_buffer;
 }
@@ -646,7 +532,10 @@ namespace
 	uint32_t last_line_level = 0;
 	uint32_t bytes_written_to_wire = 0;
 	uint32_t carrier_ticks = 0;
-	uint32_t vic_max_priority = 8;
+	uint32_t vic_irq_mask = 0;    // INTENABLE/INTENCLEAR views of one mask
+	uint32_t vic_fiq_select = 0;  // INTSELECT: 1 routes the source to FIQ
+	uint32_t eoi_writes = 0;      // end-of-interrupt writes to VICVECTADDR
+	uint32_t bad_vic_writes = 0;  // writes to classic-only controller offsets
 
 	RegisterPair *find(uint32_t address)
 	{
@@ -724,11 +613,14 @@ void reset()
 	last_line_level = 0;
 	bytes_written_to_wire = 0;
 	carrier_ticks = 0;
-	vic_max_priority = 8;
+	vic_irq_mask = 0;
+	vic_fiq_select = 0;
+	eoi_writes = 0;
+	bad_vic_writes = 0;
 
-	// A plausible boot state: the low IRQ vector is not a branch (ROM), the high
-	// table branches into an OS handler, the UART is up at 115200 for RS232, the
-	// UART bus is open, and no IRQs beyond the keypad are unmasked.
+	// A plausible CX boot state: the OS owns the first PL190 vector slots and
+	// its usual sources are unmasked, the UART is up at 115200 for RS232, the
+	// UART bus is open, and the UART's IRQ is masked with no slot of its own.
 	auto seed = [](uint32_t address, uint32_t value)
 	{
 		RegisterPair *pair = store(address);
@@ -736,12 +628,6 @@ void reset()
 			pair->value = value;
 	};
 
-	seed(LowIrqVectorAddress, 0xE59FF018u); // ldr pc, [pc, #24], not a branch
-	seed(LowIrqVectorAddress + 4, 0xEAFFFFFEu);
-	seed(HighIrqVectorAddress, 0x0A000038u); // b 0xFFFF0100
-	seed(HighIrqVectorAddress + 4, 0xEAFFFFFEu);
-	seed(0xFFFF0100u, 0xE1A00000u); // the OS handler this build patches
-	seed(0xFFFF0104u, 0xE1A00000u);
 	seed(PowerBase + PowerPeripheralDisable, 0);
 	seed(UartBase + UartCr, ControlUartEnable | ControlTxEnable | (1u << 9));
 	seed(UartBase + UartLcrH, LineFifoEnable | LineEightDataBits);
@@ -749,11 +635,13 @@ void reset()
 	seed(UartBase + UartFbrd, 13);
 	seed(UartBase + UartIfLs, 0);
 	seed(UartBase + UartImsc, InterruptRx);
-	seed(VicBase + VicIrqCurrent, UartIrqNumber);
-	seed(VicBase + VicIrqVector, UartIrqNumber);
-	seed(VicBase + VicIrqAcknowledge, vic_max_priority);
-	seed(VicBase + VicIrqMaxPriority, vic_max_priority);
-	seed(VicBase + VicIntEnable, 0x00000003u); // keypad and UART, say
+	seed(VicBase + VicVectorAddr0 + 4 * 0, 0x10001000u); // fast timer
+	seed(VicBase + VicVectorCtrl0 + 4 * 0, VicVectorCtrlEnable | 17);
+	seed(VicBase + VicVectorAddr0 + 4 * 1, 0x10001100u); // keypad
+	seed(VicBase + VicVectorCtrl0 + 4 * 1, VicVectorCtrlEnable | 16);
+	seed(VicBase + VicVectorAddr0 + 4 * 2, 0x10001200u); // LCD
+	seed(VicBase + VicVectorCtrl0 + 4 * 2, VicVectorCtrlEnable | 21);
+	vic_irq_mask = (1u << 16) | (1u << 17) | (1u << 18) | (1u << 21);
 }
 
 uint32_t read(uint32_t address)
@@ -774,20 +662,13 @@ uint32_t read(uint32_t address)
 	if(address == UartBase + UartDr)
 		return 0;
 
+	if(address == VicBase + VicIntEnable || address == VicBase + VicIntDisable)
+		return vic_irq_mask; // two views of one enable mask
+	if(address == VicBase + VicIntSelect)
+		return vic_fiq_select;
+
 	const RegisterPair *pair = find(address);
-	if(pair == nullptr)
-		return 0;
-	if(address == VicBase + VicIrqAcknowledge)
-		return vic_max_priority;
-	if(address == VicBase + VicIrqVector)
-		return UartIrqNumber;
-	if(address == VicBase + VicIntDisable)
-	{
-		// Both mask addresses read back the same register on real hardware.
-		const RegisterPair *mask = find(VicBase + VicIntEnable);
-		return mask != nullptr ? mask->value : 0;
-	}
-	return pair->value;
+	return pair != nullptr ? pair->value : 0;
 }
 
 void write(uint32_t address, uint32_t value)
@@ -801,28 +682,46 @@ void write(uint32_t address, uint32_t value)
 	if(address == UartBase + UartIcr)
 		return; // the simulated TX interrupt is level based; nothing to latch
 
-	// On the PL190 the enable and disable addresses are two views of one mask
-	// register, so they must not be modelled as separate storage.
-	if(address == VicBase + VicIntEnable || address == VicBase + VicIntDisable)
+	// The PL190: +0x10 sets enable bits, +0x14 clears them, +0x0C routes
+	// sources to FIQ, +0x30 is the end-of-interrupt write. Everything else in
+	// the controller's window belongs to the classic machine's map and has no
+	// register here; a write to one is the bug this simulation exists to catch.
+	if(address == VicBase + VicIntEnable)
 	{
-		RegisterPair *mask = store(VicBase + VicIntEnable);
-		if(mask == nullptr)
-			return;
-		if(address == VicBase + VicIntEnable)
-			mask->value |= value;
-		else
-			mask->value &= ~value;
+		vic_irq_mask |= value;
 		return;
+	}
+	if(address == VicBase + VicIntDisable)
+	{
+		vic_irq_mask &= ~value;
+		return;
+	}
+	if(address == VicBase + VicIntSelect)
+	{
+		vic_fiq_select = value;
+		return;
+	}
+	if(address == VicBase + VicIrqVector)
+	{
+		++eoi_writes;
+		return;
+	}
+	if(address >= VicBase && address < VicBase + 0x400)
+	{
+		const uint32_t offset = address - VicBase;
+		const bool is_slot = (offset >= VicVectorAddr0 && offset < VicVectorAddr0 + 4 * VicVectorSlots)
+			|| (offset >= VicVectorCtrl0 && offset < VicVectorCtrl0 + 4 * VicVectorSlots);
+		if(!is_slot && offset != 0x004 && offset != 0x01C && offset != VicDefaultVector)
+		{
+			++bad_vic_writes;
+			return;
+		}
 	}
 
 	RegisterPair *pair = store(address);
 	if(pair == nullptr)
 		return;
-
-	if(address == VicBase + VicIrqMaxPriority)
-		vic_max_priority = value;
-	else
-		pair->value = value;
+	pair->value = value;
 }
 
 void advanceCarrierTicks(uint32_t ticks)
@@ -840,8 +739,13 @@ void advanceCarrierTicks(uint32_t ticks)
 			observeByte(byte);
 		}
 
-		// The FIFO falling to the trigger level raises the UART's IRQ 1.
-		txIsrBody();
+		// The FIFO falling to the trigger level raises the UART's IRQ 1, which
+		// the OS dispatcher serves through the armed vector slot -- and only
+		// when the controller is actually left to route it there.
+		if(maskedInterrupts() != 0 && isrSlotClaimed()
+			&& (vic_irq_mask & (1u << UartIrqNumber)) != 0
+			&& (vic_fiq_select & (1u << UartIrqNumber)) == 0)
+			txIsrBody();
 	}
 }
 
@@ -851,25 +755,45 @@ uint32_t lineLowCount() { return line_low_count; }
 uint32_t carrierTickCount() { return carrier_ticks; }
 uint32_t bytesTransmitted() { return bytes_written_to_wire; }
 
-bool vectorInstalled()
+int claimedSlot()
 {
-	const RegisterPair *first = find(0xFFFF0100u);
-	const RegisterPair *second = find(0xFFFF0104u);
-	return first != nullptr && second != nullptr
-		&& first->value == 0xE51FF004u && second->value == 0x10002000u;
+	for(uint32_t slot = 0; slot < VicVectorSlots; ++slot)
+	{
+		const RegisterPair *ctrl = find(VicBase + VicVectorCtrl0 + 4 * slot);
+		const RegisterPair *addr = find(VicBase + VicVectorAddr0 + 4 * slot);
+		if(ctrl != nullptr && (ctrl->value & VicVectorCtrlEnable) != 0
+			&& (ctrl->value & 0x1Fu) == UartIrqNumber
+			&& addr != nullptr && addr->value == handlerAddress())
+			return static_cast<int>(slot);
+	}
+	return -1;
 }
 
-bool vectorRestored()
+bool isrSlotClaimed() { return claimedSlot() >= 0; }
+
+bool isrSlotReleased()
 {
-	const RegisterPair *pair = find(0xFFFF0100u);
-	return pair != nullptr && pair->value == 0xE1A00000u;
+	for(uint32_t slot = 0; slot < VicVectorSlots; ++slot)
+	{
+		const RegisterPair *ctrl = find(VicBase + VicVectorCtrl0 + 4 * slot);
+		if(ctrl != nullptr && (ctrl->value & VicVectorCtrlEnable) != 0
+			&& (ctrl->value & 0x1Fu) == UartIrqNumber)
+			return false;
+	}
+	return true;
 }
 
-uint32_t vicEnabledMask()
+uint32_t slotControl(uint32_t slot)
 {
-	const RegisterPair *pair = find(VicBase + VicIntEnable);
+	const RegisterPair *pair = find(VicBase + VicVectorCtrl0 + 4 * slot);
 	return pair != nullptr ? pair->value : 0;
 }
+
+uint32_t vicEnabledMask() { return vic_irq_mask; }
+uint32_t vicFiqSelect() { return vic_fiq_select; }
+uint32_t endOfInterruptWrites() { return eoi_writes; }
+uint32_t badVicWrites() { return bad_vic_writes; }
+
 
 uint32_t pcmFramesConsumed()
 {

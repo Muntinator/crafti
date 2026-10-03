@@ -65,12 +65,23 @@ static void testRegisterSetup()
 	CHECK((GameAudioTx::Sim::read(PowerBase + PowerPeripheralDisable) & PowerUartBusDisable) == 0);
 	CHECK(GameAudioTx::Sim::read(UartBase + UartImsc) == InterruptTx);
 
-	// Interrupts: every other source masked, only IRQ 1 unmasked.
-	CHECK(GameAudioTx::Sim::vicEnabledMask() == (1u << UartIrqNumber));
+	// The OS's own sources stay unmasked; only the UART's bit is added.
+	const uint32_t os_sources = (1u << 16) | (1u << 17) | (1u << 18) | (1u << 21);
+	CHECK(GameAudioTx::Sim::vicEnabledMask() == (os_sources | (1u << UartIrqNumber)));
 
-	// The IRQ handler branch was installed somewhere reachable.
-	CHECK(GameAudioTx::Sim::vectorInstalled());
-	CHECK(GameAudioTx::vectorTable() != GameAudioTx::VectorNone);
+	// The service routine sits in the highest free PL190 vector slot, i.e. at
+	// the lowest dispatch priority, and the OS keeps the slots it owns.
+	CHECK(GameAudioTx::Sim::isrSlotClaimed());
+	CHECK(GameAudioTx::Sim::claimedSlot() == 15);
+	CHECK(GameAudioTx::vectorSlot() == GameAudioTx::Sim::claimedSlot());
+	CHECK(GameAudioTx::Sim::slotControl(0) == (VicVectorCtrlEnable | 17));
+	CHECK(GameAudioTx::Sim::slotControl(1) == (VicVectorCtrlEnable | 16));
+	CHECK(GameAudioTx::Sim::slotControl(2) == (VicVectorCtrlEnable | 21));
+
+	// The enable path must stay on the CX's PL190 map: nothing written to the
+	// FIQ routing register and nothing to classic-only offsets.
+	CHECK(GameAudioTx::Sim::vicFiqSelect() == 0);
+	CHECK(GameAudioTx::Sim::badVicWrites() == 0);
 
 	CHECK(GameAudioTx::carrierHz() == CarrierHz);
 	CHECK(CarrierHz == MixerRateHz * OversamplingRatio);
@@ -235,7 +246,9 @@ static void testPolledToneOnlyTouchesTheUart()
 	CHECK(GameAudioTx::Sim::read(UartBase + UartLcrH) == lcr_before);
 	CHECK(GameAudioTx::Sim::read(UartBase + UartIbrd) == ibrd_before);
 	CHECK(GameAudioTx::Sim::read(UartBase + UartFbrd) == fbrd_before);
-	CHECK(!GameAudioTx::Sim::vectorInstalled());
+	CHECK(!GameAudioTx::Sim::isrSlotClaimed());
+	CHECK(GameAudioTx::Sim::vicFiqSelect() == 0);
+	CHECK(GameAudioTx::Sim::badVicWrites() == 0);
 	CHECK(!GameAudioTx::active());
 
 	// Bounds are clamped rather than trusted.
@@ -260,7 +273,7 @@ static void testTeardownRestoresEverything()
 	const uint32_t vic = GameAudioTx::Sim::vicEnabledMask();
 
 	CHECK(GameAudioTx::enable());
-	CHECK(GameAudioTx::Sim::vectorInstalled());
+	CHECK(GameAudioTx::Sim::isrSlotClaimed());
 	GameAudioTx::disable();
 
 	CHECK(!GameAudioTx::active());
@@ -272,9 +285,61 @@ static void testTeardownRestoresEverything()
 	CHECK(GameAudioTx::Sim::read(UartBase + UartImsc) == imsc);
 	CHECK(GameAudioTx::Sim::read(PowerBase + PowerPeripheralDisable) == power);
 	CHECK(GameAudioTx::Sim::vicEnabledMask() == vic);
-	CHECK(!GameAudioTx::Sim::vectorInstalled()); // the handler branch was removed
+	CHECK(GameAudioTx::Sim::isrSlotReleased()); // the vector slot was given back
+	CHECK(GameAudioTx::vectorSlot() == -1);
+	CHECK(GameAudioTx::Sim::vicFiqSelect() == 0);
+	CHECK(GameAudioTx::Sim::badVicWrites() == 0);
 
 	// Disabling twice is harmless.
+	GameAudioTx::disable();
+}
+
+static void testEnableFailsWhenNoSlotFree()
+{
+	// All sixteen PL190 vector slots taken by the OS: enable() must fail
+	// cleanly and leave the controller exactly as it found it.
+	using namespace UartTxHw;
+
+	GameAudioTx::Sim::reset();
+	for(uint32_t slot = 0; slot < VicVectorSlots; ++slot)
+		GameAudioTx::Sim::write(VicBase + VicVectorCtrl0 + 4 * slot, VicVectorCtrlEnable | (slot + 2));
+
+	const uint32_t mask = GameAudioTx::Sim::vicEnabledMask();
+	CHECK(!GameAudioTx::enable());
+	CHECK(!GameAudioTx::active());
+	CHECK(GameAudioTx::lastError() != nullptr);
+	CHECK(GameAudioTx::Sim::vicEnabledMask() == mask);
+	CHECK(GameAudioTx::Sim::vicFiqSelect() == 0);
+	CHECK(GameAudioTx::Sim::badVicWrites() == 0);
+	CHECK(!GameAudioTx::Sim::isrSlotClaimed());
+}
+
+static void testInterruptBodyRunsAndAcknowledge()
+{
+	// End-to-end through the same dispatch rules the real PL190 has: the armed
+	// slot serves the UART when its interrupt is asserted and unmasked, and the
+	// service routine signals end of interrupt on VICVECTADDR.
+	using namespace UartTxHw;
+
+	GameAudioTx::Sim::reset();
+	CHECK(GameAudioTx::enable());
+
+	GameAudioTx::Sim::advanceCarrierTicks(100);
+	CHECK(GameAudioTx::Sim::bytesTransmitted() == 100);
+	CHECK(GameAudioTx::Sim::endOfInterruptWrites() > 0);
+
+	// Mask the UART's bit at the controller: the dispatcher must stop calling
+	// the body, so the FIFO drains once and the stream then stalls.
+	GameAudioTx::Sim::write(VicBase + VicIntDisable, 1u << UartIrqNumber);
+	const uint32_t eoi = GameAudioTx::Sim::endOfInterruptWrites();
+	const uint32_t bytes_before = GameAudioTx::Sim::bytesTransmitted();
+	GameAudioTx::Sim::advanceCarrierTicks(50);
+	const uint32_t bytes_after = GameAudioTx::Sim::bytesTransmitted();
+	CHECK(bytes_after - bytes_before <= UartTxHw::TxFifoDepth); // one drain
+	CHECK(GameAudioTx::Sim::endOfInterruptWrites() == eoi); // no service, no ack
+	GameAudioTx::Sim::advanceCarrierTicks(50);
+	CHECK(GameAudioTx::Sim::bytesTransmitted() == bytes_after); // stalled
+
 	GameAudioTx::disable();
 }
 
@@ -299,6 +364,8 @@ int main()
 	testWaveformRoundTrip();
 	testPolledToneOnlyTouchesTheUart();
 	testTeardownRestoresEverything();
+	testEnableFailsWhenNoSlotFree();
+	testInterruptBodyRunsAndAcknowledge();
 	testSweepRuns();
 
 	printf("%d checks, %d failures\n", checks, failures);

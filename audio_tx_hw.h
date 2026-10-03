@@ -29,9 +29,17 @@
  *    which Hackspire puts at 22.5 MHz on the CX.
  *  - Power management 0x900B0018 gates peripheral bus access; bit 17 disables
  *    the UART, so it has to be cleared before the UART answers anything.
- *  - The UART's interrupt is IRQ 1 on the PL190 at 0xDC000000.
- *  - Boot1 ROM is mapped at 0, so the low IRQ vector (0x00000018) is often not
- *    writable; the ARM high vector lives at 0xFFFF0018. Both are probed.
+ *  - The UART's interrupt is IRQ 1 on the interrupt controller at 0xDC000000.
+ *
+ * The CX's controller is an ARM PrimeCell PL190 (Hackspire says so explicitly:
+ * the detailed register docs there are "for TI-Nspire classic. The CX has a
+ * PL190 interrupt controller"), so it is NOT the classic map: enable/disable
+ * live at +0x10/+0x14, +0x0C is the IRQ/FIQ *routing* register, and +0x30 is
+ * the vectored dispatch register the OS's interrupt handler reads to find out
+ * which service routine to call. The PL190 also has 16 vector slots
+ * (+0x100 + 4*slot for the handler address, +0x200 + 4*slot for control:
+ * bit 5 = enable, bits 4:0 = IRQ source). Programming a free slot is the
+ * supported way to add an interrupt handler: no code is patched at all.
  *
  * Everything below is data only: no memory is touched by including this header.
  */
@@ -81,23 +89,23 @@ namespace UartTxHw
 	constexpr uint32_t PowerPeripheralDisable = 0x18;
 	constexpr uint32_t PowerUartBusDisable = 1u << 17;
 
-	// --- PL190 interrupt controller -----------------------------------------
+	// --- PL190 interrupt controller (CX) ------------------------------------
+	// Register map per the ARM PL190 (DDI 0181) and the CX's boot behaviour.
 	constexpr uint32_t VicBase = 0xDC000000;
-	constexpr uint32_t VicIrqStatus = 0x00;
-	constexpr uint32_t VicIrqRawStatus = 0x04;
-	constexpr uint32_t VicIntEnable = 0x08; // write 1s to unmask
-	constexpr uint32_t VicIntDisable = 0x0C; // write 1s to mask
-	constexpr uint32_t VicIrqCurrent = 0x20;
-	constexpr uint32_t VicIrqVector = 0x24;
-	constexpr uint32_t VicIrqAcknowledge = 0x28;
-	constexpr uint32_t VicIrqMaxPriority = 0x2C;
-	constexpr uint32_t VicAllIrqs = 0xFFFFFFFFu;
+	constexpr uint32_t VicIrqStatus = 0x00;   // read: active IRQ sources
+	constexpr uint32_t VicFiqStatus = 0x04;   // read: active FIQ sources
+	constexpr uint32_t VicIrqRawStatus = 0x08; // read: raw source status
+	constexpr uint32_t VicIntSelect = 0x0C;   // write: 1 routes the source to FIQ
+	constexpr uint32_t VicIntEnable = 0x10;   // write 1s to unmask (IRQ)
+	constexpr uint32_t VicIntDisable = 0x14;  // write 1s to mask (IRQ)
+	constexpr uint32_t VicIrqVector = 0x30;   // read: current handler, write: end of interrupt
+	constexpr uint32_t VicDefaultVector = 0x34;
+	constexpr uint32_t VicVectorAddr0 = 0x100; // + 4 * slot: handler address
+	constexpr uint32_t VicVectorCtrl0 = 0x200; // + 4 * slot: control
+	constexpr uint32_t VicVectorCtrlEnable = 1u << 5;
+	constexpr uint32_t VicVectorSlots = 16;
 
 	constexpr uint32_t UartIrqNumber = 1;
-
-	// --- Exception vector table ---------------------------------------------
-	constexpr uint32_t LowIrqVectorAddress = 0x00000018;
-	constexpr uint32_t HighIrqVectorAddress = 0xFFFF0018;
 
 	// --- Carrier / baud -----------------------------------------------------
 	/**
@@ -149,9 +157,6 @@ namespace UartTxHw
 		uint32_t uart_ifls;
 		uint32_t uart_imsc;
 		uint32_t power_disable;
-		uint32_t vic_mask;
-		uint32_t vector_address;
-		uint32_t vector_instruction;
 		bool valid;
 	};
 }

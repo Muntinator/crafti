@@ -21,22 +21,16 @@
  * (IRQ 1) refills the FIFO from a ring of 16-bit samples, so no timer, no
  * bit-banging and no per-sample interrupt is needed.
  *
- * Like the timer backend it replaces, this needs the interrupt vector, so it is
- * strictly opt-in: enable() snapshots and disable() restores every register it
- * touches. The identical code runs on a development host against a simulated
+ * Like the timer backend it replaces, this needs an interrupt service routine,
+ * so it is strictly opt-in: enable() claims a free PL190 vector slot and
+ * disable() gives it back, and every register it touches is snapshotted and
+ * restored. The identical code runs on a development host against a simulated
  * register file, so the register sequence, the modulator and the transmitted
  * bitstream can be verified without a calculator. Only the electrical result on
  * pin 4 is unverified.
  */
 namespace GameAudioTx
 {
-	enum VectorTable
-	{
-		VectorNone = 0,
-		VectorLow,
-		VectorHigh
-	};
-
 	/** True when this build/platform can drive the UART at all. */
 	bool supported();
 
@@ -53,7 +47,8 @@ namespace GameAudioTx
 	const char *status();
 	const char *lastError();
 
-	VectorTable vectorTable();
+	/** The claimed PL190 vector slot, or -1 when the transmitter is idle. */
+	int vectorSlot();
 	uint32_t carrierHz();
 	uint32_t ringUnderruns();
 
@@ -79,11 +74,21 @@ namespace GameAudioTx
 		uint32_t carrierTickCount();
 		/** Bytes the simulated FIFO has handed to the wire. */
 		uint32_t bytesTransmitted();
-		/** True when the simulated handler slot holds the installed hook stub. */
-		bool vectorInstalled();
-		/** True when the handler slot was put back the way it was. */
-		bool vectorRestored();
+		/** Index of the vector slot armed for the UART, or -1. */
+		int claimedSlot();
+		/** True when a vector slot is armed for the UART service routine. */
+		bool isrSlotClaimed();
+		/** True when no vector slot is armed for the UART any more. */
+		bool isrSlotReleased();
+		/** Control register of one PL190 vector slot (to check OS slots). */
+		uint32_t slotControl(uint32_t slot);
 		uint32_t vicEnabledMask();
+		/** The IRQ/FIQ routing register: nonzero means sources were rerouted. */
+		uint32_t vicFiqSelect();
+		/** End-of-interrupt writes to VICVECTADDR seen. */
+		uint32_t endOfInterruptWrites();
+		/** Writes to controller offsets that only exist on the classic machine. */
+		uint32_t badVicWrites();
 		uint32_t pcmFramesConsumed();
 		/** Decodes the transmitted byte stream back to PCM and writes a RIFF WAVE. */
 		bool writeWav(const char *path, uint32_t milliseconds);
