@@ -1,10 +1,11 @@
-# Crafti audio system (pack + UART output)
+# Crafti audio system (pack + dock output)
 
 Crafti now ships a complete gameplay audio system that runs on the original
-TI-Nspire CX and plays through **the UART transmitter on the dock connector
-(physical pin 4)**. This document covers what was built, the verified hardware
-facts it relies on, how to build and deploy the audio pack, how to run the test
-mode, and what remains unverified.
+TI-Nspire CX and plays through the dock connector: **the UART transmitter
+(physical pin 4)**, or -- when that pin is broken -- **GPIO 22 (physical pin
+18)**. This document covers what was built, the verified hardware facts it
+relies on, how to build and deploy the audio pack, how to run the test mode,
+and what remains unverified.
 
 ## Features
 
@@ -137,7 +138,7 @@ that is a dedicated output and is not shared with anything else:
 | 4 | **Tx (UART transmit)** | dedicated 3.3 V TTL **output**, always drives |
 | 6 | GPIO4 / USB Data+ | doubles as **USB D+** with a Navigator cradle |
 | 17 | GPIO0 | general-purpose line, not documented as free |
-| 18 | GPIO22 | general-purpose line, not documented as free |
+| 18 | GPIO22 | general-purpose line; the **GPIO output backend** below (fallback for a broken pin 4) |
 
 The UART also does the bit timing itself: the PL011 shifts a byte out at the
 baud generator's rate, so the sample clock comes from the SoC's APB clock rather
@@ -224,12 +225,70 @@ The backend claims a PL190 vector slot and takes over the UART, so it is
   UART's own bit is ever added to the OS's interrupt mask, so the OS's timers,
   input, rendering and save/load keep working while audio is on.
 
-Enable it from **Settings → UART audio**, or run the test mode below.
+Enable it from **Settings → Audio output**, or run the test mode below.
+
+## GPIO output backend (dock pin 18)
+
+### Why GPIO 22
+
+The UART backend needs dock pin 4, and **pin 4 is broken on this calculator**.
+The fallback is the other kind of output the dock has: a general-purpose line.
+Of the CX's GPIOs, the ones with known jobs are 5 (active-low USB VBUS
+control), 6 (charging), 19 (WLAN cradle detect), 20 (USB micro-B attached), 23
+(LCD_OFF) and 24 (keypad present). **GPIO 22 is unclaimed**, so it is the safe
+choice, and dock pin 5 (GND) is a nearby return for the signal.
+
+The verified register facts (Hackspire's GPIO Pins page, cross-checked against
+Firebird's `core/misc.c` emulation):
+
+- GPIO lines live at `0x90000000` in sections of `0x40`, line = `section * 8 +
+  bit`, so **GPIO 22 is section 2, bit 6**: direction at `0x90000090` (bit
+  clear = output), output latch at `0x90000094`, input at `0x90000098`. The
+  port registers are byte-wide and shared by the section's eight lines, so
+  driving one pin is always a **read-modify-write**.
+- The CX's timers are SP804-style blocks picked by `(addr >> 16) % 5`. Block
+  `0x900C0000` is **IRQ 18** and is the one nobody owns: the emulator refuses
+  to run block `0x90010000` (the "fast timer", IRQ 17) and Ndless's
+  `msleep`/`idle` own block `0x900D0000` (IRQ 19). Timer 0 of the block is
+  programmed at +0x000 load, +0x008 control (bit 7 enable, bit 6 periodic,
+  bit 5 interrupt enable, bit 1 32-bit), +0x00C write clears the interrupt,
+  +0x010 interrupt status. The counter runs from the 32.768 kHz crystal.
+- The interrupt controller is the same **PL190** as the UART backend, claimed
+  the same way: a free vector slot, only the timer's bit added to the OS's
+  mask, end-of-interrupt write on `VICVECTADDR`.
+
+### How it makes sound
+
+A GPIO line has no baud generator, so the CPU timer paces the bits instead:
+
+- Timer 0 reloads every **2 crystal ticks**, giving one interrupt per output
+  bit at **16384 bit/s**. A phase accumulator turns that into exactly the 8 kHz
+  mixer rate (two and a little bits per sample), so playback cannot drift with
+  FPS any more than the UART backend can.
+- The interrupt body runs the **same symmetric sigma-delta modulator** as the
+  UART backend (one bit per interrupt instead of eight per byte) and writes the
+  bit to GPIO 22 through a read-modify-write of the shared port register.
+- One interrupt per bit is ~16 k interrupts/s, which is the price of a
+  bit-banged clock; the handler is a handful of register accesses and fits the
+  CX's interrupt budget comfortably. There is no FIFO to hide behind, so the
+  PCM ring is filled by `pump()` from the game loop exactly as for the UART.
+- Like the UART line, this is a **digital output**, not an analog one: it needs
+  the same RC low-pass filter / buffered output stage to become audible.
+
+### Opt-in semantics
+
+Same contract as the UART backend: `GameAudioGpio::enable()` snapshots the GPIO
+direction and output latch and the timer's load/control registers, claims the
+highest free PL190 vector slot, and only then starts the timer; `disable()`
+resumes the timer's registers, the pin and the slot, and takes back the
+interrupt-mask bit **only if this backend added it**. The two backends are
+mutually exclusive (one mixer, one stream). Enable it from **Settings → Audio
+output → GPIO 22 (pin 18)**, or run the test mode below.
 
 ## Audio test mode
 
 The title menu has an **Audio Test** entry (menu id `AUDIO_TEST`). It exercises
-the whole feature set and both UART output paths:
+the whole feature set and all three output paths:
 
 | item | what it does |
 | --- | --- |
@@ -241,13 +300,14 @@ the whole feature set and both UART output paths:
 | Start music / Stop music | music streaming |
 | **UART test: polled tone** | blocking 1 kHz square wave, **only** drives the pin – no interrupts, fully reversible |
 | **UART test: sweep** | enables the full backend and plays a generated sweep through the sigma-delta modulator for 2 s, then restores everything |
+| **GPIO 22: sweep** | the same sweep through the GPIO 22 backend (dock pin 18) |
 
 The screen also shows the pack status, the active output backend and the UART
 status/error string. Up/Down moves, 5/Return runs a row, Esc goes back.
 
 To hear real gameplay audio, copy `crafti.audp` to the calculator, open
-**Settings → UART audio** and turn it on. Then walk, break blocks, and let a
-mob or the weather fire.
+**Settings → Audio output** and pick **UART pin 4** or **GPIO 22 (pin 18)**.
+Then walk, break blocks, and let a mob or the weather fire.
 
 ## Verification
 
@@ -264,12 +324,21 @@ What has been verified here:
   the CX interrupt map itself: no writes to the FIQ routing register or
   classic-only offsets, OS vector slots untouched, end-of-interrupt writes
   from the service routine, and a clean failure when no slot is free),
-  `audio_manager_test` 0 failures against the real pack (volume, music, voice
-  teardown, and every vanilla cue proving it reaches a sample in its own mixer
-  category), `audio_output_test` OK.
+  `audio_gpio_test` 87 checks / 0 failures (the same register map questions for
+  the GPIO backend: the pin becoming an output with its neighbours untouched,
+  the timer programmed at one interrupt per bit, silence staying a perfectly
+  alternating bit stream over a full second, mixer samples consumed at exactly
+  the mixer rate over 205 bit periods, every port write a read-modify-write that
+  only touches bit 6, teardown restoring GPIO/timer/VIC/slot in both mask
+  directions, level-triggered catch-up after an interrupt stall, and the same
+  clean no-slot failure), `audio_manager_test` 0 failures against the real pack
+  (volume, music, voice teardown, and every vanilla cue proving it reaches a
+  sample in its own mixer category), `audio_output_test` OK.
 - **Simulation**: the identical UART backend code runs on the host against a
   simulated register file and wire (`GameAudioTx::Sim`), which can even decode
-  the transmitted byte stream back into a WAV.
+  the transmitted byte stream back into a WAV; the GPIO backend has the same
+  kind of host simulation (`GameAudioGpio::Sim`) down to the timer's countdown
+  and the shared-port read-modify-write discipline.
 
 What has **not** been verified:
 
@@ -281,8 +350,12 @@ What has **not** been verified:
   (Ndless issue #23 documents instability when apps take over interrupts). This
   backend contains the risk by being opt-in and fully reversible, but it is still
   unsupported territory.
-- **Electrical safety.** Never connect a speaker or headphones directly to pin
-  4; use a buffered/isolated stage and high-impedance measurement.
+- **Electrical safety.** Never connect a speaker or headphones directly to a
+  dock pin; use a buffered/isolated stage and high-impedance measurement. The
+  same applies to GPIO 22 on pin 18.
+- **The GPIO path is doubly unverified**: neither the waveform on pin 18 nor
+  the interrupt rate's audible result has been measured. The user's calculator
+  is the one with the broken pin 4, so the on-device check is theirs to run.
 
 ## Licensing caveat
 
@@ -296,6 +369,7 @@ permission. That is why the generated `crafti.audp` is gitignored.
 - https://www.hackspire.org/Hardware/ (Connector J01 - Dock connector, UART)
 - https://www.hackspire.org/Memory-mapped_IO_ports_on_CX/
 - https://www.hackspire.org/Timers/
+- https://www.hackspire.org/GPIO_Pins/
 - https://www.hackspire.org/Interrupts/
 - https://www.hackspire.org/Libndls/
 - https://github.com/ndless-nspire/Ndless/issues/23 (unsupported IRQ hooks)

@@ -1,6 +1,7 @@
 #include "audio_output.h"
 
 #include "audio_manager.h"
+#include "audio_nspire_gpio.h"
 #include "audio_nspire_tx.h"
 
 #ifdef _TINSPIRE
@@ -93,6 +94,7 @@ namespace GameAudioOutput
 	void shutdown()
 	{
 		disableUartTx();
+		disableGpio();
 
 #ifdef CRAFTI_HAS_SDL
 		if(sdl_open)
@@ -111,6 +113,7 @@ namespace GameAudioOutput
 #ifdef _TINSPIRE
 		if(active_backend == BackendUartTx)
 			return true;
+		disableGpio(); // the two opt-in backends cannot share the mixer
 		if(GameAudioTx::enable())
 		{
 			active_backend = BackendUartTx;
@@ -118,6 +121,37 @@ namespace GameAudioOutput
 		}
 #endif
 		return false;
+	}
+
+	bool enableGpio()
+	{
+#ifdef _TINSPIRE
+		if(active_backend == BackendGpio)
+			return true;
+		disableUartTx(); // the two opt-in backends cannot share the mixer
+		if(GameAudioGpio::enable())
+		{
+			active_backend = BackendGpio;
+			return true;
+		}
+#endif
+		return false;
+	}
+
+	void disableGpio()
+	{
+#ifdef _TINSPIRE
+		if(active_backend == BackendGpio)
+		{
+			GameAudioGpio::disable();
+			active_backend = BackendNone;
+		}
+#endif
+	}
+
+	bool gpioActive()
+	{
+		return active_backend == BackendGpio;
 	}
 
 	void disableUartTx()
@@ -146,6 +180,8 @@ namespace GameAudioOutput
 			return "SDL";
 		case BackendUartTx:
 			return "UART";
+		case BackendGpio:
+			return "GPIO 22";
 		default:
 			return "none";
 		}
@@ -159,9 +195,13 @@ namespace GameAudioOutput
 			return "SDL audio callback active";
 		case BackendUartTx:
 			return GameAudioTx::status();
+		case BackendGpio:
+			return GameAudioGpio::status();
 		default:
 #ifdef _TINSPIRE
-			return GameAudioTx::active() ? GameAudioTx::status() : "Calculator audio off (UART disabled)";
+			if(GameAudioGpio::active())
+				return GameAudioGpio::status();
+			return GameAudioTx::active() ? GameAudioTx::status() : "Calculator audio off (output disabled)";
 #else
 			return "No desktop audio device";
 #endif
@@ -173,6 +213,8 @@ namespace GameAudioOutput
 #ifdef _TINSPIRE
 		if(active_backend == BackendUartTx)
 			GameAudioTx::pump();
+		else if(active_backend == BackendGpio)
+			GameAudioGpio::pump();
 #endif
 	}
 

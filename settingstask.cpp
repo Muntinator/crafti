@@ -50,6 +50,14 @@ const char *day_length_values[] = {
     "40 min"
 };
 
+// The audio output backends. Values 0 and 1 are the old "UART audio" toggle's
+// off/on, so save files from before GPIO output load unchanged.
+const char *audio_output_values[] = {
+    "Off",
+    "UART pin 4",
+    "GPIO 22 (pin 18)"
+};
+
 // Must stay in the order of day_length_values.
 const unsigned int day_length_seconds[] = { 10 * 60, 20 * 60, 40 * 60 };
 constexpr unsigned int day_length_default = 1; // 20 minutes
@@ -75,8 +83,9 @@ SettingsTask::SettingsTask()
     settings.push_back({"Effects volume", nullptr, 101, 70, 0, 10});
     settings.push_back({"Ambience volume", nullptr, 101, 70, 0, 10});
     // Appended last so older save files keep loading (see the comment above).
-    // The dock UART output takes over the interrupt vector, so it stays opt-in.
-    settings.push_back({"UART audio", fastmode_values, 2, 0, 0, 1});
+    // Both outputs take over an interrupt vector, so both stay opt-in. GPIO 22
+    // exists because this calculator's dock pin 4 (UART Tx) is broken.
+    settings.push_back({"Audio output", audio_output_values, 3, 0, 0, 1});
     // How often the infinite world places a village. Only chunks generated
     // after a change pick up the new value; already loaded terrain keeps the
     // village it was generated with.
@@ -114,12 +123,12 @@ bool SettingsTask::isToggleEntry(unsigned int entry) const
 
 bool SettingsTask::isVolumeEntry(unsigned int entry) const
 {
-    return entry >= AUDIO_MASTER && entry < AUDIO_UART;
+    return entry >= AUDIO_MASTER && entry < AUDIO_OUTPUT;
 }
 
 bool SettingsTask::isAudioEntry(unsigned int entry) const
 {
-    return entry >= AUDIO_MASTER && entry <= AUDIO_UART;
+    return entry >= AUDIO_MASTER && entry <= AUDIO_OUTPUT;
 }
 
 void SettingsTask::formatValue(unsigned int entry, char *out, unsigned int size) const
@@ -525,10 +534,19 @@ void SettingsTask::applyAudioSettings()
     GameAudio::setCategoryVolume(GameAudio::CategoryAmbience, ambience);
     GameAudio::setCategoryVolume(GameAudio::CategoryWeather, ambience);
 
-    if(settings[AUDIO_UART].current_value != 0)
+    switch(settings[AUDIO_OUTPUT].current_value)
+    {
+    case 1:
         GameAudioOutput::enableUartTx();
-    else
+        break;
+    case 2:
+        GameAudioOutput::enableGpio();
+        break;
+    default:
         GameAudioOutput::disableUartTx();
+        GameAudioOutput::disableGpio();
+        break;
+    }
 }
 
 unsigned int SettingsTask::getValue(unsigned int entry) const

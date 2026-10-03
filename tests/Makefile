@@ -11,9 +11,10 @@ CXX ?= g++
 ROOT := ..
 COMMON := -std=c++11 -O1 -g -I$(ROOT) -I. -Wall -W
 AUDIO_SOURCES := $(ROOT)/audio_manager.cpp $(ROOT)/audio_pack.cpp \
-                 $(ROOT)/audio_nspire_tx.cpp $(ROOT)/audio_output.cpp
+                 $(ROOT)/audio_nspire_tx.cpp $(ROOT)/audio_nspire_gpio.cpp \
+                 $(ROOT)/audio_output.cpp
 
-BINS := build/audio_pack_test build/audio_tx_test \
+BINS := build/audio_pack_test build/audio_tx_test build/audio_gpio_test \
         build/audio_manager_test build/audio_output_test \
         build/livestock_test build/villagegen_test \
         build/worldclock_test build/survival_test \
@@ -39,6 +40,9 @@ build/audio_pack_test: audio_pack_test.cc $(AUDIO_SOURCES) | build
 
 build/audio_tx_test: audio_tx_test.cc $(AUDIO_SOURCES) | build
 	$(CXX) $(COMMON) -DCRAFTI_NO_SDL -o $@ audio_tx_test.cc $(AUDIO_SOURCES)
+
+build/audio_gpio_test: audio_gpio_test.cc $(AUDIO_SOURCES) | build
+	$(CXX) $(COMMON) -DCRAFTI_NO_SDL -o $@ audio_gpio_test.cc $(AUDIO_SOURCES)
 
 build/audio_manager_test: audio_manager_test.cc $(AUDIO_SOURCES) | build
 	$(CXX) $(COMMON) -DCRAFTI_NO_SDL -o $@ audio_manager_test.cc $(AUDIO_SOURCES)

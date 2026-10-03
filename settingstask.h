@@ -32,7 +32,11 @@ public:
         AUDIO_MUSIC,
         AUDIO_EFFECTS,
         AUDIO_AMBIENCE,
-        AUDIO_UART,
+        // The output backend switch ("Audio output"). Was the "UART audio"
+        // on/off toggle; extended to also choose GPIO 22 for calculators whose
+        // dock pin 4 (UART Tx) is broken. Values 0/1 keep their old off/UART
+        // meaning, so save files load unchanged.
+        AUDIO_OUTPUT,
         VILLAGE_FREQUENCY,
         DAY_NIGHT,
         DAY_LENGTH,
@@ -76,7 +80,7 @@ private:
     bool isToggleEntry(unsigned int entry) const;
     /** Volume rows are shown as percentages. */
     bool isVolumeEntry(unsigned int entry) const;
-    /** Every row from the master volume down to the UART switch is audio. */
+    /** Every row from the master volume down to the output switch is audio. */
     bool isAudioEntry(unsigned int entry) const;
 
     /** The value a slider row carries: its number, or its percentage for volumes. */

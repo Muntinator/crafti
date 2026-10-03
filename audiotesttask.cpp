@@ -3,6 +3,7 @@
 #include <stdio.h>
 
 #include "audio_manager.h"
+#include "audio_nspire_gpio.h"
 #include "audio_nspire_tx.h"
 #include "audio_output.h"
 #include "font.h"
@@ -28,6 +29,7 @@ namespace
 		"Stop music",
 		"UART test: polled tone",
 		"UART test: sweep",
+		"GPIO 22: sweep",
 		"Back"
 	};
 
@@ -67,9 +69,11 @@ void AudioTestTask::buttonRect(unsigned int item, int &x, int &y, int &w, int &h
 {
 	const int scale = MenuUI::uiScale();
 	w = SCREEN_WIDTH - 16;
-	h = 16 * scale;
+	// Eleven rows plus the status block have to fit a 240-pixel screen, so the
+	// buttons are packed at a 15-pixel pitch (13 pixels of button, 2 of gap).
+	h = 13 * scale;
 	x = (SCREEN_WIDTH - w) / 2;
-	y = 26 * scale + static_cast<int>(item) * (h + 2 * scale);
+	y = 26 * scale + static_cast<int>(item) * 15 * scale;
 }
 
 void AudioTestTask::setStatus(const char *text)
@@ -164,6 +168,35 @@ void AudioTestTask::runItem(unsigned int item)
 		}
 		break;
 
+	case ITEM_GPIO_SWEEP:
+		if(!GameAudioGpio::supported())
+		{
+			setStatus("GPIO output requires an original CX");
+			break;
+		}
+		if(!GameAudioOutput::enableGpio())
+		{
+			snprintf(buffer, sizeof(buffer), "Sweep failed: %s",
+				GameAudioGpio::lastError() != nullptr ? GameAudioGpio::lastError() : "unavailable");
+			setStatus(buffer);
+			break;
+		}
+		else
+		{
+			const int result = GameAudioGpio::testSweep(2000);
+			GameAudioOutput::disableGpio();
+			if(result == 0)
+				snprintf(buffer, sizeof(buffer), "Sweep done, %u Hz bits",
+					static_cast<unsigned int>(GameAudioGpio::bitRateHz()));
+			else if(result > 0)
+				snprintf(buffer, sizeof(buffer), "Sweep done, %d underruns", result);
+			else
+				snprintf(buffer, sizeof(buffer), "Sweep failed: %s",
+					GameAudioGpio::lastError() != nullptr ? GameAudioGpio::lastError() : "unavailable");
+			setStatus(buffer);
+		}
+		break;
+
 	case ITEM_BACK:
 	default:
 		(return_task != nullptr ? return_task : &start_task)->makeCurrent();
@@ -177,7 +210,7 @@ void AudioTestTask::render()
 	MenuUI::drawMenuBackground(*screen);
 	MenuUI::drawHeading("Audio Test", *screen, MenuUI::headingY());
 
-	// Ten rows do not fit a standard 24-pixel button column on a 240-pixel
+	// Eleven rows do not fit a standard 24-pixel button column on a 240-pixel
 	// screen, so the buttons are packed a little tighter -- but they are still the
 	// vanilla widget sheet's button, in its plain and highlighted states.
 	for(unsigned int i = 0; i < ITEM_MAX; ++i)
@@ -189,8 +222,11 @@ void AudioTestTask::render()
 		MenuUI::drawButtonLabel(item_labels[i], *screen, button_x, y, button_w, button_h, selected);
 	}
 
-	int y = 26 * MenuUI::uiScale() + static_cast<int>(ITEM_MAX) * (16 * MenuUI::uiScale() + 2 * MenuUI::uiScale());
-	y += 4;
+	// The status block starts just under the last button, so the two cannot
+	// disagree about the row pitch and push each other off the screen.
+	int info_x = 0, y = 0, info_w = 0, info_h = 0;
+	buttonRect(ITEM_MAX - 1, info_x, y, info_w, info_h);
+	y += info_h + 6 * MenuUI::uiScale();
 	drawString("Audio pack:", MenuUI::TextDisabled, *screen, 8, y);
 	drawString(GameAudio::packStatus(), MenuUI::Text, *screen, 100, y);
 	y += fontHeight() + 2;
@@ -199,7 +235,8 @@ void AudioTestTask::render()
 	drawString(GameAudioOutput::backendName(), MenuUI::Text, *screen, 100, y);
 	y += fontHeight() + 2;
 
-	drawString(GameAudioTx::status(), MenuUI::Text, *screen, 8, y);
+	drawString(GameAudioOutput::gpioActive() ? GameAudioGpio::status() : GameAudioTx::status(),
+		MenuUI::Text, *screen, 8, y);
 	y += fontHeight() + 2;
 
 	if(status_timeout > 0)

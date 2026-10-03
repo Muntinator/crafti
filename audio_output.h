@@ -6,9 +6,10 @@
  *
  *  - Desktop builds use SDL 1.2's audio callback (development/testing sink).
  *    Define CRAFTI_NO_SDL to link the engine into plain host tests.
- *  - Calculator builds have no built-in sound device. The only sink is the
- *    dock-connector UART transmitter backend (physical pin 4), which is strictly
- *    opt-in because it takes over the interrupt vector and the UART.
+ *  - Calculator builds have no built-in sound device. The sinks are the
+ *    dock-connector UART transmitter backend (physical pin 4) and the GPIO 22
+ *    bit-bang backend (dock pin 18, for calculators whose pin 4 is broken).
+ *    Both are strictly opt-in because they take over an interrupt vector.
  */
 namespace GameAudioOutput
 {
@@ -16,7 +17,8 @@ namespace GameAudioOutput
 	{
 		BackendNone = 0,
 		BackendSdl,
-		BackendUartTx
+		BackendUartTx,
+		BackendGpio
 	};
 
 	bool initialize();
@@ -29,6 +31,11 @@ namespace GameAudioOutput
 	bool enableUartTx();
 	void disableUartTx();
 	bool uartTxActive();
+
+	/** Opt-in GPIO 22 output. The two opt-in backends are mutually exclusive. */
+	bool enableGpio();
+	void disableGpio();
+	bool gpioActive();
 
 	/** Human readable backend status for the settings and test screens. */
 	const char *status();
