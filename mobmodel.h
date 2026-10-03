@@ -82,20 +82,21 @@ namespace Mob
 	};
 
 	/**
-	 * A part rotation from a vanilla table, restated in the frame nGL draws in.
+	 * A rotation read from a vanilla box table, restated in the frame nGL draws
+	 * the boxes in.
 	 *
 	 * The tables are vanilla's numbers in vanilla's y-down frame, but nGL draws
 	 * the same boxes in a y-up frame (the boxes themselves are emitted with the
 	 * sign already flipped, see `draw()`). Flipping one axis is a mirror, and
 	 * under a mirror a rotation R becomes M*R*M -- which for the X and Y axes is
-	 * the *same* rotation by the opposite angle. So every table angle has to be
-	 * negated here, once.
+	 * the *same* rotation by the opposite angle. So a table angle has to be
+	 * negated on the way in, and it is named here so the renderer and the host
+	 * test cannot disagree about it: tests/livestock_test.cc computes where each
+	 * mob's torso actually lands through this same call.
 	 *
-	 * It is a named function rather than a bare `-x` in the renderer so the host
-	 * test can ask the renderer and the geometry questions through the same
-	 * rule: tests/livestock_test.cc computes where each mob's torso actually
-	 * lands using this, which is what keeps a torso from quietly going back to
-	 * being a quarter turn out of joint.
+	 * This is only for angles that come *out of a table*. An angle the caller
+	 * supplies has already been turned into the frame being drawn and is used as
+	 * given -- see the head yaw in `draw()`.
 	 */
 	inline GLFix angleInDrawnFrame(GLFix vanilla_degrees) { return -vanilla_degrees; }
 

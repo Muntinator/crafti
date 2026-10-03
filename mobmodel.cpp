@@ -116,7 +116,12 @@ namespace Mob
 			// gives a negative pitch, which used to read off the end of that table.
 			// The camera wraps its own pitch and yaw the same way (worldtask.cpp).
 			rot_x.normaliseAngle();
-			head_yaw = angleInDrawnFrame(head_yaw);
+			// `head_yaw` is deliberately *not* negated. It does not come from a
+			// table: the caller hands it over already turned into the frame being
+			// drawn (playermodel.cpp rotates the whole model itself and passes the
+			// same angle again so the head ends up facing twice as far as the
+			// body, which is vanilla's rule). Negating it here would cancel that
+			// outer turn instead of reinforcing it, and would freeze the head.
 			head_yaw.normaliseAngle();
 
 			glPushMatrix();
