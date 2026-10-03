@@ -7,9 +7,10 @@
  *  - Desktop builds use SDL 1.2's audio callback (development/testing sink).
  *    Define CRAFTI_NO_SDL to link the engine into plain host tests.
  *  - Calculator builds have no built-in sound device. The sinks are the
- *    dock-connector UART transmitter backend (physical pin 4) and the GPIO 22
- *    bit-bang backend (dock pin 18, for calculators whose pin 4 is broken).
- *    Both are strictly opt-in because they take over an interrupt vector.
+ *    dock-connector UART transmitter backend (physical pin 4) and the GPIO
+ *    bit-bang backend (dock pin 18 = GPIO 22, or dock pin 6 = USB D+, for
+ *    calculators whose pin 4 is broken). Both are strictly opt-in because they
+ *    take over an interrupt vector.
  */
 namespace GameAudioOutput
 {
@@ -33,12 +34,23 @@ namespace GameAudioOutput
 	bool uartTxActive();
 
 	/**
-	 * Opt-in GPIO 22 output. The two opt-in backends are mutually exclusive.
-	 * `buzzer` selects the full-swing square-wave drive for a piezoelectric
-	 * buzzer wired straight to the pin, instead of the sigma-delta stream that
-	 * expects an RC filter stage.
+	 * The dock line the GPIO backend drives. Both are real push-pull outputs:
+	 * pin 18 (GPIO 22) is the one the CX leaves unclaimed, pin 6 is USB D+,
+	 * which is only free while no cradle or host is plugged into it.
 	 */
-	bool enableGpio(bool buzzer = false);
+	enum GpioLine
+	{
+		GpioLineDock18 = 22,
+		GpioLineUsbDataPlus = 4
+	};
+
+	/**
+	 * Opt-in GPIO output on the given dock line. The two opt-in backends are
+	 * mutually exclusive. `buzzer` selects the full-swing square-wave drive for a
+	 * piezoelectric buzzer wired straight to the pin, instead of the sigma-delta
+	 * stream that expects an RC filter stage.
+	 */
+	bool enableGpio(GpioLine line = GpioLineDock18, bool buzzer = false);
 	void disableGpio();
 	bool gpioActive();
 

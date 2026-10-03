@@ -59,6 +59,50 @@ namespace
             }
         }
     }
+
+    /**
+     * The washes vanilla blends over a screen are per-channel maps: the pause
+     * and death gradients mix each pixel toward a colour by the row's alpha, and
+     * the menu screens dim each pixel by a constant. A channel has only 32 or 64
+     * possible inputs, so a row's map is three small tables -- built with the
+     * exact integer arithmetic the direct mix uses, so the output is bit for bit
+     * what vanilla's blend asks for -- and a pixel becomes three lookups instead
+     * of six integer divisions. On a calculator that is the difference between a
+     * menu eating its frame budget and not.
+     */
+    struct MixTables
+    {
+        uint8_t r[32], g[64], b[32];
+
+        /** `keep / 255` of the old channel plus `add8`, packed back to 565. */
+        void build(int keep, int add_r, int add_g, int add_b)
+        {
+            for(int v = 0; v < 32; ++v)
+                r[v] = static_cast<uint8_t>((((v * 255 / 31) * keep / 255) + add_r) >> 3);
+            for(int v = 0; v < 64; ++v)
+                g[v] = static_cast<uint8_t>((((v * 255 / 63) * keep / 255) + add_g) >> 2);
+            for(int v = 0; v < 32; ++v)
+                b[v] = static_cast<uint8_t>((((v * 255 / 31) * keep / 255) + add_b) >> 3);
+        }
+
+        /** The old channel scaled by `keep_percent / 100`. */
+        void buildScaled(int keep_percent)
+        {
+            for(int v = 0; v < 32; ++v)
+                r[v] = static_cast<uint8_t>(v * keep_percent / 100);
+            for(int v = 0; v < 64; ++v)
+                g[v] = static_cast<uint8_t>(v * keep_percent / 100);
+            for(int v = 0; v < 32; ++v)
+                b[v] = static_cast<uint8_t>(v * keep_percent / 100);
+        }
+
+        COLOR mix(COLOR c) const
+        {
+            return static_cast<COLOR>((r[(c >> 11) & 0x1F] << 11)
+                                     | (g[(c >> 5) & 0x3F] << 5)
+                                     | b[c & 0x1F]);
+        }
+    };
 }
 
 namespace MenuUI
@@ -89,14 +133,74 @@ namespace MenuUI
     const char *const deathRespawnLabel = "Respawn";
     const char *const deathTitleLabel = "Title Screen";
 
+    // Vanilla's title screen in vanilla's own words and vanilla's own order: the
+    // three full-width buttons, then "Options..." and "Quit Game" half-width on
+    // the shared row. The two icon slots at the end carry no text -- they are
+    // vanilla's language and accessibility buttons, which this engine draws in
+    // their vanilla places but cannot serve, so they are greyed out.
     const char *const titleLabels[] = {
-        "Continue",
-        "New Flat World",
-        "New Terrain World",
-        "Graphing Mode",
-        "Quit Game"
+        "Singleplayer",
+        "Multiplayer",
+        "Minecraft Realms",
+        "Options...",
+        "Quit Game",
+        "",
+        ""
     };
     const int titleLabelCount = static_cast<int>(sizeof(titleLabels) / sizeof(titleLabels[0]));
+
+    // Vanilla's "Select World" screen, in vanilla's own words and vanilla's own
+    // order: the two 150-wide buttons under the list, then the four 72-wide ones
+    // under those. The strings are 1.17.1's `selectWorld.*` translation values,
+    // kept verbatim.
+    const char *const worldSelectHeading = "Select World";
+    const char *const worldSelectActionLabels[] = {
+        "Play Selected World",
+        "Create New World",
+        "Edit",
+        "Delete",
+        "Re-Create",
+        "Cancel"
+    };
+    const int worldSelectActionCount = static_cast<int>(sizeof(worldSelectActionLabels) / sizeof(worldSelectActionLabels[0]));
+    const char *const worldSelectSearchHint = "search for worlds";
+    const char *const worldSelectDefaultName = "New World";
+    const char *const worldSelectNeverPlayed = "Never played!";
+    const char *const worldSelectNewTag = "New!";
+    const char *const worldSelectWorldWord = "World";
+
+    // The game modes the create dialog offers, with vanilla's own words and the
+    // two help lines vanilla shows under the pair for whichever is chosen.
+    const char *const survivalModeLabel = "Survival";
+    const char *const creativeModeLabel = "Creative";
+    const char *const gameModeValues[] = { "Survival", "Creative" };
+    const char *const gameModeHelp[][2] = {
+        { "Search for resources, craft, gain", "levels, health and hunger" },
+        { "Unlimited resources, free flying and", "destroy blocks instantly" }
+    };
+    const int gameModeCount = static_cast<int>(sizeof(gameModeValues) / sizeof(gameModeValues[0]));
+
+    // The create/edit dialogs: vanilla's `CreateWorldScreen` and
+    // `EditWorldScreen` wording, with the engine's own world kinds standing in
+    // for vanilla's world types on the second button of the pair.
+    const char *const createHeading = "Create New World";
+    const char *const editHeading = "Edit World";
+    const char *const nameLabel = "World Name";
+    const char *const resultFolderLabel = "Will be saved in:";
+    const char *const gameModeLabel = "Game Mode";
+    const char *const worldTypeLabel = "World Type";
+    const char *const worldTypeValues[] = { "Normal", "Flat", "Graphing" };
+    const int worldTypeCount = static_cast<int>(sizeof(worldTypeValues) / sizeof(worldTypeValues[0]));
+    const char *const createConfirmLabel = "Create New World";
+    const char *const saveLabel = "Save";
+    const char *const cancelLabel = "Cancel";
+
+    // The delete question, which is vanilla's `ConfirmScreen`: the question as
+    // the heading and the loss spelled out under it, with the world's name where
+    // the format string's %s is.
+    const char *const deleteQuestion = "Are you sure you want to delete this world?";
+    const char *const deleteWarningFormat = "'%s' will be lost forever! (A long time!)";
+    const char *const deleteConfirmLabel = "Delete";
 
     // Vanilla's pause screen, in its own order and its own grid: a full-width
     // button, three rows of two, then a full-width button. "Advancements" and
@@ -335,17 +439,16 @@ namespace MenuUI
             return;
         }
 
+        // The factor is one map for the whole rectangle: built once, three
+        // lookups a pixel.
+        MixTables mix;
+        mix.buildScaled(keep_percent);
+
         for(int row = 0; row < h; ++row)
         {
             COLOR *line = tex.bitmap + (y + row) * tex.width + x;
             for(int col = 0; col < w; ++col)
-            {
-                const COLOR c = line[col];
-                const int r = ((c >> 11) & 0x1F) * keep_percent / 100;
-                const int g = ((c >> 5) & 0x3F) * keep_percent / 100;
-                const int b = (c & 0x1F) * keep_percent / 100;
-                line[col] = static_cast<COLOR>((r << 11) | (g << 5) | b);
-            }
+                line[col] = mix.mix(line[col]);
         }
     }
 
@@ -369,6 +472,10 @@ namespace MenuUI
     {
         (void)focused; // vanilla labels the focused button the same as the rest
 
+        // The icon buttons carry no label at all; an empty string draws nothing.
+        if(text == nullptr || text[0] == '\0')
+            return;
+
         const int text_w = static_cast<int>(measureString(text));
         const int text_x = x + (w - text_w) / 2;
         const int text_y = y + (h - static_cast<int>(fontHeight())) / 2 + 1;
@@ -377,6 +484,62 @@ namespace MenuUI
         // on both halves of the gradient.
         drawString(text, TextShadow, tex, text_x + 1, text_y + 1);
         drawString(text, enabled ? Text : TextDisabled, tex, text_x, text_y);
+    }
+
+    void drawIconButton(const TEXTURE &icon, TEXTURE &tex, int x, int y, int w, int h,
+                        bool focused, bool enabled)
+    {
+        drawButton(tex, x, y, w, h, focused, enabled);
+
+        // The icon is vanilla's 15x15, centred in the 20x20 button and scaled
+        // with the GUI scale like everything else on the screen.
+        const int s = uiScale();
+        const int icon_w = static_cast<int>(icon.width) * s;
+        const int icon_h = static_cast<int>(icon.height) * s;
+        blit(icon, tex, 0, 0, icon.width, icon.height,
+             x + (w - icon_w) / 2, y + (h - icon_h) / 2, icon_w, icon_h);
+    }
+
+    void drawEditBox(TEXTURE &tex, int x, int y, int w, int h,
+                     const char *text, const char *hint, bool focused)
+    {
+        if(w <= 0 || h <= 0)
+            return;
+        const int s = uiScale();
+
+        // Vanilla's edit box: a one-pixel grey frame around a black field.
+        fillRect(tex, x, y, w, h, EditBoxBorder);
+        fillRect(tex, x + s, y + s, w - 2 * s, h - 2 * s, Black);
+
+        // The text sits four pixels in, greyed to the placeholder colour while the
+        // box is empty and the placeholder is what is showing.
+        const bool empty = text == nullptr || text[0] == '\0';
+        const char *shown = empty ? hint : text;
+        if(shown == nullptr)
+            shown = "";
+        const int text_x = x + 4 * s;
+        const int text_y = y + (h - static_cast<int>(fontHeight())) / 2;
+        drawString(shown, empty ? EditBoxHint : Text, tex, text_x, text_y);
+
+        // The caret sits at the end of the text while the box holds the focus.
+        if(focused)
+        {
+            const int caret_x = text_x + (empty ? 0 : static_cast<int>(measureString(text)));
+            fillRect(tex, caret_x, text_y, s, static_cast<int>(fontHeight()), Text);
+        }
+    }
+
+    void drawWorldEntry(const char *name, const char *sub, const char *info,
+                        TEXTURE &tex, int x, int y)
+    {
+        // The row's icon sits at (x, y); the three lines are drawn beside it at
+        // vanilla's own 1/12/21 offsets, plain (no shadow) as vanilla draws list
+        // rows: the name in white over the two grey detail lines.
+        const int s = uiScale();
+        const int text_x = x + WorldRowTextOffset * s;
+        drawString(name, Text, tex, text_x, y + WorldRowNameY * s);
+        drawString(sub, EntrySub, tex, text_x, y + WorldRowSubY * s);
+        drawString(info, EntrySub, tex, text_x, y + WorldRowInfoY * s);
     }
 
     void drawSplash(const char *text, TEXTURE &tex, int x, int y)
@@ -531,10 +694,20 @@ namespace MenuUI
             return;
         }
 
-        x = (index - TitleFullButtons == 0) ? bottom_left_x : bottom_right_x;
         y = bottom_y;
-        w = bottom_w;
-        h = bottom_h;
+        if(index == TitleLeftHalfButton || index == TitleRightHalfButton)
+        {
+            x = (index == TitleLeftHalfButton) ? bottom_left_x : bottom_right_x;
+            w = bottom_w;
+            h = bottom_h;
+            return;
+        }
+
+        // The two 20x20 icon buttons share the row's ends: language to the left
+        // of "Options...", accessibility to the right of "Quit Game".
+        x = (index == TitleLeftIconButton) ? icon_left_x : icon_right_x;
+        w = icon_w;
+        h = icon_w;
     }
 
     TitleLayout titleLayout(const char *splash)
@@ -584,6 +757,9 @@ namespace MenuUI
         layout.bottom_y = SCREEN_HEIGHT / 4 + (TitleButtonOffset + TitleBottomOffset) * s;
         layout.bottom_left_x = SCREEN_WIDTH / 2 - 100 * s;
         layout.bottom_right_x = SCREEN_WIDTH / 2 + 2 * s;
+        layout.icon_w = TitleIconSize * s;
+        layout.icon_left_x = SCREEN_WIDTH / 2 + TitleIconLeftOffset * s;
+        layout.icon_right_x = SCREEN_WIDTH / 2 + TitleIconRightOffset * s;
 
         layout.version_x = 2 * s;
         layout.credit_x = SCREEN_WIDTH - static_cast<int>(measureString(creditText)) - 2 * s;
@@ -705,6 +881,137 @@ namespace MenuUI
         return scroll;
     }
 
+    void WorldSelectLayout::buttonRect(int action, int &x, int &y, int &w, int &h) const
+    {
+        h = button_h;
+        if(action == WorldPlay || action == WorldCreate)
+        {
+            x = (action == WorldPlay) ? row1_left_x : row1_right_x;
+            y = row1_y;
+            w = row1_w;
+            return;
+        }
+
+        const int index = action - WorldEdit; // the four second-row buttons
+        x = row2_x[index >= 0 && index < 4 ? index : 0];
+        y = row2_y;
+        w = row2_w;
+    }
+
+    WorldSelectLayout worldSelectLayout()
+    {
+        WorldSelectLayout layout;
+        const int s = uiScale();
+        layout.scale = s;
+
+        layout.heading_y = WorldHeadingY * s;
+        layout.search_x = SCREEN_WIDTH / 2 + WorldSearchOffsetX * s;
+        layout.search_y = WorldSearchY * s;
+        layout.search_w = WorldSearchWidth * s;
+        layout.search_h = WorldSearchHeight * s;
+        layout.list_top = WorldListTop * s;
+        layout.list_bottom = SCREEN_HEIGHT - WorldListBottomOffset * s;
+
+        // Vanilla's `getRowLeft`/`getRowWidth`: a 270-wide row whose left edge is
+        // two pixels right of the list's centre line's start.
+        layout.row_w = WorldRowWidth * s;
+        layout.row_left = SCREEN_WIDTH / 2 - layout.row_w / 2 + WorldRowLeftOffset * s;
+        layout.row_pitch = WorldRowPitch * s;
+        layout.row_h = WorldRowHeight * s;
+
+        // The selection frame runs two pixels around the row's content box.
+        layout.box_x = layout.row_left - 2 * s;
+        layout.box_w = layout.row_w + 4 * s;
+
+        layout.icon_size = WorldIconSize * s;
+        layout.text_x = layout.row_left + WorldRowTextOffset * s;
+
+        layout.button_h = ButtonHeight * s;
+        layout.row1_y = SCREEN_HEIGHT - WorldRow1YOffset * s;
+        layout.row2_y = SCREEN_HEIGHT - WorldRow2YOffset * s;
+        layout.row1_w = WorldRow1Width * s;
+        layout.row1_left_x = SCREEN_WIDTH / 2 + WorldRow1LeftOffset * s;
+        layout.row1_right_x = SCREEN_WIDTH / 2 + WorldRow1RightOffset * s;
+        layout.row2_w = WorldRow2Width * s;
+        for(int i = 0; i < 4; ++i)
+            layout.row2_x[i] = SCREEN_WIDTH / 2 + WorldRow2Offsets[i] * s;
+        return layout;
+    }
+
+    void WorldFormLayout::optionRect(int index, int &x, int &y, int &w, int &h) const
+    {
+        x = (index == 0) ? left_x : right_x;
+        y = option_y;
+        w = option_w;
+        h = button_h;
+    }
+
+    void WorldFormLayout::bottomRect(int index, int &x, int &y, int &w, int &h) const
+    {
+        x = (index == 0) ? left_x : right_x;
+        y = bottom_y;
+        w = option_w;
+        h = button_h;
+    }
+
+    WorldFormLayout worldFormLayout()
+    {
+        WorldFormLayout layout;
+        const int s = uiScale();
+        layout.scale = s;
+
+        layout.heading_y = FormHeadingY * s;
+        layout.label_y = FormLabelY * s;
+        layout.field_w = FormFieldWidth * s;
+        layout.field_h = FormFieldHeight * s;
+        layout.field_x = SCREEN_WIDTH / 2 - layout.field_w / 2;
+        layout.field_y = FormFieldY * s;
+        layout.result_y = FormResultY * s;
+        layout.option_y = FormOptionY * s;
+        layout.help_y = FormHelpY * s;
+        layout.help_pitch = FormHelpPitch * s;
+        layout.option_w = FormButtonWidth * s;
+        layout.button_h = ButtonHeight * s;
+        layout.left_x = SCREEN_WIDTH / 2 + FormLeftOffset * s;
+        layout.right_x = SCREEN_WIDTH / 2 + FormRightOffset * s;
+        layout.bottom_y = SCREEN_HEIGHT - FormBottomYOffset * s;
+        return layout;
+    }
+
+    void ConfirmLayout::buttonRect(int index, int &x, int &y, int &w, int &h) const
+    {
+        x = (index == 0) ? left_x : right_x;
+        y = button_y;
+        w = button_w;
+        h = button_h;
+    }
+
+    ConfirmLayout confirmLayout(int message_lines)
+    {
+        ConfirmLayout layout;
+        const int s = uiScale();
+        layout.scale = s;
+
+        layout.title_y = ConfirmTitleY * s;
+        layout.message_y = ConfirmMessageY * s;
+        layout.line_pitch = ConfirmLinePitch * s;
+        if(message_lines < 1)
+            message_lines = 1;
+
+        // Vanilla's own clamp: the buttons sit a line-and-a-half under the
+        // message, but never above a sixth of the screen nor below its bottom.
+        const int wanted = (ConfirmMessageY + message_lines * ConfirmLinePitch + 12) * s;
+        const int above = SCREEN_HEIGHT / 6 + ConfirmButtonYBase * s;
+        const int below = SCREEN_HEIGHT - ConfirmButtonYMax * s;
+        layout.button_y = wanted < above ? above : (wanted > below ? below : wanted);
+
+        layout.button_w = ConfirmButtonWidth * s;
+        layout.button_h = ButtonHeight * s;
+        layout.left_x = SCREEN_WIDTH / 2 + ConfirmLeftOffset * s;
+        layout.right_x = SCREEN_WIDTH / 2 + ConfirmRightOffset * s;
+        return layout;
+    }
+
     void drawMenuBackground(TEXTURE &tex)
     {
         // Vanilla tiles `options_background.png` at 32 GUI pixels a tile -- the
@@ -774,22 +1081,26 @@ namespace MenuUI
         const int height = static_cast<int>(tex.height);
         const int span = height > 1 ? height - 1 : 1;
 
+        // The gradient steps through a handful of alpha/red pairs down the
+        // screen; each pair is one map, shared by the rows it covers.
+        MixTables mix;
+        int mix_keep = -1, mix_red = -1;
+
         for(int y = 0; y < height; ++y)
         {
             const int alpha = top_alpha + (bottom_alpha - top_alpha) * y / span;
             const int red8 = top_red + (bottom_red - top_red) * y / span;
             const int keep = 255 - alpha;
+            if(keep != mix_keep || red8 != mix_red)
+            {
+                mix.build(keep, red8 * alpha / 255, 0, 0);
+                mix_keep = keep;
+                mix_red = red8;
+            }
 
             COLOR *line = tex.bitmap + y * tex.width;
             for(int x = 0; x < static_cast<int>(tex.width); ++x)
-            {
-                const COLOR c = line[x];
-                // Unpack to 8-bit, mix toward the red, pack back.
-                const int r = (((c >> 11) & 0x1F) * 255 / 31) * keep / 255 + red8 * alpha / 255;
-                const int g = (((c >> 5) & 0x3F) * 255 / 63) * keep / 255;
-                const int b = ((c & 0x1F) * 255 / 31) * keep / 255;
-                line[x] = static_cast<COLOR>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
-            }
+                line[x] = mix.mix(line[x]);
         }
     }
 
@@ -805,21 +1116,25 @@ namespace MenuUI
         const int height = static_cast<int>(tex.height);
         const int span = height > 1 ? height - 1 : 1;
 
+        // The gradient's alpha steps only a handful of times down the screen;
+        // each step is one map, shared by the rows it covers.
+        MixTables mix;
+        int mix_keep = -1;
+
         for(int y = 0; y < height; ++y)
         {
             const int alpha = top_alpha + (bottom_alpha - top_alpha) * y / span;
             const int keep = 255 - alpha;
+            if(keep != mix_keep)
+            {
+                const int add = wash * alpha / 255;
+                mix.build(keep, add, add, add);
+                mix_keep = keep;
+            }
 
             COLOR *line = tex.bitmap + y * tex.width;
             for(int x = 0; x < static_cast<int>(tex.width); ++x)
-            {
-                const COLOR c = line[x];
-                // Unpack to 8-bit, mix toward the grey, pack back.
-                const int r = (((c >> 11) & 0x1F) * 255 / 31) * keep / 255 + wash * alpha / 255;
-                const int g = (((c >> 5) & 0x3F) * 255 / 63) * keep / 255 + wash * alpha / 255;
-                const int b = ((c & 0x1F) * 255 / 31) * keep / 255 + wash * alpha / 255;
-                line[x] = static_cast<COLOR>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
-            }
+                line[x] = mix.mix(line[x]);
         }
     }
 

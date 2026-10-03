@@ -11,7 +11,9 @@
 
 #include "font.h"
 #include "menuui.h"
+#include "settingstask.h"
 #include "worldtask.h"
+#include "worldselecttask.h"
 #include "graphtask.h"
 #include "world.h"
 #include "blockrenderer.h"
@@ -21,8 +23,14 @@
 #include "textures/title_backdrop.h"
 #include "textures/title_logo.h"
 #include "textures/edition.h"
+#include "textures/language_icon.h"
+#include "textures/accessibility_icon.h"
 
 StartTask start_task;
+
+// The button order lives in MenuUI's layout and here in the enum; the two have
+// to agree on how many buttons the title screen has.
+static_assert(StartTask::START_ITEM_MAX == MenuUI::TitleButtonCount, "title button count");
 
 namespace
 {
@@ -178,14 +186,18 @@ StartTask::~StartTask()
 
 void StartTask::makeCurrent()
 {
-    // Vanilla opens on the first button it can actually use.
-    selected_item = has_saved_world ? CONTINUE : NEW_TERRAIN;
+    // Vanilla's title screen opens with nothing focused: no button wears the
+    // highlight until the pointer hovers one or the keyboard steps to one.
+    selected_item = -1;
     current_splash = MenuUI::splashLines[static_cast<unsigned int>(rand()) % MenuUI::splashLineCount];
-    GameAudio::stopMusic();
+    // The title screen plays vanilla's `music.menu` -- the pack's four menu
+    // tracks, not the world's soundtrack. Opening a world hands the music over
+    // to the game pool the same way vanilla's MusicManager swaps pools.
+    GameAudio::setMusicDesired(true, GameAudio::MusicSceneMenu);
 #ifndef _TINSPIRE
     // The point the pointer already sits at does not count as a move: the screen
-    // opens on the button vanilla opens it on, and the mouse only takes over when
-    // it is actually moved.
+    // opens with nothing focused, and the mouse only takes over when it is
+    // actually moved.
     SDL_PumpEvents();
     SDL_GetMouseState(&last_mouse_x, &last_mouse_y);
 #endif
@@ -201,29 +213,25 @@ void StartTask::activate()
 
     // Every choice but quitting leaves the title screen, and the splash texture
     // goes with it (the next visit builds it again).
-    if(selected_item != EXIT)
+    if(selected_item != QUIT)
         releaseTitleGraphics();
 
     switch(selected_item)
     {
-    case CONTINUE:
-        world_task.makeCurrent();
+    case SINGLEPLAYER:
+        // Vanilla opens its world list here; this engine's world kinds -- the
+        // saved world and the three it can generate -- stand in for the list.
+        worldselect_task.makeCurrent();
         break;
-    case NEW_FLAT:
-        world.setWorldType(World::WorldType::Flat);
-        world_task.resetWorld();
-        world_task.makeCurrent();
+    case OPTIONS:
+        // Vanilla's "Options..." is on the title screen as well as in the pause
+        // menu, and opens the same options screen from both.
+        settings_task.openFrom(&start_task);
         break;
-    case NEW_TERRAIN:
-        world.setWorldType(World::WorldType::Terrain);
-        world_task.resetWorld();
-        world_task.makeCurrent();
-        break;
-    case NEW_GRAPH:
-        graph_task.makeCurrent();
-        break;
-    case EXIT:
+    case QUIT:
         running = false;
+        break;
+    default:
         break;
     }
 }
@@ -269,6 +277,18 @@ void StartTask::render()
         const bool enabled = itemEnabled(i);
         const bool focused = (i == selected_item);
 
+        // The two icon buttons carry vanilla's icons instead of a label.
+        if(i == LANGUAGE)
+        {
+            MenuUI::drawIconButton(language_icon, *screen, x, y, w, h, focused, enabled);
+            continue;
+        }
+        if(i == ACCESSIBILITY)
+        {
+            MenuUI::drawIconButton(accessibility_icon, *screen, x, y, w, h, focused, enabled);
+            continue;
+        }
+
         MenuUI::drawButton(*screen, x, y, w, h, focused, enabled);
         MenuUI::drawButtonLabel(MenuUI::titleLabels[i], *screen, x, y, w, h,
                                 focused, enabled);
@@ -311,13 +331,16 @@ void StartTask::logic(GLFix dt)
     }
 
     // Only a pointer that has moved takes the focus; a resting pointer leaves the
-    // keyboard in charge. A click still takes whatever is under it.
+    // keyboard in charge. A click still takes whatever is under it. Moving onto a
+    // greyed button or off the buttons clears the highlight, which is what
+    // vanilla's hover looks like: the lit button is the one under the pointer,
+    // and a button that cannot be used never lights up.
     const bool mouse_moved = (mouse_x != last_mouse_x || mouse_y != last_mouse_y);
     last_mouse_x = mouse_x;
     last_mouse_y = mouse_y;
 
-    if(mouse_moved && hovered >= 0 && itemEnabled(hovered))
-        selected_item = hovered;
+    if(mouse_moved)
+        selected_item = (hovered >= 0 && itemEnabled(hovered)) ? hovered : -1;
 
     if(left_down && !left_mouse_was_down)
     {

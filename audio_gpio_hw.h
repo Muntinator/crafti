@@ -6,15 +6,18 @@
 #include "audio_tx_hw.h"
 
 /**
- * TI-Nspire CX hardware definitions used by the GPIO 22 (dock pin 18) audio
- * output backend.
+ * TI-Nspire CX hardware definitions used by the GPIO audio output backend
+ * (dock pin 18 = GPIO 22, and dock pin 6 = GPIO 4 = USB D+).
  *
  * Why not the dock's UART Tx (pin 4): on this calculator that pin is broken, so
- * the audio stream has to move to a general-purpose line. GPIO 22 is the
- * safest output on the dock: the CX pins with known jobs are GPIO 5 (active-low
- * USB VBUS control), 6 (charging), 19 (WLAN cradle detect), 20 (USB micro-B
- * attached), 23 (LCD_OFF) and 24 (keypad present); 22 is unclaimed, and pin 5
- * of the dock is a nearby ground for the return path.
+ * the audio stream has to move to a general-purpose line. Two are offered.
+ * GPIO 22 is the safest output on the dock: the CX pins with known jobs are GPIO
+ * 5 (active-low USB VBUS control), 6 (charging), 19 (WLAN cradle detect), 20
+ * (USB micro-B attached), 23 (LCD_OFF) and 24 (keypad present); 22 is
+ * unclaimed, and pin 5 of the dock is a nearby ground for the return path.
+ * GPIO 4 is dock pin 6, USB Data+ -- a real push-pull output whenever no cradle
+ * is plugged in, and the line the UART backend would have used if USB were not
+ * on it.
  *
  * Verified against the Hackspire wiki (GPIO Pins, Interrupts, Memory-mapped IO
  * ports on CX) and against Firebird's `core/misc.c` emulation (gpio_read /
@@ -63,13 +66,58 @@ namespace GpioAudioHw
 	constexpr uint32_t GpioInvert = 0x1C;
 	constexpr uint32_t GpioStickySelect = 0x20;
 
-	/** The audio line: dock pin 18, the one unclaimed output on the CX dock. */
+	/**
+	 * The audio line is chosen at run time (the backend drives one of two), so
+	 * the section base, bit mask and bit index are functions of a line number
+	 * rather than constants. These are the same thing written once.
+	 */
+	constexpr uint32_t sectionBaseFor(uint32_t gpio) { return GpioBase + (gpio / 8) * GpioSectionStride; }
+	constexpr uint32_t bitFor(uint32_t gpio) { return gpio % 8; }
+	constexpr uint32_t bitMaskFor(uint32_t gpio) { return 1u << (gpio % 8); }
+
+	/**
+	 * The default line: dock pin 18, the one unclaimed output on the CX dock.
+	 */
 	constexpr uint32_t AudioGpioNumber = 22;
 	constexpr uint32_t GpioSection = AudioGpioNumber / 8;
-	constexpr uint32_t GpioBit = AudioGpioNumber % 8;
-	constexpr uint32_t GpioBitMask = 1u << GpioBit;
-	/** Base of the section that owns the audio line (GPIO 16..23). */
-	constexpr uint32_t GpioSectionBase = GpioBase + GpioSection * GpioSectionStride;
+	constexpr uint32_t GpioBit = bitFor(AudioGpioNumber);
+	constexpr uint32_t GpioBitMask = bitMaskFor(AudioGpioNumber);
+	/** Base of the section that owns the default audio line (GPIO 16..23). */
+	constexpr uint32_t GpioSectionBase = sectionBaseFor(AudioGpioNumber);
+
+	/**
+	 * USB D+: dock pin 6, which is GPIO 4.
+	 *
+	 * The UART backend rejected this pin precisely because it is the USB data
+	 * line -- with a Navigator cradle plugged in, the calculator is a USB device
+	 * on that pin and the OS drives it. With nothing attached it is just a
+	 * push-pull 3.3 V output (held low by the bus's 15 kOhm pull-down), which is
+	 * all the 1-bit modulator needs, so it is offered as an output of its own
+	 * with the one rule that makes it safe: no cradle, no host, nothing plugged
+	 * into the port the line belongs to.
+	 */
+	constexpr uint32_t UsbDataPlusGpioNumber = 4;
+	constexpr uint32_t UsbDataPlusSection = UsbDataPlusGpioNumber / 8;
+	constexpr uint32_t UsbDataPlusBit = bitFor(UsbDataPlusGpioNumber);
+	constexpr uint32_t UsbDataPlusBitMask = bitMaskFor(UsbDataPlusGpioNumber);
+	constexpr uint32_t UsbDataPlusSectionBase = sectionBaseFor(UsbDataPlusGpioNumber);
+
+	/**
+	 * Lines the CX gives a job, which must never be driven as audio: 5 is the
+	 * active-low USB VBUS control, 6 charging, 19 the WLAN cradle detect, 20
+	 * "USB micro-B attached", 23 LCD_OFF and 24 keypad present. GPIO 4 is *not*
+	 * in this list -- it is a real output whenever nothing is plugged into it.
+	 */
+	constexpr bool hasKnownJob(uint32_t gpio)
+	{
+		return gpio == 5 || gpio == 6 || gpio == 19 || gpio == 20 || gpio == 23 || gpio == 24;
+	}
+
+	/** True for a line this backend is allowed to take: a real line, unclaimed. */
+	constexpr bool usableAsAudio(uint32_t gpio)
+	{
+		return gpio < 32 && !hasKnownJob(gpio);
+	}
 
 	// --- SP804-style dual timer, block 0x900C0000 (IRQ 18) -------------------
 	constexpr uint32_t TimerBase = 0x900C0000;
@@ -111,6 +159,13 @@ namespace GpioAudioHw
 	static_assert(AudioGpioNumber == GpioSection * 8 + GpioBit, "the line splits into section and bit");
 	static_assert(GpioSection == 2 && GpioBit == 6, "GPIO 22 is section 2, bit 6");
 	static_assert(GpioSectionBase == 0x90000080, "section 2 of the GPIO map");
+	static_assert(UsbDataPlusGpioNumber == UsbDataPlusSection * 8 + UsbDataPlusBit,
+		"USB D+ splits into section and bit too");
+	static_assert(UsbDataPlusSection == 0 && UsbDataPlusBit == 4, "GPIO 4 is section 0, bit 4");
+	static_assert(UsbDataPlusSectionBase == 0x90000000, "section 0 of the GPIO map");
+	static_assert(usableAsAudio(AudioGpioNumber), "the default line is a legal audio output");
+	static_assert(usableAsAudio(UsbDataPlusGpioNumber), "USB D+ is a legal audio output");
+	static_assert(!usableAsAudio(20), "a line that detects the USB port stays an input");
 	static_assert(TicksPerBit == TimerReload + 1, "the counter wraps after load + 1 ticks");
 	static_assert(BitRateHz * TicksPerBit == TimerClockHz, "the bit rate divides the crystal");
 	static_assert(SampleRateHz == UartTxHw::MixerRateHz, "every backend serves the same mixer");

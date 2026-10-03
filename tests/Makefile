@@ -52,7 +52,11 @@ build/audio_output_test: audio_output_test.cc fake_sdl_audio.cc $(AUDIO_SOURCES)
 	$(CXX) $(COMMON) -Ifake_sdl -o $@ audio_output_test.cc fake_sdl_audio.cc $(AUDIO_SOURCES)
 
 # Pure livestock tables: no engine sources, just the spec and its real ids.
-build/livestock_test: livestock_test.cc $(ROOT)/livestockspecies.cpp | build
+# mobmodel.h is listed because the drawn-geometry checks below ask the
+# renderer through `angleInDrawnFrame`, and this Makefile does no header
+# dependency tracking -- without it here a change to that rule would silently
+# leave a stale binary passing.
+build/livestock_test: livestock_test.cc $(ROOT)/livestockspecies.cpp $(ROOT)/mobmodel.h | build
 	$(CXX) $(COMMON) -I$(ROOT)/nGL -o $@ livestock_test.cc $(ROOT)/livestockspecies.cpp
 
 # The village generator is engine-independent by design, so it is tested whole.

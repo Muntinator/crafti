@@ -179,12 +179,18 @@ the pack:
         --sounds audiosrc/extracted \
         --music  audiosrc/music \
         --out    crafti.audp \
-        --header audio_sounds.h
+        --header audio_sounds.h \
+        --jobs   8
 
-This writes `crafti.audp` (~15.0 MB, **1119 sounds** = 1103 effects + 16 music,
+This writes `crafti.audp` (~27.0 MB, **1119 sounds** = 1103 effects + 16 music,
 8-bit unsigned mono 8 kHz) and regenerates `audio_sounds.h` with the id table
 (1120 entries: `None = 0` plus ids 1..1119, contiguous and in the same order as
-the pack index, so the engine needs no runtime name lookup).
+the pack index, so the engine needs no runtime name lookup). The build is
+resampled with soxr and TPDF dithered, and each music track is kept whole (up to
+`--music-seconds`, 240 s by default) rather than cut after 75 s -- that is where
+the extra size goes: music alone is 22.2 MB of the total. `--jobs` decodes the
+sources in parallel, which takes the build from about three minutes to forty
+seconds.
 
 Sanity check the result before copying it, so a partially decoded archive cannot
 slip through. The three counts must agree:
@@ -201,8 +207,9 @@ Copy the pack to the calculator next to the game:
 
 Without a pack the game still runs and falls back to procedural tones.
 `crafti.audp` is gitignored; the source asset licensing is unresolved, so do not
-redistribute it. See `AUDIO_OUTPUT_TEST.md` for the format, the UART output
-backend and the audio test mode.
+redistribute it. See `AUDIO_OUTPUT_TEST.md` for the format, the 1-bit output
+backends (UART pin 4, GPIO 22 on pin 18, USB D+ on pin 6) and the audio test
+mode.
 
 ---
 
@@ -212,9 +219,13 @@ Notes
 - `tests/` builds against SDL on the desktop and is not part of the CX target.
   The desktop build uses `Makefile.pc`. Run the host tests (audio, livestock,
   village generation) with `make -C tests`.
-- UART audio is opt-in because it takes over the interrupt vector and the UART
-  (Settings → UART audio, or the Audio Test screen). See
-  `AUDIO_OUTPUT_TEST.md`; it still needs real CX hardware validation.
+- Audio output is opt-in because the two 1-bit backends take over the
+  interrupt vector (and the UART on pin 4, or a GPIO line on pin 18 / USB D+ on
+  pin 6). Pick one under **Settings → Audio output** -- `Off`, `UART pin 4`,
+  `GPIO 22 (pin 18)`, `GPIO 22 (buzzer)`, `USB D+ (pin 6)`, `USB D+ (buzzer)` --
+  or from the Audio Test screen. See `AUDIO_OUTPUT_TEST.md`; it still needs real
+  CX hardware validation, and `USB D+` must be used with nothing plugged into
+  USB, since dock pin 6 is the USB data line.
 - `LIVESTOCK.md` covers the passive animals, `VILLAGE.md` the procedural
   villages and villagers. Village frequency is a setting (Settings → Villages)
   and, like terrain, is baked into chunk data, so it only affects chunks

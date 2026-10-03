@@ -88,7 +88,11 @@ namespace Mob
 		{
 			const MobPart &part = model.parts[p];
 
-			GLFix rot_x(part.rot_x);
+			// The tables hold vanilla's angles in vanilla's y-down frame, but
+			// nGL draws the same boxes in a y-up frame, so every angle goes
+			// through `angleInDrawnFrame` (see mobmodel.h for why that is a
+			// negation, and for what it looks like when it is skipped).
+			GLFix rot_x(angleInDrawnFrame(GLFix(part.rot_x)));
 			bool yaw = false;
 			switch(part.pose)
 			{
@@ -112,6 +116,7 @@ namespace Mob
 			// gives a negative pitch, which used to read off the end of that table.
 			// The camera wraps its own pitch and yaw the same way (worldtask.cpp).
 			rot_x.normaliseAngle();
+			head_yaw = angleInDrawnFrame(head_yaw);
 			head_yaw.normaliseAngle();
 
 			glPushMatrix();

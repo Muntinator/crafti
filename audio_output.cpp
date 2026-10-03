@@ -123,17 +123,23 @@ namespace GameAudioOutput
 		return false;
 	}
 
-	bool enableGpio(bool buzzer)
+	bool enableGpio(GpioLine line, bool buzzer)
 	{
 #ifdef _TINSPIRE
-		if(active_backend == BackendGpio && GameAudioGpio::buzzerDrive() == buzzer)
+		if(active_backend == BackendGpio
+			&& GameAudioGpio::audioLine() == static_cast<unsigned int>(line)
+			&& GameAudioGpio::buzzerDrive() == buzzer)
 			return true;
 		disableUartTx(); // the two opt-in backends cannot share the mixer
 		if(active_backend == BackendGpio)
 		{
-			GameAudioGpio::disable(); // switching drive: rebuilt below
+			GameAudioGpio::disable(); // switching line or drive: rebuilt below
 			active_backend = BackendNone;
 		}
+		// The line can only be chosen while the backend is off, so this is after
+		// the teardown above and before enable() takes its snapshot.
+		if(!GameAudioGpio::setAudioLine(static_cast<unsigned int>(line)))
+			return false;
 		GameAudioGpio::setBuzzerDrive(buzzer);
 		if(GameAudioGpio::enable())
 		{
@@ -187,7 +193,13 @@ namespace GameAudioOutput
 		case BackendUartTx:
 			return "UART";
 		case BackendGpio:
-			return GameAudioGpio::buzzerDrive() ? "GPIO buzzer" : "GPIO 22";
+		{
+			const bool usb = GameAudioGpio::audioLine()
+				== static_cast<unsigned int>(GpioLineUsbDataPlus);
+			if(GameAudioGpio::buzzerDrive())
+				return usb ? "USB D+ (buzzer)" : "GPIO 22 (buzzer)";
+			return usb ? "USB D+" : "GPIO 22";
+		}
 		default:
 			return "none";
 		}

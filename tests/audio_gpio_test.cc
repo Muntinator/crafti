@@ -164,6 +164,168 @@ static void testModulatorDrivesThePin()
 	GameAudioGpio::disable();
 }
 
+static void testUsbDataPlusLine()
+{
+	using namespace GpioAudioHw;
+
+	GameAudioGpio::Sim::reset();
+	CHECK(GameAudioGpio::audioLine() == AudioGpioNumber);
+
+	// Dock pin 6 is GPIO 4: section 0, bit 4 -- a different section from the
+	// default line, so this is the case that proves the section base and the bit
+	// mask follow the chosen line rather than a constant.
+	CHECK(UsbDataPlusGpioNumber == 4u);
+	CHECK(UsbDataPlusSection == 0 && UsbDataPlusBit == 4);
+	CHECK(UsbDataPlusSectionBase == 0x90000000u);
+
+	CHECK(GameAudioGpio::setAudioLine(UsbDataPlusGpioNumber));
+	CHECK(GameAudioGpio::audioLine() == UsbDataPlusGpioNumber);
+	CHECK(GameAudioGpio::enable());
+	CHECK(GameAudioGpio::active());
+
+	// Bit 4 of section 0 is the output; the other seven lines of that section
+	// kept the directions they booted with.
+	CHECK((GameAudioGpio::Sim::read(UsbDataPlusSectionBase + GpioDirection) & UsbDataPlusBitMask) == 0);
+	CHECK((GameAudioGpio::Sim::read(UsbDataPlusSectionBase + GpioDirection) & ~UsbDataPlusBitMask)
+		== (0xFFu & ~UsbDataPlusBitMask));
+	// Section 2 is untouched, because the backend never looked at it.
+	CHECK(GameAudioGpio::Sim::read(GpioSectionBase + GpioDirection) == 0xFF);
+
+	// Silence on D+ is still a perfectly alternating stream: the same modulator,
+	// the same timer, only a different pin.
+	GameAudioGpio::Sim::advanceBitTicks(2048);
+	CHECK(GameAudioGpio::Sim::pinHighCount() > 0);
+	CHECK(GameAudioGpio::Sim::pinLowCount() > 0);
+	CHECK(GameAudioGpio::Sim::badPeripheralWrites() == 0);
+	CHECK(GameAudioGpio::Sim::vicFiqSelect() == 0);
+	CHECK(GameAudioGpio::Sim::badVicWrites() == 0);
+
+	GameAudioGpio::disable();
+	CHECK(!GameAudioGpio::active());
+	CHECK(GameAudioGpio::Sim::read(UsbDataPlusSectionBase + GpioDirection) == 0xFF);
+	CHECK(GameAudioGpio::Sim::read(UsbDataPlusSectionBase + GpioOutput) == 0x00);
+	CHECK(GameAudioGpio::Sim::badPeripheralWrites() == 0);
+
+	// The line can only be chosen while the backend is off: the port register
+	// being bit-banged cannot change under the interrupt.
+	GameAudioGpio::Sim::reset();
+	CHECK(GameAudioGpio::setAudioLine(UsbDataPlusGpioNumber));
+	CHECK(GameAudioGpio::enable());
+	CHECK(!GameAudioGpio::setAudioLine(AudioGpioNumber));
+	CHECK(GameAudioGpio::audioLine() == UsbDataPlusGpioNumber);
+	GameAudioGpio::disable();
+
+	// A line the CX gives a job of its own is refused outright: USB VBUS (5),
+	// charging (6), WLAN cradle detect (19), USB port detect (20), LCD_OFF (23)
+	// and keypad present (24) are not audio outputs, and neither is anything
+	// above line 31.
+	CHECK(!GameAudioGpio::setAudioLine(5));
+	CHECK(!GameAudioGpio::setAudioLine(6));
+	CHECK(!GameAudioGpio::setAudioLine(19));
+	CHECK(!GameAudioGpio::setAudioLine(20));
+	CHECK(!GameAudioGpio::setAudioLine(23));
+	CHECK(!GameAudioGpio::setAudioLine(24));
+	CHECK(!GameAudioGpio::setAudioLine(32));
+	CHECK(GameAudioGpio::audioLine() == UsbDataPlusGpioNumber);
+
+	// Back to the default so the tests that follow see the usual line.
+	CHECK(GameAudioGpio::setAudioLine(AudioGpioNumber));
+	CHECK(GameAudioGpio::audioLine() == AudioGpioNumber);
+}
+
+/** 20*log10(ratio), without pulling libm into the test. */
+static double toDecibels(double ratio)
+{
+	const double ln10 = 2.30258509299;
+	double x = ratio;
+	int exponent = 0;
+	while(x >= 2.0) { x /= 2.0; ++exponent; }
+	while(x < 1.0) { x *= 2.0; --exponent; }
+	// ln(x) for x in [1,2) from ln x = 2*atanh((x-1)/(x+1)).
+	const double z = (x - 1.0) / (x + 1.0);
+	const double z2 = z * z;
+	double series = 0.0;
+	double term = z;
+	for(int n = 1; n <= 9; n += 2) { series += term / n; term *= z2; }
+	return 20.0 * (2.0 * series + exponent * 0.69314718056) / ln10;
+}
+
+static void testUsbDataPlusWireLevel()
+{
+	// What the 1-bit stream actually carries: on this pin the swing *is* the
+	// amplitude, so the difference between the pin sitting near its rail and
+	// sitting three-quarters of the way there is the whole of the loudness.
+	GameAudioGpio::Sim::reset();
+	GameAudio::stopAll();
+	GameAudio::setMasterVolume(100);
+	CHECK(GameAudioGpio::setAudioLine(GpioAudioHw::UsbDataPlusGpioNumber));
+	CHECK(GameAudioGpio::enable());
+
+	double swing[2] = {0.0, 0.0};
+	int16_t samples[512] = {};
+	for(int pass = 0; pass < 2; ++pass)
+	{
+		// pass 0: the new default (everything at full, limiter make-up on)
+		// pass 1: the old default, effects at 70%, which is what the game used
+		// to open at and what "quiet" meant.
+		const unsigned int volume = pass == 0 ? 100 : 70;
+		GameAudio::stopAll();
+		GameAudio::setCategoryVolume(GameAudio::CategoryPlayer, volume);
+		// Let the limiter's make-up settle to this volume before measuring: it
+		// ramps across blocks, so a measurement taken straight after a change
+		// would still carry the previous block's gain.
+		GameAudioGpio::pump();
+		for(int settle = 0; settle < 6; ++settle)
+			GameAudio::mixMono(samples, 512);
+
+		const uint32_t high_before = GameAudioGpio::Sim::pinHighCount();
+		const uint32_t low_before = GameAudioGpio::Sim::pinLowCount();
+		GameAudio::play(GameAudio::EventPlayerDamage);
+
+		// A square wave's density averages back to one half over a whole cycle,
+		// so the swing has to be read out of short windows. 32 bits is about a
+		// quarter of this 110 Hz tone's period, so the density in a window is the
+		// level's density; shorter than that and the count is only quantised to
+		// eighths, which would measure the modulator's rounding rather than the
+		// signal. The loudest window is the loudest the pin got.
+		uint32_t high = high_before;
+		uint32_t low = low_before;
+		double best = 0.0;
+		for(int step = 0; step < 300; ++step)
+		{
+			GameAudioGpio::pump();
+			GameAudioGpio::Sim::advanceBitTicks(32);
+			const uint32_t new_high = GameAudioGpio::Sim::pinHighCount();
+			const uint32_t new_low = GameAudioGpio::Sim::pinLowCount();
+			const uint32_t window = (new_high - high) + (new_low - low);
+			if(window != 0)
+			{
+				const uint32_t dh = new_high - high;
+				const uint32_t dl = new_low - low;
+				const double deviation = static_cast<double>(dh > dl ? dh - dl : dl - dh)
+					/ static_cast<double>(window);
+				if(deviation > best)
+					best = deviation;
+			}
+			high = new_high;
+			low = new_low;
+		}
+		swing[pass] = best;
+		CHECK(best > 0.0); // the voice really did reach the pin
+	}
+
+	// Full scale on the pin is a swing of 1 (all the time high, or all low): the
+	// density of the ones saturates at the rail rather than clipping past it.
+	CHECK(swing[0] <= 1.0);
+	CHECK(swing[0] > swing[1]);
+	CHECK(swing[0] / swing[1] > 1.35);
+	printf("    USB D+ wire swing: full %.4f, old 70%% default %.4f (%+.2f dB)\n",
+	       swing[0], swing[1], toDecibels(swing[0] / swing[1]));
+
+	GameAudio::stopAll();
+	GameAudioGpio::disable();
+}
+
 static void testTeardownRestoresEverything()
 {
 	using namespace GpioAudioHw;
@@ -344,6 +506,8 @@ int main()
 	printf("audio_gpio_test\n");
 
 	testRegisterSetup();
+	testUsbDataPlusLine();
+	testUsbDataPlusWireLevel();
 	testSilenceIsAlternatingBits();
 	testSamplesAdvanceAtTheMixerRate();
 	testModulatorDrivesThePin();

@@ -17,7 +17,10 @@ The crops are the vanilla widgets as vanilla itself samples them:
   * widgets.png holds the hotbar (0,0) 182x22 -- nine 16-pixel slots on a 20-pixel
     pitch starting at (3,3) -- the selected-slot frame (0,22) 24x24, the button in
     its three states (0,46) 200x60 (disabled, plain, highlighted, one 20-pixel row
-    each), and the slider handle (0,106) 20x40 in its plain and highlighted states,
+    each), the slider handle (the 8-pixel knob at the left edge of the plain and
+    highlighted button rows), and the title screen's icon buttons: the language
+    button at (0,106) and the world-lock buttons at (0,146) and (20,146), each in
+    plain and highlighted states (and greyed, for the locks) below that,
   * checkbox.png holds the options screen's checkbox in its four states, as a
     2x2 grid of 20x20 cells: unchecked/checked across, plain/highlighted down,
   * container/inventory.png holds the whole player window (0,0) 176x166: the four
@@ -88,12 +91,19 @@ PANELS = [
     ("inventory",       "inventory",       "gui/widgets",                   (0, 0, 182, 22)),
     ("inv_selection",   "inv_selection",   "gui/widgets",                   (0, 22, 24, 24)),
     ("menu_button",     "menu_button",     "gui/widgets",                   (0, 46, 200, 60)),
-    # The options screen's two extra widgets: the slider's handle (the 1.17 sheet
-    # stacks its plain and highlighted states in one 20x20 block at (0,106)) and
-    # the checkbox, which is its own 40x40 sheet holding the four states vanilla
-    # can show -- unchecked/checked across, plain/highlighted down.
-    ("slider_handle",   "slider_handle",   "gui/widgets",                   (0, 106, 20, 40)),
+    # The options screen's two extra widgets: the slider's handle and the
+    # checkbox. The handle is the 8-pixel knob vanilla cuts from the left edge of
+    # the button rows (the plain and highlighted rows stacked into one 8x40
+    # block), and the checkbox is its own 40x40 sheet holding the four states
+    # vanilla can show -- unchecked/checked across, plain/highlighted down.
+    ("slider_handle",   "slider_handle",   "gui/widgets",                   (0, 66, 8, 40)),
     ("checkbox",        "checkbox",        "gui/checkbox",                  (0, 0, 40, 40)),
+    # The title screen's two icon buttons draw these icons over ordinary button
+    # art. The language globe is the same glyph vanilla bakes into its language
+    # button at widgets.png (0,106); the accessibility figure is vanilla's
+    # gui/options/accessibility.png, the one icon widgets.png does not carry.
+    ("language_icon",   "language_icon",   "gui/options/language",          (0, 0, 15, 15)),
+    ("accessibility_icon", "accessibility_icon", "gui/options/accessibility", (0, 0, 15, 15)),
     ("menu_background", "menu_background", "gui/options_background",        None),
     # --- the title screen --------------------------------------------------
     ("edition",         "edition",         "gui/title/edition",             (0, 0, 98, 14)),
@@ -364,6 +374,40 @@ def write_backdrop():
           % (index, top, BACKDROP_W, BACKDROP_H))
 
 
+# The world list's icon and its hover glyph. Vanilla draws every world's own
+# `icon.png` at 32x32 and falls back to `misc/unknown_server.png` when a world
+# has none (WorldSelectionList.ICON_MISSING); this engine saves no world icons,
+# so the fallback is the icon every entry shows. The 128x128 art is box-averaged
+# down to its 32x32 here rather than squeezed on every frame. Beside it,
+# `gui/world_selection.png` holds the overlay vanilla lays over a hovered row's
+# icon -- the "join" tile in its two states (row 0 while the row is merely
+# hovered, row 32 while the pointer is on the icon itself).
+def write_world_assets():
+    w, h, px = load("misc/unknown_server")
+    out = []
+    for dy in range(32):
+        for dx in range(32):
+            y0, y1 = dy * h // 32, (dy + 1) * h // 32
+            x0, x1 = dx * w // 32, (dx + 1) * w // 32
+            r = g = b = 0
+            for y in range(y0, y1):
+                for x in range(x0, x1):
+                    pr, pg, pb, _pa = px[y * w + x]
+                    r += pr
+                    g += pg
+                    b += pb
+            n = (y1 - y0) * (x1 - x0)
+            out.append((r // n, g // n, b // n, 255))
+    write_header("world_icon", "world_icon", 32, 32, out)
+    print("wrote textures/world_icon.h  (world_icon 32x32, from misc/unknown_server)")
+
+    w, h, px = load("gui/world_selection")
+    px, w, h = crop(px, w, h, 0, 0, 32, 64)
+    out_w, out_h, transparent = write_header("world_icon_overlay", "world_icon_overlay", w, h, px)
+    print("wrote textures/world_icon_overlay.h  (world_icon_overlay %dx%d%s)"
+          % (out_w, out_h, ", transparent" if transparent else ""))
+
+
 def main():
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     os.chdir(root)
@@ -412,6 +456,7 @@ def main():
         print("wrote textures/%s.h  (%s %dx%d%s, stitched)"
               % (header, symbol, out_w, out_h, ", transparent" if transparent else ""))
 
+    write_world_assets()
     write_font()
     write_backdrop()
     return 0

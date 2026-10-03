@@ -133,13 +133,44 @@ namespace GameAudio
 	void chestClose();
 	void doorOpen();
 	void doorClose();
+	/** A creeper's fuse lighting. Vanilla's `random/fuse`. */
+	void fuse(int distance = 0);
+	/** A blast: vanilla's `random/explode`. Used by creepers and by TNT. */
+	void explosion(int distance = 0);
 
 	// --- music ---------------------------------------------------------------
-	bool startMusic(); // starts the next track, wrapping when the pack ends
+	/**
+	 * Vanilla keeps two separate music pools and never mixes them: the title
+	 * screen (and the other front-end screens) draw on `music/menu*`, and a
+	 * loaded world draws on the soundtrack. Picking the pool is therefore part
+	 * of asking for music, and a scene change with a track already live stops it,
+	 * the way vanilla's `MusicManager` does when the track's type no longer
+	 * matches the screen.
+	 */
+	enum MusicScene
+	{
+		MusicSceneMenu,
+		MusicSceneGame
+	};
+
+	bool startMusic(); // starts the next track, wrapping when the pool ends
 	void stopMusic();
+	/** True while a track is streaming, not merely started. */
 	bool musicPlaying();
 	unsigned int currentMusicTrack();
+	/** Tracks in the pool the current scene draws on (falling back to the other). */
 	unsigned int musicTrackCount();
+	/** Re-reads the pack's music lists, for a pack opened after initialize(). */
+	void rescanMusic();
+	/**
+	 * Vanilla's `MusicManager` shape: a screen that wants background music says
+	 * so (the title screen's `music.menu`, the world's own tracks), a track plays
+	 * to its end, and updateMusic() starts the next one after the random quiet
+	 * spell vanilla leaves between two tracks. The sound test drives the music by
+	 * hand and turns the desire off while it is open.
+	 */
+	void setMusicDesired(bool desired, MusicScene scene = MusicSceneGame);
+	void updateMusic(unsigned int elapsed_ms);
 
 	// --- ambience and weather ------------------------------------------------
 	void setAmbience(unsigned int id);

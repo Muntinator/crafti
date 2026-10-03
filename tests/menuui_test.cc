@@ -22,7 +22,9 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <vector>
+#include <algorithm>
 
 #include "font.h"
 
@@ -117,8 +119,12 @@ static void test_title_layout()
     CHECK(layout.buttons.x >= 0 && layout.buttons.x + layout.buttons.w <= SCREEN_WIDTH);
     CHECK(layout.buttons.w == ButtonWidth * uiScale());
 
+    // One label per button slot: the text buttons carry vanilla's words and the
+    // two icon slots carry none.
+    CHECK(titleLabelCount == TitleButtonCount);
+
     int bottom_right_x = 0, bottom_right_y = 0, bottom_right_w = 0, bottom_right_h = 0;
-    layout.buttonRect(titleLabelCount - 1, bottom_right_x, bottom_right_y,
+    layout.buttonRect(TitleRightHalfButton, bottom_right_x, bottom_right_y,
                       bottom_right_w, bottom_right_h);
     for(int i = 0; i < titleLabelCount; ++i)
     {
@@ -140,11 +146,26 @@ static void test_title_layout()
     CHECK(bottom_right_h == ButtonHeight * uiScale());
 
     int left_x = 0, left_y = 0, left_w = 0, left_h = 0;
-    layout.buttonRect(TitleFullButtons, left_x, left_y, left_w, left_h);
+    layout.buttonRect(TitleLeftHalfButton, left_x, left_y, left_w, left_h);
     CHECK(left_x == SCREEN_WIDTH / 2 - 100 * uiScale());
     CHECK(bottom_right_x == SCREEN_WIDTH / 2 + 2 * uiScale());
     CHECK(left_y == bottom_right_y);
     CHECK(left_w == bottom_right_w && left_h == bottom_right_h);
+
+    // Vanilla's two 20x20 icon buttons flank that row: the language button at
+    // width / 2 - 124 and the accessibility button at width / 2 + 104, each on
+    // the row's own y and clearing the half buttons by the 4-pixel gap.
+    int icon_x = 0, icon_y = 0, icon_w = 0, icon_h = 0;
+    layout.buttonRect(TitleLeftIconButton, icon_x, icon_y, icon_w, icon_h);
+    CHECK(icon_x == SCREEN_WIDTH / 2 + TitleIconLeftOffset * uiScale());
+    CHECK(icon_y == bottom_right_y);
+    CHECK(icon_w == TitleIconSize * uiScale() && icon_h == TitleIconSize * uiScale());
+    CHECK(icon_x + icon_w + 4 * uiScale() == left_x);
+
+    layout.buttonRect(TitleRightIconButton, icon_x, icon_y, icon_w, icon_h);
+    CHECK(icon_x == SCREEN_WIDTH / 2 + TitleIconRightOffset * uiScale());
+    CHECK(icon_y == bottom_right_y);
+    CHECK(icon_x == bottom_right_x + bottom_right_w + 4 * uiScale());
 
     // The wordmark is the official image, scaled with the screen, centred, and it
     // has to end above the buttons.
@@ -215,6 +236,226 @@ static void test_title_layout()
         CHECK(splash_layout.splash_x >= 0);
         CHECK(splash_layout.splash_x + drawn_w <= SCREEN_WIDTH);
     }
+}
+
+static void test_world_select_layout()
+{
+    // Vanilla's `WorldSelectionScreen`, at the scale the screen runs at: the
+    // heading at y 8, the search box at y 22, the list from 48 down to
+    // height - 64, rows on a 36-pixel pitch with 32 of content, and the two
+    // button rows at height - 52 and height - 28. These are the numbers that
+    // make this screen vanilla's rather than merely similar to it.
+    const int s = uiScale();
+    const WorldSelectLayout layout = worldSelectLayout();
+
+    CHECK(layout.scale == s);
+    CHECK(layout.heading_y == WorldHeadingY * s);
+    CHECK(layout.search_x == SCREEN_WIDTH / 2 + WorldSearchOffsetX * s);
+    CHECK(layout.search_y == WorldSearchY * s);
+    CHECK(layout.search_w == WorldSearchWidth * s);
+    CHECK(layout.search_h == WorldSearchHeight * s);
+    CHECK(layout.list_top == WorldListTop * s);
+    CHECK(layout.list_bottom == SCREEN_HEIGHT - WorldListBottomOffset * s);
+    CHECK(layout.row_pitch == WorldRowPitch * s);
+    CHECK(layout.row_h == WorldRowHeight * s);
+    CHECK(layout.row_w == WorldRowWidth * s);
+    CHECK(layout.row_left == SCREEN_WIDTH / 2 - WorldRowWidth * s / 2 + WorldRowLeftOffset * s);
+    CHECK(layout.box_x == layout.row_left - 2 * s);
+    CHECK(layout.box_w == layout.row_w + 4 * s);
+    CHECK(layout.icon_size == WorldIconSize * s);
+    CHECK(layout.text_x == layout.row_left + WorldRowTextOffset * s);
+    CHECK(layout.button_h == ButtonHeight * s);
+    CHECK(layout.row1_y == SCREEN_HEIGHT - WorldRow1YOffset * s);
+    CHECK(layout.row2_y == SCREEN_HEIGHT - WorldRow2YOffset * s);
+    CHECK(layout.row1_w == WorldRow1Width * s);
+    CHECK(layout.row1_left_x == SCREEN_WIDTH / 2 + WorldRow1LeftOffset * s);
+    CHECK(layout.row1_right_x == SCREEN_WIDTH / 2 + WorldRow1RightOffset * s);
+    CHECK(layout.row2_w == WorldRow2Width * s);
+    for(int i = 0; i < 4; ++i)
+        CHECK(layout.row2_x[i] == SCREEN_WIDTH / 2 + WorldRow2Offsets[i] * s);
+
+    // Everything sits inside the screen.
+    CHECK(layout.search_x >= 0 && layout.search_x + layout.search_w <= SCREEN_WIDTH);
+    CHECK(layout.row_left >= 0 && layout.row_left + layout.row_w <= SCREEN_WIDTH);
+    CHECK(layout.list_top < layout.list_bottom);
+    CHECK(layout.visibleRows() >= 1);
+
+    // Rows start four pixels under the list's top, step by the pitch, and a row
+    // scrolled out of the window is drawn off the top of it.
+    CHECK(layout.rowY(0, 0) == layout.list_top + 4 * s);
+    CHECK(layout.rowY(1, 0) - layout.rowY(0, 0) == WorldRowPitch * s);
+    CHECK(layout.rowY(2, 2) == layout.rowY(0, 0));
+
+    // The six buttons: the two 150-wide ones on the first row and the four
+    // 72-wide ones on the second, at vanilla's own x offsets. Every label has
+    // to fit its own box.
+    CHECK(worldSelectActionCount == WorldActionCount);
+    for(int action = 0; action < WorldActionCount; ++action)
+    {
+        int x, y, w, h;
+        layout.buttonRect(action, x, y, w, h);
+        CHECK(h == ButtonHeight * s);
+        if(action == WorldPlay || action == WorldCreate)
+        {
+            CHECK(w == WorldRow1Width * s);
+            CHECK(y == layout.row1_y);
+            CHECK(x == (action == WorldPlay ? layout.row1_left_x : layout.row1_right_x));
+        }
+        else
+        {
+            CHECK(w == WorldRow2Width * s);
+            CHECK(y == layout.row2_y);
+            CHECK(x == layout.row2_x[action - WorldEdit]);
+        }
+        CHECK(x >= 0 && x + w <= SCREEN_WIDTH);
+        CHECK(y + h <= SCREEN_HEIGHT);
+
+        const char *label = worldSelectActionLabels[action];
+        CHECK(label != nullptr && label[0] != '\0');
+        const int width = static_cast<int>(measureString(label));
+        if(width + 8 > w)
+            printf("    world button %d (\"%s\") is %d wide in a %d button\n",
+                   action, label, width, w);
+        CHECK(width + 8 <= w);
+    }
+
+    // The strings the screen draws fit their own boxes.
+    CHECK(worldSelectSearchHint[0] != '\0');
+    CHECK(static_cast<int>(measureString(worldSelectSearchHint)) <= layout.search_w - 8 * s);
+    CHECK(worldSelectDefaultName[0] != '\0');
+    CHECK(worldSelectNeverPlayed[0] != '\0');
+    CHECK(worldSelectNewTag[0] != '\0');
+    CHECK(worldSelectWorldWord[0] != '\0');
+
+    printf("    world select: list y%d..%d, %d rows pitch %d at x%d..%d\n",
+           layout.list_top, layout.list_bottom, layout.visibleRows(), layout.row_pitch,
+           layout.row_left, layout.row_left + layout.row_w);
+}
+
+static void test_world_form_layout()
+{
+    // Vanilla's `CreateWorldScreen`: the name field at y 60 under its grey
+    // label, the "Will be saved in:" line at 85, the option pair at 100 and
+    // the help lines at 122 and 134 -- all over vanilla's own bottom row.
+    const int s = uiScale();
+    const WorldFormLayout form = worldFormLayout();
+
+    CHECK(form.heading_y == FormHeadingY * s);
+    CHECK(form.label_y == FormLabelY * s);
+    CHECK(form.field_w == FormFieldWidth * s && form.field_h == FormFieldHeight * s);
+    CHECK(form.field_x == SCREEN_WIDTH / 2 - FormFieldWidth * s / 2);
+    CHECK(form.field_y == FormFieldY * s);
+    CHECK(form.result_y == FormResultY * s);
+    CHECK(form.option_y == FormOptionY * s);
+    CHECK(form.help_y == FormHelpY * s && form.help_pitch == FormHelpPitch * s);
+    CHECK(form.option_w == FormButtonWidth * s);
+    CHECK(form.button_h == ButtonHeight * s);
+    CHECK(form.left_x == SCREEN_WIDTH / 2 + FormLeftOffset * s);
+    CHECK(form.right_x == SCREEN_WIDTH / 2 + FormRightOffset * s);
+    CHECK(form.bottom_y == SCREEN_HEIGHT - FormBottomYOffset * s);
+
+    int x, y, w, h;
+    form.optionRect(0, x, y, w, h);
+    CHECK(x == form.left_x && y == form.option_y && w == form.option_w && h == form.button_h);
+    form.optionRect(1, x, y, w, h);
+    CHECK(x == form.right_x && y == form.option_y);
+    form.bottomRect(0, x, y, w, h);
+    CHECK(x == form.left_x && y == form.bottom_y && w == form.option_w);
+    form.bottomRect(1, x, y, w, h);
+    CHECK(x == form.right_x && y == form.bottom_y);
+    CHECK(form.left_x + form.option_w < form.right_x);
+    CHECK(form.bottom_y + form.button_h <= SCREEN_HEIGHT);
+
+    // Every label the dialog draws fits its own box or its own line.
+    for(int mode = 0; mode < gameModeCount; ++mode)
+    {
+        char label[40];
+        formatOptionLabel(label, sizeof(label), gameModeLabel, gameModeValues[mode]);
+        if(static_cast<int>(measureString(label)) + 8 > form.option_w)
+            printf("    game mode label \"%s\" is %d wide in a %d button\n",
+                   label, static_cast<int>(measureString(label)), form.option_w);
+        CHECK(static_cast<int>(measureString(label)) + 8 <= form.option_w);
+
+        for(int line = 0; line < 2; ++line)
+        {
+            const int width = static_cast<int>(measureString(gameModeHelp[mode][line]));
+            if(width > SCREEN_WIDTH - 16)
+                printf("    mode %d help %d (\"%s\") is %d wide\n",
+                       mode, line, gameModeHelp[mode][line], width);
+            CHECK(width <= SCREEN_WIDTH - 16);
+        }
+    }
+    for(int type = 0; type < worldTypeCount; ++type)
+    {
+        char label[40];
+        formatOptionLabel(label, sizeof(label), worldTypeLabel, worldTypeValues[type]);
+        CHECK(static_cast<int>(measureString(label)) + 8 <= form.option_w);
+    }
+
+    // The label, the field's placeholder and the result line fit the field's
+    // 200-pixel column.
+    CHECK(static_cast<int>(measureString(nameLabel)) <= FormFieldWidth * s);
+    CHECK(static_cast<int>(measureString(worldSelectDefaultName)) <= FormFieldWidth * s - 8 * s);
+    char result[64];
+    snprintf(result, sizeof(result), "%s %s", resultFolderLabel, worldSelectDefaultName);
+    CHECK(static_cast<int>(measureString(result)) <= FormFieldWidth * s);
+
+    // And the bottom row's own labels fit their buttons.
+    CHECK(static_cast<int>(measureString(createConfirmLabel)) + 8 <= FormButtonWidth * s);
+    CHECK(static_cast<int>(measureString(saveLabel)) + 8 <= FormButtonWidth * s);
+    CHECK(static_cast<int>(measureString(cancelLabel)) + 8 <= FormButtonWidth * s);
+
+    printf("    world form: field y%d, options y%d, bottom y%d\n",
+           form.field_y, form.option_y, form.bottom_y);
+}
+
+static void test_confirm_layout()
+{
+    // Vanilla's `ConfirmScreen`: the question at y 70, the message at y 90 on a
+    // 9-pixel pitch, and the buttons clamped between a sixth of the screen plus
+    // 96 and 24 off the bottom.
+    const int s = uiScale();
+
+    for(int lines = 1; lines <= 2; ++lines)
+    {
+        const ConfirmLayout c = confirmLayout(lines);
+        CHECK(c.title_y == ConfirmTitleY * s);
+        CHECK(c.message_y == ConfirmMessageY * s);
+        CHECK(c.line_pitch == ConfirmLinePitch * s);
+        CHECK(c.button_w == ConfirmButtonWidth * s);
+        CHECK(c.button_h == ButtonHeight * s);
+        CHECK(c.left_x == SCREEN_WIDTH / 2 + ConfirmLeftOffset * s);
+        CHECK(c.right_x == SCREEN_WIDTH / 2 + ConfirmRightOffset * s);
+
+        const int wanted = (ConfirmMessageY + lines * ConfirmLinePitch + 12) * s;
+        const int above = SCREEN_HEIGHT / 6 + ConfirmButtonYBase * s;
+        const int below = SCREEN_HEIGHT - ConfirmButtonYMax * s;
+        int expected = wanted < above ? above : wanted;
+        if(expected > below)
+            expected = below;
+        CHECK(c.button_y == expected);
+        CHECK(c.button_y + c.button_h <= SCREEN_HEIGHT);
+        CHECK(c.button_y >= c.message_y + lines * c.line_pitch);
+
+        int x, y, w, h;
+        c.buttonRect(0, x, y, w, h);
+        CHECK(x == c.left_x && y == c.button_y && w == c.button_w && h == c.button_h);
+        c.buttonRect(1, x, y, w, h);
+        CHECK(x == c.right_x && y == c.button_y);
+        CHECK(x + w <= SCREEN_WIDTH);
+    }
+
+    // The delete question is one line and the warning wraps into the lines the
+    // layout was made for.
+    const int question_w = static_cast<int>(measureString(deleteQuestion));
+    if(question_w + 8 > SCREEN_WIDTH)
+        printf("    delete question is %d wide on a %d screen\n", question_w, SCREEN_WIDTH);
+    CHECK(question_w + 8 <= SCREEN_WIDTH);
+    CHECK(deleteConfirmLabel[0] != '\0');
+    CHECK(strstr(deleteWarningFormat, "%s") != nullptr);
+
+    printf("    confirm: question y%d, buttons y%d..%d\n",
+           ConfirmTitleY * s, confirmLayout(1).button_y, confirmLayout(2).button_y);
 }
 
 static void test_pause_layout()
@@ -571,6 +812,168 @@ static void test_death_screen()
     CHECK(bottom_r > top_r);
 }
 
+// --------------------------------------------------- the full-screen washes
+
+namespace
+{
+    /**
+     * The pause wash, computed the direct way: every pixel's three channels
+     * unpacked to 8-bit, mixed toward the gradient's grey and packed back.
+     * This is the arithmetic MenuUI's mix tables have to reproduce exactly.
+     */
+    void referencePauseWash(TEXTURE &tex)
+    {
+        const int top_alpha = 0xC0, bottom_alpha = 0xD0;
+        const int wash = 0x10;
+
+        const int height = static_cast<int>(tex.height);
+        const int span = height > 1 ? height - 1 : 1;
+
+        for(int y = 0; y < height; ++y)
+        {
+            const int alpha = top_alpha + (bottom_alpha - top_alpha) * y / span;
+            const int keep = 255 - alpha;
+
+            COLOR *line = tex.bitmap + y * tex.width;
+            for(int x = 0; x < static_cast<int>(tex.width); ++x)
+            {
+                const COLOR c = line[x];
+                const int r = (((c >> 11) & 0x1F) * 255 / 31) * keep / 255 + wash * alpha / 255;
+                const int g = (((c >> 5) & 0x3F) * 255 / 63) * keep / 255 + wash * alpha / 255;
+                const int b = (c & 0x1F) * 255 / 31 * keep / 255 + wash * alpha / 255;
+                line[x] = static_cast<COLOR>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+            }
+        }
+    }
+
+    /** The death wash, the same direct arithmetic with its red gradient. */
+    void referenceDeathWash(TEXTURE &tex)
+    {
+        const int top_alpha = 0x60, bottom_alpha = 0xA0;
+        const int top_red = 0x50, bottom_red = 0x80;
+
+        const int height = static_cast<int>(tex.height);
+        const int span = height > 1 ? height - 1 : 1;
+
+        for(int y = 0; y < height; ++y)
+        {
+            const int alpha = top_alpha + (bottom_alpha - top_alpha) * y / span;
+            const int red8 = top_red + (bottom_red - top_red) * y / span;
+            const int keep = 255 - alpha;
+
+            COLOR *line = tex.bitmap + y * tex.width;
+            for(int x = 0; x < static_cast<int>(tex.width); ++x)
+            {
+                const COLOR c = line[x];
+                const int r = (((c >> 11) & 0x1F) * 255 / 31) * keep / 255 + red8 * alpha / 255;
+                const int g = (((c >> 5) & 0x3F) * 255 / 63) * keep / 255;
+                const int b = (c & 0x1F) * 255 / 31 * keep / 255;
+                line[x] = static_cast<COLOR>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+            }
+        }
+    }
+
+    /** The dirt dimming, the direct way: each channel scaled by `keep / 100`. */
+    void referenceShade(TEXTURE &tex, int keep_percent)
+    {
+        for(int row = 0; row < static_cast<int>(tex.height); ++row)
+        {
+            COLOR *line = tex.bitmap + row * tex.width;
+            for(int col = 0; col < static_cast<int>(tex.width); ++col)
+            {
+                const COLOR c = line[col];
+                const int r = ((c >> 11) & 0x1F) * keep_percent / 100;
+                const int g = ((c >> 5) & 0x3F) * keep_percent / 100;
+                const int b = (c & 0x1F) * keep_percent / 100;
+                line[col] = static_cast<COLOR>((r << 11) | (g << 5) | b);
+            }
+        }
+    }
+
+    double usecsSince(clock_t start, int frames)
+    {
+        return static_cast<double>(clock() - start) * 1000000.0
+            / (static_cast<double>(CLOCKS_PER_SEC) * frames);
+    }
+}
+
+static void test_overlays()
+{
+    // Vanilla blends its pause and death washes over the whole screen, and the
+    // menu screens dim the dirt the same way; nGL cannot blend, so these mix
+    // every pixel of the frame. The fast path is checked pixel for pixel against
+    // the direct arithmetic above, so the tables cannot drift from the blend
+    // vanilla asks for, and both are timed -- a regression shows up as changed
+    // pixels or a cost that jumped.
+    std::vector<COLOR> source(static_cast<size_t>(SCREEN_WIDTH) * SCREEN_HEIGHT);
+    for(size_t i = 0; i < source.size(); ++i)
+        source[i] = static_cast<COLOR>((i * 2654435761u) >> 16);
+
+    std::vector<COLOR> want = source, have = source;
+    TEXTURE ref, got;
+    ref.width = got.width = SCREEN_WIDTH;
+    ref.height = got.height = SCREEN_HEIGHT;
+    ref.has_transparency = got.has_transparency = false;
+    ref.bitmap = want.data();
+    got.bitmap = have.data();
+
+    std::copy(source.begin(), source.end(), want.begin());
+    std::copy(source.begin(), source.end(), have.begin());
+    referencePauseWash(ref);
+    MenuUI::drawPauseOverlay(got);
+    CHECK(have == want);
+
+    std::copy(source.begin(), source.end(), want.begin());
+    std::copy(source.begin(), source.end(), have.begin());
+    referenceDeathWash(ref);
+    MenuUI::drawDeathOverlay(got);
+    CHECK(have == want);
+
+    std::copy(source.begin(), source.end(), want.begin());
+    std::copy(source.begin(), source.end(), have.begin());
+    referenceShade(ref, 25);
+    MenuUI::shadeRect(got, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 25);
+    CHECK(have == want);
+
+    // The washes run for every frame a menu is open, so their cost is per
+    // frame: the direct arithmetic beside MenuUI's tables on the same frame.
+    const int frames = 32;
+
+    clock_t start = clock();
+    for(int i = 0; i < frames; ++i)
+        referencePauseWash(ref);
+    const double ref_pause = usecsSince(start, frames);
+    start = clock();
+    for(int i = 0; i < frames; ++i)
+        MenuUI::drawPauseOverlay(got);
+    const double mix_pause = usecsSince(start, frames);
+
+    start = clock();
+    for(int i = 0; i < frames; ++i)
+        referenceDeathWash(ref);
+    const double ref_death = usecsSince(start, frames);
+    start = clock();
+    for(int i = 0; i < frames; ++i)
+        MenuUI::drawDeathOverlay(got);
+    const double mix_death = usecsSince(start, frames);
+
+    start = clock();
+    for(int i = 0; i < frames; ++i)
+        referenceShade(ref, 25);
+    const double ref_shade = usecsSince(start, frames);
+    start = clock();
+    for(int i = 0; i < frames; ++i)
+        MenuUI::shadeRect(got, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 25);
+    const double mix_shade = usecsSince(start, frames);
+
+    printf("    cost: pause wash %.1f us direct / %.1f us MenuUI per %dx%d frame\n",
+           ref_pause, mix_pause, SCREEN_WIDTH, SCREEN_HEIGHT);
+    printf("    cost: death wash %.1f us direct / %.1f us MenuUI per %dx%d frame\n",
+           ref_death, mix_death, SCREEN_WIDTH, SCREEN_HEIGHT);
+    printf("    cost: dirt dim 25%% %.1f us direct / %.1f us MenuUI per %dx%d frame\n",
+           ref_shade, mix_shade, SCREEN_WIDTH, SCREEN_HEIGHT);
+}
+
 static void test_strings()
 {
     CHECK(versionText[0] != '\0');
@@ -605,10 +1008,14 @@ int main()
     test_font();
     test_button_boxes();
     test_title_layout();
+    test_world_select_layout();
+    test_world_form_layout();
+    test_confirm_layout();
     test_pause_layout();
     test_options_layout();
     test_options_scrolling();
     test_loading_screen();
+    test_overlays();
     test_scaled_font();
     test_death_screen();
     test_strings();

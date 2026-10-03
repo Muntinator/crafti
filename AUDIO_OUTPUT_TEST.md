@@ -9,8 +9,17 @@ and what remains unverified.
 
 ## Features
 
-- **Music** – 16 streaming tracks, started/stopped from the menu and gameplay:
-  the complete vanilla overworld soundtrack plus the menu music.
+- **Music** – 16 streaming tracks in vanilla's two pools: `music/menu1..4` for
+  the front end and the other twelve for the world. The title screen asks for
+  the menu pool (`setMusicDesired(true, MusicSceneMenu)`), a loaded world asks
+  for the soundtrack (`MusicSceneGame`), and a scene change with a track live
+  stops it and starts the new pool after the quiet spell -- which is what
+  vanilla's `MusicManager` does when the track's type no longer matches the
+  screen. The soundtrack keeps playing straight through the pause menu, a track
+  plays to its end, and `updateMusic(frame_time)` starts the next one after a
+  random 5-20 s quiet spell (vanilla's gap between two tracks, shortened so a
+  device session hears more than one of them). A screen that drives the music by
+  hand -- the sound test -- says `setMusicDesired(false)` and is left alone.
 - **SFX one-shots** – 1103 short sounds across player, combat and world events.
 - **Footsteps** – distance-accumulated while walking, chosen by the block's
   material family (grass, stone, wood, gravel, sand, snow, cloth, wet grass,
@@ -24,8 +33,8 @@ and what remains unverified.
 - **Weather** – looping weather beds (rain etc.) plus timed thunder cues.
 - **Vanilla gameplay one-shots** – the cues the game itself raises are named
   after the sound they are (hurt, attack, fall, eat, level-up, pickup, chest and
-  door open/close) and resolve to the official samples, so no gameplay code has
-  to know a pack id.
+  door open/close, a creeper's fuse and the blast itself) and resolve to the
+  official samples, so no gameplay code has to know a pack id.
 - **UI sounds** – menu clicks and other interface events.
 - **Volume controls** – master plus per-category (music, effects, ambience)
   settings rows, stored with the save and applied live.
@@ -56,6 +65,44 @@ pitch and speed are constant regardless of FPS.
 There is **no dynamic allocation anywhere in the audio path**. Voice arrays,
 cache slots, stream rings and the command ring are all static.
 
+The mixer's own arithmetic is where the last of the quality is won, since the
+1-bit output cannot be improved by mere bit depth:
+
+- voices read the pack through **linear interpolation** (`voice.frac` is a 16.16
+  source step), so a pack built at any rate is resampled without dropped samples,
+- the sum of up to eight voices goes through a **soft knee** rather than a hard
+  clamp. Everything below 3/4 of full scale passes untouched, which is what a
+  single sound is; above it the curve bends, monotone and asymptotic to full
+  scale, so a busy moment compresses instead of turning into square-wave
+  crackle, and no sum can ever wrap.
+
+### Loudness, which on a 1-bit output *is* the signal
+
+On a digital pin the pin's swing is the whole of the amplitude: there is no
+analogue gain left to add on this side, so everything the output can be louder
+by has to be taken before the modulator sees it. Three things do it.
+
+- **Vanilla's volume defaults.** The engine used to open at master 100 with
+  music 45 and everything else 70, which left most material about 3 dB under the
+  rail. The defaults are now vanilla's: everything at 100, music at 60.
+- **Limiter make-up gain.** The knee costs level, and a soft knee is not free, so
+  whatever it removed is given back: each block that entered the knee is scaled
+  until its loudest sample reaches the ceiling, which is as loud as a digital
+  output can be without clipping. A block that never reached the knee is not
+  lifted at all, any gain left from a louder block decays back to unity across
+  the next one, the lift is capped at **+3 dB** so blocks cannot pump by more
+  than that, and it is **ramped across the block** from the previous block's
+  value -- a step would be a click. A ramp that briefly overshoots on a block
+  whose target gain just dropped is clamped, never wrapped.
+- **Full-rail drive.** Nothing above this: the modulator's quantiser is one bit,
+  so its density saturates at 255/256 rather than clipping past it, and feeding
+  it a level beyond full scale would buy no level at all, only a hard square.
+
+Measured on the dock pin through the host simulation (`audio_gpio_test`, which
+reads the bit density the GPIO backend actually emits): the same loud voice
+carries a **swing of 0.69 at the old 70% default and 1.00 now -- +3.25 dB**,
+with 1.00 being the pin at its rail.
+
 ## Audio pack
 
 The mixer plays 8-bit unsigned mono PCM at 8 kHz from a single streamable pack
@@ -63,6 +110,24 @@ file (`crafti.audp`), built from the provided asset archives by
 `tools/audio/build_audio_pack.py`. 8-bit keeps the on-device decode trivial (a
 byte is a sample) and keeps the pack small enough to read from flash; the 1-bit
 output stage reconstructs it with the sigma-delta modulator.
+
+Because the output is one bit, how the pack is made matters more than its own
+resolution, and the builder is where the audible quality comes from:
+
+- the sources are 44.1 kHz and are resampled with **soxr** and its anti-aliasing
+  filter. The default swr resampler is soft, and a soft downsample folds content
+  above 4 kHz back into the audible band as a whistle: a 6 kHz test tone lands at
+  2 kHz at **-31.1 dBFS** through the old path and **-49.5 dBFS** through the new
+  one, an 18 dB improvement in what would have been added distortion,
+- a **15 Hz high-pass** drops any DC the source carries, which would otherwise
+  eat the 1-bit modulator's headroom,
+- the landing on 8 bits is **TPDF dithered** (triangular, noise-shaped), which
+  replaces truncation's correlated distortion with a flat hiss,
+- **music is kept whole** (up to `--music-seconds`, 240 s by default) instead of
+  being cut after 75 s, so the engine's loop point sits at the end of a track
+  rather than in the middle of a phrase, and both ends get a 20 ms cosine fade
+  so the wrap cannot click; every effect gets a 4 ms one, which is what stops a
+  sound the duration cap cut mid-waveform from ending in a click.
 
 ### Format
 
@@ -94,14 +159,18 @@ one `music/` directory):
         --sounds /tmp/audiosrc/extracted \
         --music  /tmp/audiosrc/music \
         --out    crafti.audp \
-        --header audio_sounds.h
+        --header audio_sounds.h \
+        --jobs   8
 
-Defaults: rate 8000 Hz, SFX truncated to 1.1 s, music truncated to 75 s. The
-script peak-normalises each sound, assigns ids in a deterministic order, writes
-the pack and regenerates `audio_sounds.h` (the C++ `GameAudio::Sound::Id` enum,
-numbered exactly like the pack index so there is no runtime lookup).
+Defaults: rate 8000 Hz, SFX capped at 1.1 s, music capped at 240 s. `--jobs`
+decodes the sources in parallel (one `ffmpeg` per file, over a thousand of them),
+which brings the build from about three minutes down to forty seconds. The script
+peak-normalises each sound, assigns ids in a deterministic order, writes the pack
+and regenerates `audio_sounds.h` (the C++ `GameAudio::Sound::Id` enum, numbered
+exactly like the pack index so there is no runtime lookup).
 
-Current output: **1119 sounds, 15 380 982 bytes**. Category breakdown:
+Current output: **1119 sounds, 28 338 820 bytes** (was 15 380 982 before music
+was kept whole). Category breakdown:
 
 | category | sounds |
 | --- | --- |
@@ -112,7 +181,7 @@ Current output: **1119 sounds, 15 380 982 bytes**. Category breakdown:
 | Footsteps | 33 |
 | Combat | 25 |
 | Ambience | 10 |
-| Music | 16 |
+| Music | 16 (22.2 MB, 2773 s) |
 | Weather | 6 |
 
 ### Deploying the pack
@@ -136,7 +205,7 @@ that is a dedicated output and is not shared with anything else:
 | --- | --- | --- |
 | 3 | Rx (UART receive) | an **input**; it cannot drive a signal |
 | 4 | **Tx (UART transmit)** | dedicated 3.3 V TTL **output**, always drives |
-| 6 | GPIO4 / USB Data+ | doubles as **USB D+** with a Navigator cradle |
+| 6 | GPIO4 / USB Data+ | doubles as **USB D+** with a Navigator cradle -- so it is not the UART backend's pin, but it *is* the **GPIO backend's USB D+ line** once nothing is plugged in |
 | 17 | GPIO0 | general-purpose line, not documented as free |
 | 18 | GPIO22 | general-purpose line; the **GPIO output backend** below (fallback for a broken pin 4) |
 
@@ -212,6 +281,20 @@ drive headphones or a speaker directly. The backend drives it as a 1-bit DAC:
   audio, which is audible on a bare pin but inaudible through any normal output
   stage.
 
+**Why the modulator is still first order.** The obvious next step would be a
+second-order noise shaper: at this oversampling ratio (eight output bits per 8
+kHz sample) it is worth about 8 dB of in-band headroom. It is not here because a
+second-order loop is only *conditionally* stable, and both the structures that
+look simplest misbehave: second-order error feedback puts two poles on the unit
+circle, and the naive cascade-of-integrators form overflows on loud material
+(measured, on the host, reconstructing to full scale for a half-scale input).
+Getting it right means designing the coefficients and proving the loop stable
+with dither, and shipping a wrong one would replace a slightly compressed tone
+with a burst of noise. What the pack and the mixer can fix has been fixed
+instead; the first-order loop here is the verified one -- its idle stream is a
+perfectly alternating pattern with no drift (host test), it paces itself off the
+UART's own baud clock, and it tears down to the boot register state.
+
 ### Opt-in semantics
 
 The backend claims a PL190 vector slot and takes over the UART, so it is
@@ -227,25 +310,46 @@ The backend claims a PL190 vector slot and takes over the UART, so it is
 
 Enable it from **Settings → Audio output**, or run the test mode below.
 
-## GPIO output backend (dock pin 18)
+## GPIO output backend (dock pin 18 or dock pin 6)
 
-### Why GPIO 22
+### Why a GPIO, and which one
 
 The UART backend needs dock pin 4, and **pin 4 is broken on this calculator**.
 The fallback is the other kind of output the dock has: a general-purpose line.
+Two are offered, and they are the same code against a different port register:
+
+| line | GPIO | dock pin | why |
+| --- | --- | --- | --- |
+| default | 22 | 18 | the one unclaimed output on the dock |
+| USB D+ | 4 | 6 | dock pin 6 is GPIO 4, USB Data+ |
+
 Of the CX's GPIOs, the ones with known jobs are 5 (active-low USB VBUS
 control), 6 (charging), 19 (WLAN cradle detect), 20 (USB micro-B attached), 23
 (LCD_OFF) and 24 (keypad present). **GPIO 22 is unclaimed**, so it is the safe
 choice, and dock pin 5 (GND) is a nearby return for the signal.
 
+GPIO 4 is the USB data line -- which is exactly why the UART backend rejected
+pin 6 -- and it is a genuine push-pull 3.3 V output whenever nothing is plugged
+into it (the bus holds it low with a 15 kOhm pull-down). **With a Navigator
+cradle or a host attached that pin is the calculator's USB data line and must be
+left alone: audio on USB D+ means no cradle, no host.** `setAudioLine()` refuses
+the six lines that have a job of their own and refuses any number above 31, so a
+mistyped choice cannot take a pin the OS needs, and it only accepts a line while
+the backend is off -- the port register it read-modify-writes is being bit-banged
+from the timer interrupt.
+
+Select it from **Settings → Audio output → USB D+ (pin 6)**.
+
 The verified register facts (Hackspire's GPIO Pins page, cross-checked against
 Firebird's `core/misc.c` emulation):
 
 - GPIO lines live at `0x90000000` in sections of `0x40`, line = `section * 8 +
-  bit`, so **GPIO 22 is section 2, bit 6**: direction at `0x90000090` (bit
-  clear = output), output latch at `0x90000094`, input at `0x90000098`. The
-  port registers are byte-wide and shared by the section's eight lines, so
-  driving one pin is always a **read-modify-write**.
+  bit`, so **GPIO 22 is section 2, bit 6** (base `0x90000080`) and **USB D+ is
+  section 0, bit 4** (base `0x90000000`): direction at base + `0x10` (bit clear
+  = output), output latch at base + `0x14`, input at base + `0x18`. The port
+  registers are byte-wide and shared by the section's eight lines, so driving
+  one pin is always a **read-modify-write**; the two lines live in different
+  sections, which is what the host test pins.
 - The CX's timers are SP804-style blocks picked by `(addr >> 16) % 5`. Block
   `0x900C0000` is **IRQ 18** and is the one nobody owns: the emulator refuses
   to run block `0x90010000` (the "fast timer", IRQ 17) and Ndless's
@@ -280,7 +384,7 @@ A GPIO line has no baud generator, so the CPU timer paces the bits instead:
 The sigma-delta stream assumes an RC low-pass filter and an amplifier at the
 far end. A **piezoelectric buzzer** wired straight to the pin has neither: it
 is a full-swing tone device. **Settings → Audio output → GPIO 22 (buzzer)**
-switches the same backend to the classic direct drive:
+(or `USB D+ (buzzer)`) switches the same backend to the classic direct drive:
 
 - The pin is driven with a **square wave whose polarity follows the mixer
   sample** (one-bit hard limiting), rail to rail at 3.3 V, so the buzzer is
@@ -325,14 +429,17 @@ the whole feature set and all three output paths:
 | **UART test: polled tone** | blocking 1 kHz square wave, **only** drives the pin – no interrupts, fully reversible |
 | **UART test: sweep** | enables the full backend and plays a generated sweep through the sigma-delta modulator for 2 s, then restores everything |
 | **GPIO 22: sweep** | the same sweep through the GPIO 22 backend (dock pin 18) |
+| **USB D+: sweep** | the same sweep out of USB Data+ (dock pin 6). Only with **no cradle or host attached** -- that pin is the calculator's USB data line whenever one is |
 | **GPIO 22: buzzer tone** | a 2 kHz square-wave beep through the buzzer drive, for a piezoelectric buzzer wired to the pin |
+| **USB D+: sweep** | the same sweep out of USB Data+ (dock pin 6). Pick this only with no cradle or host attached -- that pin is the calculator's USB data line whenever one is |
 
 The screen also shows the pack status, the active output backend and the UART
 status/error string. Up/Down moves, 5/Return runs a row, Esc goes back.
 
 To hear real gameplay audio, copy `crafti.audp` to the calculator, open
-**Settings → Audio output** and pick **UART pin 4** or **GPIO 22 (pin 18)**.
-Then walk, break blocks, and let a mob or the weather fire.
+**Settings → Audio output** and pick **UART pin 4**, **GPIO 22 (pin 18)** or --
+with nothing plugged into USB -- **USB D+ (pin 6)**. Then walk, break blocks,
+and let a mob or the weather fire.
 
 ## Verification
 
@@ -349,18 +456,34 @@ What has been verified here:
   the CX interrupt map itself: no writes to the FIQ routing register or
   classic-only offsets, OS vector slots untouched, end-of-interrupt writes
   from the service routine, and a clean failure when no slot is free),
-  `audio_gpio_test` 105 checks / 0 failures (the same register map questions for
+  `audio_gpio_test` 146 checks / 0 failures (the same register map questions for
   the GPIO backend: the pin becoming an output with its neighbours untouched,
   the timer programmed at one interrupt per bit, silence staying a perfectly
   alternating bit stream over a full second, mixer samples consumed at exactly
   the mixer rate over 205 bit periods, every port write a read-modify-write that
   only touches bit 6, teardown restoring GPIO/timer/VIC/slot in both mask
   directions, level-triggered catch-up after an interrupt stall, the same
-  clean no-slot failure -- and the buzzer drive: silence holding the pin dead
+  clean no-slot failure, and the buzzer drive: silence holding the pin dead
   low with zero switching, a 2 kHz tone flipping the pin exactly twice per
-  period, and the drive selection restored after a diagnostic), `audio_manager_test` 0 failures against the real pack
-  (volume, music, voice teardown, and every vanilla cue proving it reaches a
-  sample in its own mixer category), `audio_output_test` OK.
+  period, and the drive selection restored after a diagnostic. The USB D+ line
+  gets the same treatment: selecting it makes **bit 4 of the second GPIO
+  section** (`0x90000010`) an output and leaves the first section alone,
+  teardown restores both, a line is refused while the backend is enabled and
+  for each of the six job-holding GPIOs and anything above 31, and the same
+  voice drives a **measurably wider bit-density swing at full effects volume
+  than at the old 70% default -- the test prints `USB D+ wire swing: full
+  1.0000, old 70% default 0.6875 (+3.25 dB)`),
+  `audio_manager_test` 0 failures against the real pack
+  (volume, music, voice teardown, every vanilla cue proving it reaches a sample
+  in its own mixer category, the loudness end of the output stage: four
+  in-phase voices land at or above 32000 but never past the 32767 rail, and
+  quiet material stays under 12000 so the make-up gain does not lift the
+  noise floor, and the two music
+  pools: the title screen gets one of `music/menu1..4`, and handing the music to
+  a world stops the menu track and starts the 12-track soundtrack after the
+  quiet spell -- the test prints `menu pool: 4 tracks, playing 1114` and
+  `game pool: 12 tracks, playing 1105 after 8000 ms`),
+  `audio_output_test` OK.
 - **Simulation**: the identical UART backend code runs on the host against a
   simulated register file and wire (`GameAudioTx::Sim`), which can even decode
   the transmitted byte stream back into a WAV; the GPIO backend has the same
@@ -379,10 +502,19 @@ What has **not** been verified:
   unsupported territory.
 - **Electrical safety.** Never connect a speaker or headphones directly to a
   dock pin; use a buffered/isolated stage and high-impedance measurement. The
-  same applies to GPIO 22 on pin 18.
-- **The GPIO path is doubly unverified**: neither the waveform on pin 18 nor
-  the interrupt rate's audible result has been measured. The user's calculator
-  is the one with the broken pin 4, so the on-device check is theirs to run.
+  same applies to GPIO 22 on pin 18 and to USB D+ on pin 6.
+- **USB D+ is electrically correct but not on-device checked.** The register
+  work is done and host-tested (bit 4 of section 2 only, the first section
+  untouched, refused while enabled and for the job-holding GPIOs), but nobody
+  has put a scope on pin 6 and nobody has heard it. **With a cradle or a host
+  attached it must not be used at all**: dock pin 6 is the calculator's USB data
+  line, and bit-banging audio across it would corrupt the USB link rather than
+  make sound. Unplug USB first.
+- **Both GPIO lines are unverified electrically.** Neither the waveform on pin
+  18 or pin 6, nor the 16384 bit/s interrupt rate's audible result, has been
+  measured. The user's calculator is the one with the broken pin 4, so the
+  on-device check is theirs to run -- start with **USB D+: sweep**, **no USB
+  plugged in**, and a series resistor or buffer, not headphones.
 
 ## Licensing caveat
 

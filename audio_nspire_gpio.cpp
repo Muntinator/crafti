@@ -37,6 +37,8 @@ namespace
 	bool enabled_ = false;
 	/** Square-wave drive for a piezoelectric buzzer instead of the sigma-delta. */
 	bool buzzer_drive_ = false;
+	/** The GPIO line driven: 22 (dock pin 18) or 4 (dock pin 6, USB D+). */
+	uint32_t audio_line = AudioGpioNumber;
 	int vector_slot_ = -1;
 	/** Whether the OS already had the timer's IRQ unmasked before enable(). */
 	bool vic_mask_had_timer_ = false;
@@ -47,6 +49,16 @@ namespace
 
 	uint32_t readReg(uint32_t address);
 	void writeReg(uint32_t address, uint32_t value);
+
+	/**
+	 * The line's place in the GPIO map, resolved at run time because the backend
+	 * drives one of two lines and both live in different sections (GPIO 22 is
+	 * section 2, USB D+ is section 0). Everything below addresses the selected
+	 * line through these three.
+	 */
+	uint32_t sectionBase() { return sectionBaseFor(audio_line); }
+	uint32_t bitMask() { return bitMaskFor(audio_line); }
+	uint32_t bitIndex() { return bitFor(audio_line); }
 
 #ifdef _TINSPIRE
 	uint32_t readReg(uint32_t address)
@@ -186,8 +198,8 @@ namespace
 	/** Reads the registers the backend is about to disturb. */
 	void captureRegisters(RegisterSnapshot &s)
 	{
-		s.gpio_direction = readReg(GpioSectionBase + GpioDirection);
-		s.gpio_output = readReg(GpioSectionBase + GpioOutput);
+		s.gpio_direction = readReg(sectionBase() + GpioDirection);
+		s.gpio_output = readReg(sectionBase() + GpioOutput);
 		s.timer_load = readReg(TimerBase + TimerLoad);
 		s.timer_control = readReg(TimerBase + TimerControl);
 		s.valid = true;
@@ -196,15 +208,16 @@ namespace
 	/** One line of one GPIO port: read-modify-write, never a blind store. */
 	void setPin(uint32_t level)
 	{
-		const uint32_t output_address = GpioSectionBase + GpioOutput;
+		const uint32_t mask = bitMask();
+		const uint32_t output_address = sectionBase() + GpioOutput;
 		const uint32_t output = readReg(output_address);
-		writeReg(output_address, level != 0 ? (output | GpioBitMask) : (output & ~GpioBitMask));
+		writeReg(output_address, level != 0 ? (output | mask) : (output & ~mask));
 	}
 
 	void restoreRegisters(const RegisterSnapshot &s)
 	{
-		writeReg(GpioSectionBase + GpioDirection, s.gpio_direction);
-		writeReg(GpioSectionBase + GpioOutput, s.gpio_output);
+		writeReg(sectionBase() + GpioDirection, s.gpio_direction);
+		writeReg(sectionBase() + GpioOutput, s.gpio_output);
 		writeReg(TimerBase + TimerControl, 0);
 		writeReg(TimerBase + TimerIntClear, 1);
 		writeReg(TimerBase + TimerLoad, s.timer_load);
@@ -328,7 +341,7 @@ bool enable()
 
 	// The line becomes an output at a known level before the bit clock starts,
 	// so the first edge is a modulator bit and not a power-up glitch.
-	writeReg(GpioSectionBase + GpioDirection, snapshot_.gpio_direction & ~GpioBitMask);
+	writeReg(sectionBase() + GpioDirection, snapshot_.gpio_direction & ~bitMask());
 	setPin(0);
 
 	// Stand the timer down, clear any stale interrupt, then run it periodic at
@@ -379,6 +392,22 @@ bool active() { return enabled_; }
 int vectorSlot() { return vector_slot_; }
 void setBuzzerDrive(bool on) { buzzer_drive_ = on; }
 bool buzzerDrive() { return buzzer_drive_; }
+
+bool setAudioLine(unsigned int gpio)
+{
+	// Only the two dock lines this backend offers, and only while it is off:
+	// the section base and the bit mask are read in enable()'s snapshot, so
+	// changing the line under a running bit clock would drive one pin's port
+	// register while the other was being bit-banged.
+	if(enabled_ || !usableAsAudio(gpio))
+		return false;
+
+	audio_line = gpio;
+	error_ = nullptr;
+	return true;
+}
+
+unsigned int audioLine() { return audio_line; }
 uint32_t bitRateHz() { return BitRateHz; }
 uint32_t ringUnderruns() { return underrun_count; }
 
@@ -414,8 +443,9 @@ const char *lastError() { return error_; }
 const char *status()
 {
 	snprintf(status_buffer, sizeof(status_buffer),
-		"GPIO %u (dock pin 18): %s, %s drive, %u Hz bit rate, vector slot %d, %u underruns",
-		static_cast<unsigned int>(AudioGpioNumber), enabled_ ? "on" : "off",
+		"%s (dock pin %u): %s, %s drive, %u Hz bit rate, vector slot %d, %u underruns",
+		audio_line == UsbDataPlusGpioNumber ? "USB D+ (GPIO 4)" : "GPIO 22",
+		audio_line == UsbDataPlusGpioNumber ? 6u : 18u, enabled_ ? "on" : "off",
 		buzzer_drive_ ? "buzzer" : "sigma-delta", static_cast<unsigned int>(BitRateHz),
 		vector_slot_, static_cast<unsigned int>(underrun_count));
 	return status_buffer;
@@ -580,7 +610,7 @@ namespace
 	}
 
 	bool isVic(uint32_t address) { return address >= VicBase && address < VicBase + 0x400; }
-	bool isGpioSection(uint32_t address) { return (address & ~0x3Fu) == GpioSectionBase; }
+	bool isGpioSection(uint32_t address) { return (address & ~0x3Fu) == sectionBase(); }
 	bool isTimer0(uint32_t address) { return address >= TimerBase && address < TimerBase + 0x20; }
 
 	void observePin(uint32_t level)
@@ -639,9 +669,15 @@ void reset()
 			pair->value = value;
 	};
 
+	// Both sections a supported audio line can live in (section 0 for USB D+,
+	// section 2 for dock pin 18), so either line can be driven from the same
+	// seeded boot state.
 	seed(GpioSectionBase + GpioDirection, 0xFF);
 	seed(GpioSectionBase + GpioOutput, 0x00);
 	seed(GpioSectionBase + GpioInput, 0x1F);
+	seed(UsbDataPlusSectionBase + GpioDirection, 0xFF);
+	seed(UsbDataPlusSectionBase + GpioOutput, 0x00);
+	seed(UsbDataPlusSectionBase + GpioInput, 0x1F);
 	seed(VicBase + VicVectorAddr0 + 4 * 0, 0x10001000u); // fast timer
 	seed(VicBase + VicVectorCtrl0 + 4 * 0, VicVectorCtrlEnable | 17);
 	seed(VicBase + VicVectorAddr0 + 4 * 1, 0x10001100u); // keypad
@@ -746,22 +782,23 @@ void write(uint32_t address, uint32_t value)
 		return;
 	}
 
-	// The GPIO section that owns the audio line. The port registers are byte
-	// wide and shared by the section's eight lines, so a write that changes a
-	// bit other than the audio line's would disturb someone else's pin.
+	// The GPIO section that owns the selected audio line. The port registers are
+	// byte wide and shared by the section's eight lines, so a write that changes
+	// a bit other than the audio line's would disturb someone else's pin.
 	if(isGpioSection(address))
 	{
+		const uint32_t mask = bitMask();
 		const uint32_t offset = address & 0x3Fu;
 		if(offset == GpioDirection || offset == GpioOutput)
 		{
 			RegisterPair *pair = store(address);
 			const uint32_t current = pair != nullptr ? pair->value : 0;
-			if(((current ^ value) & ~GpioBitMask & 0xFFu) != 0)
+			if(((current ^ value) & ~mask & 0xFFu) != 0)
 				++bad_peripheral_writes;
 			if(pair != nullptr)
 				pair->value = value & 0xFFu;
 			if(offset == GpioOutput)
-				observePin((value >> GpioBit) & 1u);
+				observePin((value >> bitIndex()) & 1u);
 			return;
 		}
 		if(offset == GpioIntMaskSet || offset == GpioIntMaskClear

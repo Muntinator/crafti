@@ -19,6 +19,21 @@ AudioTestTask audio_test_task;
 
 namespace
 {
+	/** The button column's geometry, in calculator pixels (the CX screen is 320x240). */
+	constexpr int RowPitch = 13;   // 12 pixels of button, 1 of gap
+	constexpr int RowHeight = 12;
+	constexpr int FirstRowY = 26;
+	constexpr int StatusGap = 6;   // between the last row and the status block
+	constexpr int StatusLines = 4; // pack, output, backend status, hint
+	constexpr int FontLineAdvance = 8 + 2;
+
+	// Every extra row (the USB D+ sweep is the thirteenth) has to come out of the
+	// pitch, because the column and the status block below it share one screen.
+	// This is the check that the pitch is still tight enough.
+	static_assert(FirstRowY + (AudioTestTask::ITEM_MAX - 1) * RowPitch + RowHeight + StatusGap
+		+ StatusLines * FontLineAdvance <= 240,
+		"the audio test column and its status block must fit a 240-pixel screen");
+
 	const char *const item_labels[AudioTestTask::ITEM_MAX] = {
 		"UI click",
 		"Footstep (grass)",
@@ -31,6 +46,7 @@ namespace
 		"UART test: sweep",
 		"GPIO 22: sweep",
 		"GPIO 22: buzzer tone",
+		"USB D+: sweep",
 		"Back"
 	};
 
@@ -52,6 +68,9 @@ void AudioTestTask::openFrom(Task *from)
 
 void AudioTestTask::makeCurrent()
 {
+	// The sound test drives the music by hand (its own start/stop buttons), so
+	// the music manager leaves the tracks alone while this screen is open.
+	GameAudio::setMusicDesired(false);
 	selected_item = 0;
 	status_timeout = 0;
 	setStatus(GameAudio::packAvailable() ? "Audio pack loaded" : "No audio pack (tones only)");
@@ -70,11 +89,13 @@ void AudioTestTask::buttonRect(unsigned int item, int &x, int &y, int &w, int &h
 {
 	const int scale = MenuUI::uiScale();
 	w = SCREEN_WIDTH - 16;
-	// Twelve rows plus the status block have to fit a 240-pixel screen, so the
-	// buttons are packed at a 14-pixel pitch (13 pixels of button, 1 of gap).
-	h = 13 * scale;
+	// Thirteen rows plus the four-line status block have to fit a 240-pixel
+	// screen, so the buttons are packed at a 13-pixel pitch (12 pixels of
+	// button, 1 of gap). The constants are named so the static_assert below is
+	// about the same numbers the rows are actually drawn at.
+	h = RowHeight * scale;
 	x = (SCREEN_WIDTH - w) / 2;
-	y = 26 * scale + static_cast<int>(item) * 14 * scale;
+	y = FirstRowY * scale + static_cast<int>(item) * RowPitch * scale;
 }
 
 void AudioTestTask::setStatus(const char *text)
@@ -170,12 +191,17 @@ void AudioTestTask::runItem(unsigned int item)
 		break;
 
 	case ITEM_GPIO_SWEEP:
+	case ITEM_USB_SWEEP:
+	{
+		// The same sweep, out of whichever dock line the row asks for.
+		const bool usb = item == ITEM_USB_SWEEP;
 		if(!GameAudioGpio::supported())
 		{
 			setStatus("GPIO output requires an original CX");
 			break;
 		}
-		if(!GameAudioOutput::enableGpio())
+		if(!GameAudioOutput::enableGpio(usb ? GameAudioOutput::GpioLineUsbDataPlus
+			: GameAudioOutput::GpioLineDock18, false))
 		{
 			snprintf(buffer, sizeof(buffer), "Sweep failed: %s",
 				GameAudioGpio::lastError() != nullptr ? GameAudioGpio::lastError() : "unavailable");
@@ -187,8 +213,8 @@ void AudioTestTask::runItem(unsigned int item)
 			const int result = GameAudioGpio::testSweep(2000);
 			GameAudioOutput::disableGpio();
 			if(result == 0)
-				snprintf(buffer, sizeof(buffer), "Sweep done, %u Hz bits",
-					static_cast<unsigned int>(GameAudioGpio::bitRateHz()));
+				snprintf(buffer, sizeof(buffer), "Sweep done on %s, %u Hz bits",
+					usb ? "USB D+" : "GPIO 22", static_cast<unsigned int>(GameAudioGpio::bitRateHz()));
 			else if(result > 0)
 				snprintf(buffer, sizeof(buffer), "Sweep done, %d underruns", result);
 			else
@@ -197,6 +223,7 @@ void AudioTestTask::runItem(unsigned int item)
 			setStatus(buffer);
 		}
 		break;
+	}
 
 	case ITEM_GPIO_BUZZER:
 	{
@@ -227,7 +254,7 @@ void AudioTestTask::render()
 	MenuUI::drawMenuBackground(*screen);
 	MenuUI::drawHeading("Audio Test", *screen, MenuUI::headingY());
 
-	// Twelve rows do not fit a standard 24-pixel button column on a 240-pixel
+	// Thirteen rows do not fit a standard 24-pixel button column on a 240-pixel
 	// screen, so the buttons are packed a little tighter -- but they are still the
 	// vanilla widget sheet's button, in its plain and highlighted states.
 	for(unsigned int i = 0; i < ITEM_MAX; ++i)
@@ -243,7 +270,7 @@ void AudioTestTask::render()
 	// disagree about the row pitch and push each other off the screen.
 	int info_x = 0, y = 0, info_w = 0, info_h = 0;
 	buttonRect(ITEM_MAX - 1, info_x, y, info_w, info_h);
-	y += info_h + 6 * MenuUI::uiScale();
+	y += info_h + StatusGap * MenuUI::uiScale();
 	drawString("Audio pack:", MenuUI::TextDisabled, *screen, 8, y);
 	drawString(GameAudio::packStatus(), MenuUI::Text, *screen, 100, y);
 	y += fontHeight() + 2;

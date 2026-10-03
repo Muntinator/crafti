@@ -56,7 +56,12 @@ const char *audio_output_values[] = {
     "Off",
     "UART pin 4",
     "GPIO 22 (pin 18)",
-    "GPIO 22 (buzzer)"
+    "GPIO 22 (buzzer)",
+    // Dock pin 6: the same bit stream as GPIO 22, on USB Data+. Unplug any
+    // cradle or host first -- with one attached that pin is the calculator's
+    // USB data line, not a spare output.
+    "USB D+ (pin 6)",
+    "USB D+ (buzzer)"
 };
 
 // Must stay in the order of day_length_values.
@@ -80,13 +85,17 @@ SettingsTask::SettingsTask()
     settings.push_back({"Block indicator", fastmode_values, 2, 0, 0, 1});
     settings.push_back({"Coord indicator", fastmode_values, 2, 0, 0, 1});
     settings.push_back({"Audio master", nullptr, 101, 100, 0, 10});
-    settings.push_back({"Music volume", nullptr, 101, 45, 0, 10});
-    settings.push_back({"Effects volume", nullptr, 101, 70, 0, 10});
-    settings.push_back({"Ambience volume", nullptr, 101, 70, 0, 10});
+    // Vanilla's defaults: every slider at full except music, which sits at 60.
+    // The old 45/70/70 came out of the engine's own tuning and left the dock
+    // output about 3 dB under the rail for most material.
+    settings.push_back({"Music volume", nullptr, 101, 60, 0, 10});
+    settings.push_back({"Effects volume", nullptr, 101, 100, 0, 10});
+    settings.push_back({"Ambience volume", nullptr, 101, 100, 0, 10});
     // Appended last so older save files keep loading (see the comment above).
     // Both outputs take over an interrupt vector, so both stay opt-in. GPIO 22
-    // exists because this calculator's dock pin 4 (UART Tx) is broken.
-    settings.push_back({"Audio output", audio_output_values, 4, 0, 0, 1});
+    // exists because this calculator's dock pin 4 (UART Tx) is broken; USB D+ is
+    // the same bit stream on dock pin 6.
+    settings.push_back({"Audio output", audio_output_values, 6, 0, 0, 1});
     // How often the infinite world places a village. Only chunks generated
     // after a change pick up the new value; already loaded terrain keeps the
     // village it was generated with.
@@ -541,10 +550,16 @@ void SettingsTask::applyAudioSettings()
         GameAudioOutput::enableUartTx();
         break;
     case 2:
-        GameAudioOutput::enableGpio(false);
+        GameAudioOutput::enableGpio(GameAudioOutput::GpioLineDock18, false);
         break;
     case 3: // the square-wave drive for a piezoelectric buzzer on the pin
-        GameAudioOutput::enableGpio(true);
+        GameAudioOutput::enableGpio(GameAudioOutput::GpioLineDock18, true);
+        break;
+    case 4: // the same bit stream, out of USB Data+ on dock pin 6
+        GameAudioOutput::enableGpio(GameAudioOutput::GpioLineUsbDataPlus, false);
+        break;
+    case 5: // ...and into a buzzer wired straight to it
+        GameAudioOutput::enableGpio(GameAudioOutput::GpioLineUsbDataPlus, true);
         break;
     default:
         GameAudioOutput::disableUartTx();

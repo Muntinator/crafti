@@ -1,0 +1,132 @@
+# The "Select World" screen, captured with its interactions: the world list, the
+# keyboard, the search filter, the hover overlay, and the three dialogs vanilla
+# opens from it -- Edit, Delete and Create New World.
+#
+#   MUNT_SIM_SHOTS=/tmp/worldselect sh tools/pcsim/play.sh tools/pcsim/worldselect.txt
+#
+# The screen is vanilla's WorldSelectionScreen: a "Select World" heading at y 8,
+# the search box at y 22, the list from y 48 down to height - 64 with 36-pixel
+# rows (a 32x32 icon and the name over two grey detail lines), and vanilla's two
+# button rows at height - 52 and height - 28. The desktop harness runs at twice
+# the GUI scale, so every number below is the calculator's doubled.
+#
+#   mpos X Y     puts the pointer there, which is what hover tests against
+#   btn left tap click; "key s tap" is the down arrow; letters type into the
+#   search box, and "key backspace tap" deletes
+#
+# The run starts with no saved world, so the list offers the engine's world
+# kinds as rows and nothing is greyed out. Key taps are half a second apart: a
+# tap lasts one frame, and two of them landing in the same frame would read as
+# one held key.
+
+0.0    step 120
+0.0    caption The title screen: vanilla's panorama, wordmark and button block. "Singleplayer" opens the world list.
+0.6    shot 01-title
+
+# "Singleplayer" is vanilla's own door to Select World.
+1.0    mpos 320 236
+1.4    btn left tap
+2.2    caption Vanilla's Select World screen: the heading, the search box, and the world list -- three rows of a 32x32 icon, a name and two grey detail lines -- over the darkened dirt, with the selection box on the first row.
+2.4    shot 02-world-list
+
+# The keyboard walks the list the way vanilla's arrow keys do.
+2.8    key s tap
+3.4    caption The arrow keys (or 8/2 on the calculator) move the selection, which wears vanilla's grey frame over a black box.
+3.6    shot 03-list-keyboard
+
+# Clicking the search box gives it the keyboard; typing filters the list.
+4.0    mpos 320 64
+4.2    btn left tap
+4.6    key f tap
+5.2    key l tap
+5.8    key a tap
+6.4    key t tap
+7.0    caption Typing in the search box filters the list, as vanilla's does: "flat" leaves only the flat world.
+7.2    shot 04-search-filter
+
+# Backspace clears the filter again.
+7.8    key backspace tap
+8.4    key backspace tap
+9.0    key backspace tap
+9.6    key backspace tap
+10.2   caption Backspace edits the query; the full list comes back when the box empties.
+10.4   shot 05-search-cleared
+
+# Hovering a row's icon darkens it and lays vanilla's join tile over it.
+11.0   mpos 90 276
+11.6   caption The pointer on a row's icon: vanilla darkens the icon and overlays the "play" tile from gui/world_selection.png.
+11.8   shot 06-list-hover-icon
+
+# "Edit" opens vanilla's rename dialog over the selected world.
+12.4   mpos 84 444
+12.8   btn left tap
+13.6   caption The Edit dialog is vanilla's: the grey "World Name" label, the name field with its caret, and "Will be saved in:" under it.
+13.8   shot 07-edit-dialog
+
+# Renaming: six backspaces take the name back to "Graphing".
+14.4   key backspace tap
+15.0   key backspace tap
+15.6   key backspace tap
+16.2   key backspace tap
+16.8   key backspace tap
+17.4   key backspace tap
+18.0   caption The name field edits like vanilla's: characters type, backspace deletes, and the caret stays at the end.
+18.2   shot 08-edit-renamed
+
+# Cancel backs out without saving the rename.
+18.8   mpos 480 444
+19.2   btn left tap
+19.8   caption Cancel returns to the list with the name unchanged, as vanilla's does.
+20.0   shot 09-back-to-list
+
+# "Delete" asks vanilla's delete question.
+20.6   mpos 240 444
+21.0   btn left tap
+21.8   caption Vanilla's ConfirmScreen: "Are you sure you want to delete this world?" over "'Graphing World' will be lost forever! (A long time!)", with Delete and Cancel under it.
+22.0   shot 10-delete-confirm
+
+# Cancel keeps the world.
+22.6   mpos 480 292
+23.0   btn left tap
+23.6   caption Cancel keeps the world; the list is as it was.
+23.8   shot 11-list-after-delete-cancel
+
+# "Create New World" opens vanilla's create screen.
+24.4   mpos 478 396
+24.8   btn left tap
+25.6   caption Vanilla's Create New World screen: the name field over "Will be saved in:", the Game Mode and World Type buttons, the mode's two help lines, and the bottom row.
+25.8   shot 12-create-dialog
+
+# Game Mode cycles to Creative and its help lines change with it.
+26.4   mpos 160 220
+26.8   btn left tap
+27.4   caption Game Mode cycles to Creative, and the two help lines under the pair are vanilla's own: "Unlimited resources, free flying and / destroy blocks instantly".
+27.6   shot 13-create-creative
+
+# World Type cycles to the flat world kind.
+28.2   mpos 480 220
+28.6   btn left tap
+29.2   caption World Type cycles to Flat, the engine's world kinds standing in for vanilla's world types.
+29.4   shot 14-create-flat
+
+# The confirm button makes the world and drops the player into it.
+30.0   mpos 160 444
+30.4   btn left tap
+31.6   step 40
+32.0   caption "Create New World" makes the world and opens it, exactly as vanilla's button does: a fresh flat world in Creative.
+32.2   shot 15-world
+
+# ESC opens the pause menu, from which the world is saved and quit.
+32.8   key esc tap
+33.6   caption ESC opens the Game Menu.
+33.8   shot 16-pause
+
+# Save and Quit to Title (the wide button at the bottom of the menu), then back
+# into the list.
+34.4   mpos 318 348
+34.8   btn left tap
+35.6   mpos 320 236
+36.0   btn left tap
+36.8   caption Back on the list: the saved world now has a row of its own, the world made this session wears vanilla's green "New!" tag, and the fourth row has brought the scrollbar.
+37.0   shot 17-world-list-full
+37.4   end

@@ -14,6 +14,8 @@ menu** look and behave like vanilla.
 | 3 -- pause menu and options | **done**: the pause menu is vanilla's `PauseScreen` -- the world washed in the screen's dark gradient, the "Game Menu" heading at y 40, and vanilla's own grid (a full-width button, three rows of two, a full-width button) carrying vanilla's entries, with two stand-ins (`Help`, `Block List`) and this game's own three filling the rest; its child screens (`Options...`, `Help`, `Block List`) return to the pause menu. The options screen is rebuilt on vanilla's widget grid (dirt, sliders, checkboxes, list buttons, a GUI-scale entry) and the loading screen is ported (dirt, "Loading terrain...", a progress bar) |
 | 4 -- verification | **partly**: `tests/menuui_test.cc` pins the new geometry, the font metrics, the splash fit and the death layout at both screen sizes; frame-by-frame comparison against vanilla references is still open |
 | 5 -- the remaining screens | **done**: the death screen is rebuilt on vanilla's `DeathScreen` (red fade, doubled "You Died!", Respawn / Title Screen); the block list is rebuilt on vanilla's `CreativeScreen` (the tabbed creative inventory, scrollbar and all); and the screens vanilla has no counterpart for (help, sound test, graphing, the console) now use the same dirt, headings and widget buttons as the rest of the front-end |
+| 6 -- the vanilla title button set | **done**: the title buttons carry vanilla's own words (`Singleplayer`, `Multiplayer`, `Minecraft Realms`, `Options...`, `Quit Game`) with vanilla's language and accessibility icon buttons flanking the bottom row at `width/2 - 124` and `width/2 + 104`; `Options...` opens the options screen from the title, `Singleplayer` opens the Select World screen (`worldselecttask.cpp`), and the buttons with no engine screen are drawn in vanilla's greyed state. The icons are the vanilla glyphs (the language globe is the one widgets.png bakes into its own language button, `gui/options/accessibility.png` fills the one asset the sheets lacked), and the slider-handle crop is corrected to the 8-pixel knob vanilla cuts from the button rows |
+| 7 -- the Select World screen | **done**: vanilla's `WorldSelectionScreen` -- the "Select World" heading at y 8, the search box at y 22, the world list (36-pixel rows: a 32x32 icon, the name over `levelId (date)` and the version/mode line, the grey-over-black selection box, the scrollbar, the four-pixel edge fades and the darkened dirt) down to `height - 64`, and vanilla's two button rows (`Play Selected World` / `Create New World`, then `Edit` / `Delete` / `Re-Create` / `Cancel`) at `height - 52` and `height - 28`; the search box filters as it is typed, a double-click or the icon's join tile plays, and the three dialogs vanilla opens are ported too (`CreateWorldScreen`'s name field, Game Mode / World Type pair and help lines; `EditWorldScreen`'s rename; `ConfirmScreen`'s delete question) |
 
 What was *not* known while the investigation was written, now settled from the
 texture and from 1.17's own `TitleScreen`: `gui/title/minecraft.png` is a 256x256
@@ -68,7 +70,7 @@ approximation" rather than "exact copy":
 | backdrop | the pre-rendered panorama (`textures/title_backdrop.h`): one cropped cube face, brightened and box-averaged to 320×240, blitted stretched — one texel copy per frame, not six projected faces |
 | wordmark | the official `gui/title/minecraft.png` wordmark (`textures/title_logo.h`), the two 155x44 halves vanilla blits at `(0,0)` and `(0,45)` joined into one 274x44 image, centred (`width/2 - 137`) with its top at y 30; `edition.png` ("Java Edition") is centred with its top at y 67, over the wordmark's lower band |
 | splash | vanilla's own lines (`texts/splashes.txt`, a hundred kept verbatim), rendered once into a small texture and blitted **tilted ≈ −20°** and pulsing, **centred** at `(width/2 + 90, 70)` (slid left only when a long line would overflow) |
-| buttons | vanilla's block — three full-width (200) from `height / 4 + 48` at pitch 24, then two 98-wide on a shared row `72 + 12` below, at `width/2 - 100` and `width/2 + 2`; `Continue` disabled with no save, and disabled buttons cannot take the highlight |
+| buttons | vanilla's block in vanilla's words — `Singleplayer`, `Multiplayer`, `Minecraft Realms` (full-width 200, from `height / 4 + 48`, pitch 24), then `Options...` and `Quit Game` (98-wide, on the shared row `72 + 12` below, at `width/2 - 100` and `width/2 + 2`) flanked by vanilla's 20×20 icon buttons at `width/2 - 124` (language) and `width/2 + 104` (accessibility); `Options...` opens the options screen, `Singleplayer` opens the Select World screen (`worldselecttask.cpp`), and Multiplayer/Realms/the two icons are drawn in vanilla's greyed state (this engine has no screens for them) and cannot take the highlight; the screen opens with nothing focused, as vanilla's does |
 | small print | bottom-left `Muntcraft 1.11.0` and bottom-right `Copyright Munt. Do not distribute!`, both at vanilla's `height - 10` (from x 2 and ending 2 inside the right edge); the old input-hint and audio-status lines are gone (the audio pack reports itself on the sound test screen) |
 | input | `Up`/`Down`/`8`/`2` move focus, `5`/`Enter` activate, `Esc` resumes the last world or quits; on the desktop a mouse hovers to set focus and a click activates |
 
@@ -178,7 +180,43 @@ doubled pair the desktop reads. `drawString`, `drawStringCenter`,
 `title/background/panorama_0..5`) and `textures/font/ascii.png` — all official
 1.17.1. `tools/textures/gen_gui_textures.py` cuts them into the RGB565 headers
 under `textures/` (the buttons, the widgets, the wordmark, the panorama and the
-font), so the screens blit the real art rather than painting it by hand.
+font), so the screens blit the real art rather than painting it by hand. The
+world list's row icon is `textures/misc/unknown_server.png` box-averaged to 32x32
+(`textures/world_icon.h`) and its hover tile is the crop of
+`gui/world_selection.png` (`textures/world_icon_overlay.h`).
+
+### 2.10 Select World — `worldselecttask.cpp`
+
+Vanilla's `WorldSelectionScreen`, on the geometry `MenuUI::worldSelectLayout()`
+pins and `tests/menuui_test.cc` measures at both screen sizes: the "Select World"
+heading at y 8, the 200-wide search box at y 22, the list from y 48 down to
+`height - 64`, and vanilla's two button rows at `height - 52` and `height - 28`
+(the 150-wide `Play Selected World` / `Create New World`, then the four 72-wide
+`Edit` / `Delete` / `Re-Create` / `Cancel`). A row is vanilla's 36-pixel pitch:
+a 32x32 icon at the row's left, the name at +1/+35 in white over `levelId (date)`
+at +12 and the version/mode line at +21 in vanilla's `0x808080`, with the
+selection box two pixels around the row (grey, black one pixel inside it), the
+scrollbar at the row's right edge, the four-pixel fades at the list's edges and
+the rows over vanilla's `(32,32,32)` dirt.
+
+The screen behaves the way vanilla's does: the search box filters by name as it
+is typed, the arrow keys walk the rows, Enter plays (a second click inside 250 ms
+-- or a click on the row's icon, which shows `world_selection.png`'s join tile --
+plays too), Tab walks the six buttons and Enter takes the one it lands on. The
+three dialogs behind it are vanilla's own: `CreateWorldScreen` (the name field at
+y 60 over its grey label, "Will be saved in:" at y 85, the Game Mode / World
+Type pair at y 100 with the mode's two help lines at y 122/134, and the bottom
+row at `height - 28`), `EditWorldScreen`'s rename, and `ConfirmScreen`'s delete
+question (the title at y 70, the warning at y 90 on a 9-pixel pitch, and the
+buttons clamped between `height/6 + 96` and `height - 24`).
+
+What the list holds is where this engine differs, and only here: it keeps one
+save file rather than a saves folder, so the rows are the saved world (when
+there is one), the engine's world kinds (Normal / Flat / Graphing), and any
+world made this session -- which wears vanilla's green "New!" tag and sorts to
+the top. Deleting a row takes it out of the list; the file on disk is left
+alone. `tools/pcsim/worldselect.txt` captures the whole screen: the list, the
+keyboard, the search filter, the hover tile, and all three dialogs.
 
 ---
 
@@ -198,7 +236,10 @@ font), so the screens blit the real art rather than painting it by hand.
 | 10 | **Pause menu** | a dimmed world (a flat 50 % shade) + a centred column of 6 — `Back to Game`, `Options...`, `Help`, `Save World`, `Sound Test...`, `Save and Quit` — with **no heading** | `Screen.renderBackground`'s dark gradient, **"Game Menu"** at y 40, and vanilla's grid: a 204-wide button, three rows of two 98-wide, a 204-wide button, from `height/4 + 8` at `width/2 - 102` / `width/2 + 4` | **fixed** (Phase 3): the gradient wash, the heading, vanilla's grid, and vanilla's own order with `Help`/`Block List` for Advancements/Statistics and this game's `Save World`/`Sound Test...`/`Player Inventory` in the rest |
 | 11 | **Options screen** | a bespoke text list with a `selection.h` cursor and a dimmed backdrop | vanilla dirt + a two-column grid of slider/checkbox/button rows, an "Options..." heading and a "Done" button | **fixed** (Phase 3): vanilla dirt and the two-column widget grid |
 | 12 | **GUI scale** | no such option | user option Auto/1/2/3/4 | **fixed** (Phase 3): an Auto/1x/2x/3x/4x entry, applied to the front-end only — the HUD and inventory keep their own scaling |
-| 13 | **Loading screen** | the game's own `loadingtext.png`, blitted straight to the framebuffer | dirt + `Loading terrain...` + a progress bar | **fixed** (Phase 3): dirt + `Loading terrain...` + a progress bar (the bar is drawn as colour, because the official `bars.png` sheet is not in this tree) |
+| 13 | **Title button set** | game-specific labels (`Continue`, `New Flat World`, `New Terrain World`, `Graphing Mode`, `Quit Game`), no icon buttons and no `Options...` on the title | `Singleplayer`, `Multiplayer`, `Minecraft Realms`, `Options...`, `Quit Game`, and the 20×20 language and accessibility icon buttons flanking the row at `width/2 - 124` and `width/2 + 104` | **fixed** (Phase 6): vanilla's words and all seven buttons in their vanilla places; `Singleplayer` opens the Select World screen (row 16), `Options...` opens the options screen, and the buttons with no engine screen (Multiplayer, Realms, language, accessibility) show vanilla's greyed state |
+| 14 | **Loading screen** | the game's own `loadingtext.png`, blitted straight to the framebuffer | dirt + `Loading terrain...` + a progress bar | **fixed** (Phase 3): dirt + `Loading terrain...` + a progress bar (the bar is drawn as colour, because the official `bars.png` sheet is not in this tree) |
+| 15 | **Background music** | music stopped on the title and pause screens and restarted with the world | vanilla's `MusicManager`: the menu music plays on the title, the world's soundtrack plays in the world, pausing does **not** stop it, and the next track starts after a random quiet spell | **fixed** (this pass): `GameAudio::setMusicDesired()/updateMusic()` carry the policy (`audio_manager.cpp`, documented in `AUDIO_OUTPUT_TEST.md`); the title and the world ask for music, the pause menu leaves the track alone, and the gap between tracks is vanilla's random quiet spell, shortened to 5-20 s |
+| 16 | **Select World screen** | a stand-in button column (`Play Saved World`, `New Flat World`, `New Terrain World`, `Graphing Mode`, `Cancel`) | `WorldSelectionScreen`: heading at y 8, search box at y 22, a scrolling world list of 36-pixel rows (32x32 icon, name, `levelId (date)` and version/mode lines, selection box, scrollbar) from y 48 to `height - 64`, and two button rows at `height - 52` / `height - 28`; `CreateWorldScreen`, `EditWorldScreen` and `ConfirmScreen` behind it | **fixed** (this pass): the list screen and all three dialogs are ported on vanilla's own geometry and wording (`worldselecttask.cpp`, `MenuUI::worldSelectLayout()`/`worldFormLayout()`/`confirmLayout()`); the list is the saved world plus the engine's world kinds and worlds made this session, since the engine keeps one save file rather than a saves folder |
 
 Already aligned (no work): the button **texture** and its three rows, the HUD
 sheet, and all four container windows.

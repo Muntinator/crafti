@@ -4,8 +4,9 @@ Muntcraft's title screen is meant to be recognised as Minecraft's, and it is now
 laid out with vanilla's own numbers: the panorama behind everything, the official
 wordmark image across the top with the "Java Edition" strip under it, a yellow
 splash line tilted up to the right and pulsing beside the wordmark, vanilla's
-button block (three 200-pixel buttons, then two 98-pixel ones sharing a row),
-and the version and credits along the bottom. The pause menu is vanilla's
+button block (`Singleplayer`, `Multiplayer` and `Minecraft Realms` over
+`Options...` and `Quit Game`, with the language and accessibility icon buttons
+flanking that row), and the version and credits along the bottom. The pause menu is vanilla's
 `PauseScreen`: the world it paused washed in the screen's dark gradient, headed
 "Game Menu" at y 40, with vanilla's own button grid -- a full-width button, three
 rows of two, then a full-width button -- carrying vanilla's entries in vanilla's
@@ -92,7 +93,10 @@ by two, like everything else on that screen.
 | the button's three 200x20 states | `textures/menu_button.h` |
 | the pre-rendered panorama | `textures/title_backdrop.h` |
 | the font | `textures/font_bmp*.h`, `textures/font_dat*.h`, read by `font.cpp` |
-| the title screen: choosing a world, or quitting | `starttask.cpp`, drawing through MenuUI |
+| the title screen: vanilla's buttons, and the screens behind them | `starttask.cpp`, drawing through MenuUI |
+| the Select World screen "Singleplayer" opens: the list, the search box and the create/edit/delete dialogs | `worldselecttask.cpp`, drawing through MenuUI |
+| the world rows' 32x32 icon and its hover tile | `textures/world_icon.h`, `textures/world_icon_overlay.h` (from `misc/unknown_server.png` and `gui/world_selection.png`) |
+| the title's two icon buttons | `textures/language_icon.h`, `textures/accessibility_icon.h` (the vanilla glyphs) |
 | the pause menu: the gradient wash, the "Game Menu" heading and vanilla's button grid | `menutask.cpp`, drawing through MenuUI |
 | the options screen: the two-column widget grid | `settingstask.cpp`, drawing through MenuUI |
 | the loading screen: the dirt, the label and the bar | `MenuUI::drawLoadingScreen()`, called from `chunk.cpp` |
@@ -112,19 +116,45 @@ vanilla's own height and that the column never reaches the small print at the
 bottom. That test is built twice -- once for the calculator (320x240, an 8-pixel
 font) and once for the desktop window (640x480, a 16-pixel one).
 
+## The Select World screen
+
+"Singleplayer" opens vanilla's `WorldSelectionScreen`: the "Select World"
+heading, the search box, the world list (32x32 icon, name, `levelId (date)` and
+version/mode lines over the darkened dirt, with the selection box, the scrollbar
+and the four-pixel edge fades), and vanilla's own buttons under it -- `Play
+Selected World` / `Create New World` over `Edit` / `Delete` / `Re-Create` /
+`Cancel`. The three dialogs behind those buttons are vanilla's too: the create
+screen (name field, Game Mode / World Type pair, the mode's help lines), the
+rename, and the delete question. Typing filters the list, the arrow keys walk
+it, Enter plays, and on a desktop a double-click or the row's icon -- wearing
+`gui/world_selection.png`'s join tile -- plays the way vanilla's does.
+
+The engine keeps one save file rather than a saves folder, so the list is the
+saved world (when there is one) plus the world kinds the engine can make and any
+world made this session -- which sorts to the top with vanilla's green "New!"
+tag. Deleting a row empties it from the list; it does not touch the file.
+
+`tools/pcsim/worldselect.txt` is the frame script for this screen: the list, the
+keyboard, the search filter, the hover tile, and all three dialogs.
+
 ## Input
 
-The calculator drives the title screen with Up/Down and `5`, as before: the
-selection walks the button block, skipping any button that cannot be used. A
-desktop also has a mouse, so it gets the focus-by-hover vanilla has: the pointer
-picks the button and lights it, a click takes it, and a click cue plays as it does
-on the calculator. A disabled button -- "Continue" before a world has ever been
-saved -- is drawn in the widget sheet's greyed row and cannot take the highlight,
-which is exactly vanilla's rule.
+The screen opens with **nothing focused**, as vanilla's title screen does: no
+button wears the highlight until the pointer hovers one or the keyboard steps to
+one. The calculator drives it with Up/Down and `5`, as before: the selection
+walks the button block, skipping any button that cannot be used. A desktop also
+has a mouse, so it gets the focus-by-hover vanilla has: the pointer picks the
+button under it and lights it (moving onto a greyed button or off the buttons
+clears the highlight), a click takes it, and a click cue plays as it does on the
+calculator. A button with no screen behind it -- "Multiplayer", "Minecraft
+Realms" and the two icon buttons -- is drawn in the widget sheet's greyed row and
+cannot take the highlight, which is exactly vanilla's rule.
 
 `tools/pcsim/titlemenu.txt` is the frame script for this screen: it captures the
-menu, a hover, the disabled button, the keyboard moving the selection, a click
-that opens the graph screen and a click that starts a world.
+menu with nothing lit, a hover lighting a button, the greyed button refusing the
+highlight, the keyboard moving the selection, "Options..." opening the options
+screen, "Singleplayer" opening the Select World screen, and its `Cancel` coming
+back to the title screen with a fresh splash.
 
 ## Optimisations in this pass
 
@@ -142,6 +172,23 @@ that opens the graph screen and a click that starts a world.
   result vanilla's blend would produce, with no extra pass. `MenuUI::shadeRect()`
   keeps the 50% fast path (`(c & 0xF7DE) >> 1`) for the screens that want a flat
   half shade, like the command console's dimmed world.
+- **The washes are table-driven, 4-6x faster and bit-identical.** Each washed
+  pixel used to cost six integer divisions (565 unpack, scale by the row's keep
+  and add, repack). The three washes -- `drawPauseOverlay()`,
+  `drawDeathOverlay()` and `shadeRect()` beyond its 50% fast path -- now mix
+  through 256-entry lookup tables (`MixTables` in `menuui.cpp`), rebuilt only
+  when the wash itself changes. The output is exactly what the old arithmetic
+  produced -- `tests/menuui_test.cc` checks every pixel against the reference
+  formula at both screen sizes -- and the measured cost per frame is:
+
+  | wash | 320x240 before | after | 640x480 before | after |
+  | --- | --- | --- | --- | --- |
+  | pause gradient | 612 us | 105 us | 2362 us | 403 us |
+  | death red wash | 580 us | 122 us | 2293 us | 403 us |
+  | dirt dim 25% | 228 us | 106 us | 885 us | 376 us |
+
+  ("before" is the reference arithmetic the equality check compares against;
+  the numbers are the `menuui_test` cost prints.)
 - **Text can no longer draw outside the screen.** The font used to write wherever
   an unsigned coordinate pointed, so a centred line wider than the screen corrupted
   whatever followed the framebuffer. `drawString()` clips, and a character whose
@@ -170,6 +217,13 @@ World, Sound Test and Player Inventory. The layout, the box every button is draw
 in and the box a click is tested against all come from `MenuUI::pauseMenuLayout()`,
 so the drawing and the hit test cannot disagree; the host test pins the whole grid
 at both screen sizes.
+
+The music is left alone: vanilla's pause screen does not stop the soundtrack,
+so `menutask.cpp` no longer calls `stopMusic()` -- pausing and unpausing a world
+does not skip the track. The title screen and the world both ask
+`GameAudio::setMusicDesired(true)`, and the sound test, which drives the music by
+hand, asks for it to be left alone (the policy is vanilla's `MusicManager`,
+documented in `AUDIO_OUTPUT_TEST.md`).
 
 The screens opened from the pause menu are its **children**, as they are in
 vanilla: `Options...`, `Help` and `Block List` each take a `return_task`

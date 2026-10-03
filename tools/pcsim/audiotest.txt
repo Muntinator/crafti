@@ -1,0 +1,45 @@
+# The audio test screen, captured from a world: the whole button column at once,
+# so the new "USB D+: sweep" row and the row pitch it forced are visible.
+#
+#   MUNT_SIM_SHOTS=/tmp/audio sh tools/pcsim/play.sh tools/pcsim/audiotest.txt
+#
+# The screen is reached the way a player reaches it: in a world, TAB (Menu on the
+# calculator) opens vanilla's pause grid, and "Sound Test..." is one of its
+# buttons. The desktop harness runs at twice the GUI scale, so every number here
+# is the calculator's doubled -- the thirteen rows have to fit a 240-pixel screen
+# with the four-line status block under them, which is why the buttons are packed
+# at a 13-pixel pitch.
+
+0.0    step 120
+0.0    caption The title screen, for reference.
+1.0    shot 01-title
+
+# A world to pause.
+1.4    key space tap
+6.0    command gamemode creative
+6.2    command time set noon
+6.8    step 33
+7.2    caption The world, for reference.
+7.4    shot 02-world
+
+# --- the pause menu, then the sound test -----------------------------------
+8.0    key tab tap
+8.6    caption The pause menu. "Sound Test..." sits in the grid where vanilla keeps its own per-sound screens.
+8.8    shot 03-pause
+
+9.4    key s tap
+9.8    key s tap
+10.2   key s tap
+10.6   key s tap
+11.0   caption The keyboard steps onto "Sound Test...".
+11.2   shot 04-pause-soundtest
+
+11.8   key space tap
+12.6   caption The audio test screen: the cues the pack carries, then the three output paths. The last of the GPIO rows is USB D+ (dock pin 6) -- only valid with no cradle or host attached, because that pin is the calculator's USB data line whenever one is. Thirteen rows and the status block fit the 240-pixel screen at a 13-pixel pitch.
+12.8   shot 05-audiotest
+
+# Walk down to the USB D+ row so the highlight lands on it and its label is lit.
+13.4   key s tap
+13.8   key s tap
+14.2   caption The USB D+ row is a real entry: it brings the same bit stream up on dock pin 6.
+14.4   shot 06-audiotest-usb

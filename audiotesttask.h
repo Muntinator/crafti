@@ -28,6 +28,10 @@ public:
 		ITEM_UART_SWEEP,
 		ITEM_GPIO_SWEEP,
 		ITEM_GPIO_BUZZER,
+		// The same sweep out of USB Data+ (dock pin 6). Only valid with no
+		// cradle or host attached: that pin is the calculator's USB data line
+		// whenever one is.
+		ITEM_USB_SWEEP,
 		ITEM_BACK,
 		ITEM_MAX
 	};

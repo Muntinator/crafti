@@ -1,53 +1,78 @@
-# The main menu, captured with its button interactions: hover, the keyboard, a
-# disabled button and a click that opens a screen.
+# The main menu -- vanilla's TitleScreen -- captured with its interactions: the
+# hover, the greyed buttons, the keyboard, "Options...", and "Singleplayer"
+# opening the Select World screen (and its Cancel coming back to a new splash).
 #
 #   MUNT_SIM_SHOTS=/tmp/title sh tools/pcsim/play.sh tools/pcsim/titlemenu.txt
 #
-# The title screen is vanilla's TitleScreen: the panorama behind a wordmark with
-# its `Java Edition` strip, a splash tilted 20 degrees and pulsing, and vanilla's
-# button block -- three full-width buttons, then two half-width ones on a shared
-# row a fourth of the way down plus 48 + 72 + 12. The desktop harness runs at
-# twice the GUI scale, so every number below is the calculator's doubled.
+# The screen is vanilla's TitleScreen: the pre-rendered panorama behind the
+# official wordmark with its `Java Edition` strip, the splash tilted 20 degrees
+# and pulsing beside it, vanilla's button block -- three full-width buttons
+# ("Singleplayer", "Multiplayer", "Minecraft Realms") and the row a fourth of
+# the way down plus 48 + 72 + 12 holding the language and accessibility icon
+# buttons around "Options..." and "Quit Game" -- and the version and credits
+# along the bottom. The desktop harness runs at twice the GUI scale, so every
+# number below is the calculator's doubled.
 #
 #   mpos X Y     puts the pointer there, which is what hover tests against
 #   btn left tap click, and "s"/"w" (or the arrows) walk the selection
 #
-# The run starts with no saved world, so "Continue" is the disabled button -- the
-# same state vanilla greys out when there is nothing to continue.
+# The run starts with no saved world. The splash is picked fresh from vanilla's
+# splashes.txt every time the screen opens, so the line at the end differs from
+# the line at the start.
 
 0.0    step 120
-0.0    caption The main menu: the vanilla panorama, the official wordmark with its Java Edition strip, the tilted pulsing splash, and vanilla's button block -- three full-width buttons then two half-width ones. "Continue" is greyed because no world has been saved.
-1.0    shot 01-title
+0.0    caption The main menu: vanilla's panorama, the official wordmark with its Java Edition strip, the tilted pulsing splash, and vanilla's button block -- Singleplayer, Multiplayer and Minecraft Realms over "Options..." and "Quit Game", flanked by the language and accessibility icon buttons, with the version and credits along the bottom. Multiplayer, Minecraft Realms and the two icons are greyed because a calculator has no screens for them, and no button is lit -- as in vanilla, the highlight belongs to the pointer or the keyboard.
+0.6    shot 01-title
 
 # The pointer picks a button, exactly as vanilla's does: hovering moves the
 # highlight onto the button under it.
-1.4    mpos 320 284
+1.2    mpos 320 236
 1.8    caption Hovering a button lights it up and takes the highlight, the way vanilla's title screen behaves.
 2.0    shot 02-title-hover
 
-# A disabled button is greyed and cannot take the highlight.
-2.4    mpos 320 236
-2.8    caption The pointer is over the disabled "Continue": it stays greyed and the highlight does not move onto it, which is exactly how vanilla treats a button that cannot be used.
-3.0    shot 03-title-disabled
+# A button this engine cannot serve is greyed and cannot take the highlight.
+2.6    mpos 320 284
+3.2    caption The pointer is over the greyed "Multiplayer": nothing lights up -- a button that cannot be used never takes the highlight.
+3.4    shot 03-title-disabled
 
-# The keyboard drives the same block: "s" steps the selection down one button.
-3.4    key s tap
-3.8    caption The keyboard moves the same highlight -- "s" steps down the button block, and "w"/the up arrow steps back up.
-4.0    shot 04-title-keyboard
+# The keyboard drives the same block: "s" steps onto "Singleplayer" and again
+# past the greyed buttons to "Options...".
+4.0    key s tap
+4.4    key s tap
+4.8    caption The keyboard lights the same buttons -- "s" steps down the block and "w"/the up arrow steps back up, skipping the greyed ones.
+5.0    shot 04-title-keyboard
 
-# A click takes the button under the pointer: Graphing Mode opens the graph
-# screen, which is one of this game's screens standing in for one of vanilla's.
-4.4    mpos 218 404
-4.8    btn left tap
-5.6    caption A click takes the button under the pointer: Graphing Mode is open.
-5.8    shot 05-title-graph
+# "Options..." is vanilla's own door to the options screen, on the title screen
+# as well as in the pause menu.
+5.6    mpos 218 404
+6.0    btn left tap
+6.8    caption A click takes the button under the pointer: "Options..." opens the options screen, exactly where vanilla keeps it.
+7.0    shot 05-title-options
 
-# Back to the menu and a world button, so the capture shows a click really does
-# start the game.
-6.2    key esc tap
-6.6    mpos 320 332
-7.0    btn left tap
-9.0    step 40
-9.4    caption The same click on "New Terrain World" starts the game.
-9.6    shot 06-title-world
-10.0   end
+# Back at the menu -- with a fresh splash line, as vanilla's title screen has.
+7.6    key esc tap
+8.4    caption Esc comes back to the title screen. The splash is redrawn from vanilla's splashes.txt each time the screen opens, so the joke under the wordmark changes.
+8.6    shot 06-title-back
+
+# "Singleplayer" opens the Select World screen.
+9.2    mpos 320 236
+9.6    btn left tap
+10.4   caption "Singleplayer" opens vanilla's Select World screen: the heading, the search box and the world list over the darkened dirt, with Play Selected World / Create New World over Edit / Delete / Re-Create / Cancel.
+10.6   shot 07-world-select
+
+# The keyboard walks the world list the same way.
+11.2   key s tap
+11.8   caption On the list, the arrow keys move the selection, which wears vanilla's grey frame over a black box.
+12.0   shot 08-world-select-keyboard
+
+# "Cancel" backs out to the title screen -- with another new splash line.
+12.6   mpos 556 444
+13.0   btn left tap
+13.8   caption Back on the title screen, with another splash from the same vanilla list: the menu is a screen that comes alive each time it is opened.
+14.0   shot 09-title-new-splash
+
+# And "Quit Game" does what vanilla's does: it closes the game.
+14.6   mpos 420 404
+15.0   caption "Quit Game" closes the game, as vanilla's button does.
+15.2   btn left tap
+15.6   end

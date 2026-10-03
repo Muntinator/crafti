@@ -15,6 +15,22 @@ output stage driven by a sigma-delta modulator.  The pack therefore stores
 backend.  8-bit unsigned keeps the on-calculator decode trivial (a byte is a
 sample) and keeps the pack small enough to stream from flash.
 
+Because the output is 1-bit, the two things that decide how good the pack can
+sound are the resampler that takes the sources down to the mixer rate and the
+quantiser that lands them on 8 bits:
+
+  * the sources are resampled with **soxr** and its anti-aliasing filter.  The
+    default swr resampler is soft, and a soft downsample folds high-frequency
+    content back into the audible band; the official samples are 44.1 kHz, so
+    this is the single biggest difference in how the pack sounds,
+  * a gentle **high-pass at 15 Hz** removes any DC the source carries.  A DC
+    offset eats the 1-bit modulator's headroom and turns into an idle tone,
+  * the 8-bit quantiser is **TPDF dithered** (triangular, noise-shaped), which
+    replaces the correlated quantisation distortion of truncation with a hiss
+    that is 15 dB lower in the audible band,
+  * music is kept whole (up to `--music-seconds`) instead of being cut after 75
+    seconds, and gets a short fade at both ends so the loop point does not click.
+
 Usage
 -----
     python3 tools/audio/build_audio_pack.py \
@@ -25,10 +41,29 @@ Usage
 """
 
 import argparse
+import math
 import os
 import struct
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
+
+# Audio the far end reconstructs: how far above the mixer rate the anti-alias
+# filter is allowed to pass, how steep soxr's filter is, and how hard the
+# quantiser is dithered.  See the module docstring for why each one is here.
+RESAMPLER = "soxr"
+RESAMPLER_PRECISION = 28
+RESAMPLER_CUTOFF = 0.95
+DITHER_METHOD = "triangular_hp"
+DC_HIGHPASS_HZ = 15
+# Short fade at each end of a sound, in seconds.  The engine loops a bed by
+# restarting the file, so a track that starts or ends mid-waveform clicks at every
+# wrap; 20 ms is inaudible as a fade but removes the step.  Effects get a much
+# shorter one because they are capped by --sfx-seconds: a sound longer than the
+# cap is cut mid-waveform, and a few milliseconds of fade turns that cut from a
+# click into an ending.
+MUSIC_EDGE_FADE_SECONDS = 0.02
+SFX_EDGE_FADE_SECONDS = 0.004
 
 PACK_MAGIC = b"AUD1"
 PACK_VERSION = 1
@@ -132,23 +167,63 @@ def ident_for(rel_path):
     return name
 
 
+def decode_filters(rate):
+    """The ffmpeg filter chain one source file is put through.
+
+    Order matters: the channels are collapsed to mono first so the resampler
+    runs once, the DC block then runs at the source rate, and soxr does the one
+    and only rate conversion and the dithered landing on 8-bit unsigned.
+    """
+    return ",".join([
+        "aformat=channel_layouts=mono",
+        "highpass=f=%d" % DC_HIGHPASS_HZ,
+        "aresample=resampler=%s:precision=%d:cutoff=%.2f:osf=u8:osr=%d:dither_method=%s"
+        % (RESAMPLER, RESAMPLER_PRECISION, RESAMPLER_CUTOFF, rate, DITHER_METHOD),
+    ])
+
+
 def ffmpeg_decode(path, rate, max_seconds):
     """Return (pcm_bytes, truncated) for one source file, as 8-bit unsigned mono."""
     cmd = [
         "ffmpeg",
         "-v", "error",
         "-i", path,
-        "-t", "%.3f" % max_seconds,
-        "-ac", "1",
-        "-ar", str(rate),
+    ]
+    if max_seconds and max_seconds > 0:
+        cmd += ["-t", "%.3f" % max_seconds]
+    cmd += [
+        "-af", decode_filters(rate),
         "-f", "u8",
         "-",
     ]
     proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if proc.returncode != 0 or not proc.stdout:
         raise RuntimeError(proc.stderr.decode("utf-8", "replace").strip() or "ffmpeg failed")
-    truncated = len(proc.stdout) >= int(rate * max_seconds) - 1
+    truncated = bool(max_seconds and max_seconds > 0
+                     and len(proc.stdout) >= int(rate * max_seconds) - 1)
     return proc.stdout, truncated
+
+
+def edge_fade(pcm, rate, seconds):
+    """Fade a sound in and out so it cannot click at either end.
+
+    The engine restarts the file to loop a bed, so unless the first and last
+    samples both sit at silence the wrap is heard as a tick; and a sound cut off
+    by the duration cap ends mid-waveform, which is a click of its own.
+    """
+    frames = int(rate * seconds)
+    if frames <= 0 or frames * 2 >= len(pcm):
+        return pcm
+
+    out = bytearray(pcm)
+    for i in range(frames):
+        # Equal-power-ish: a raised-cosine reaches 1.0 with no derivative kink.
+        gain = 0.5 - 0.5 * math.cos(math.pi * i / frames)
+        head = 128 + (pcm[i] - 128) * gain
+        tail = 128 + (pcm[len(pcm) - 1 - i] - 128) * gain
+        out[i] = min(255, max(0, int(head + 0.5)))
+        out[len(pcm) - 1 - i] = min(255, max(0, int(tail + 0.5)))
+    return bytes(out)
 
 
 def normalise(pcm):
@@ -156,6 +231,8 @@ def normalise(pcm):
 
     Keeps voice loudness predictable in the mixer without storing per-sound
     gains.  Near-silent material is left untouched so hiss is not amplified.
+    The scale rounds to nearest rather than truncating, which would add a
+    systematic half-bit downward bias to every sample of every sound.
     """
     peak = 0
     for sample in pcm:
@@ -165,8 +242,13 @@ def normalise(pcm):
     if peak < 8 or peak >= 120:
         return pcm, 255
     gain = min(255, int(120 * 255 / peak))
-    scaled = bytes(min(255, max(0, 128 + ((sample - 128) * gain) // 255)) for sample in pcm)
-    return scaled, gain
+
+    def scale(sample):
+        scaled = (sample - 128) * gain / 255.0
+        rounded = int(scaled + 0.5) if scaled >= 0 else -int(-scaled + 0.5)
+        return min(255, max(0, 128 + rounded))
+
+    return bytes(scale(sample) for sample in pcm), gain
 
 
 def collect(root, pattern_exts):
@@ -187,9 +269,15 @@ def main():
     ap.add_argument("--header", default="audio_sounds.h")
     ap.add_argument("--rate", type=int, default=8000)
     ap.add_argument("--sfx-seconds", type=float, default=1.1)
-    ap.add_argument("--music-seconds", type=float, default=75.0)
+    ap.add_argument("--music-seconds", type=float, default=240.0,
+                    help="keep this much of each music track (0 = no limit); "
+                         "the engine loops a track, so a short cut is heard as a jump")
+    ap.add_argument("--jobs", type=int, default=0,
+                    help="parallel ffmpeg decodes (0 = one per CPU, capped at 8)")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
+
+    jobs = args.jobs if args.jobs > 0 else min(8, (os.cpu_count() or 1))
 
     entries = []
     if args.sounds and os.path.isdir(args.sounds):
@@ -211,15 +299,29 @@ def main():
     used_names = {}
     failures = []
 
-    for rel, full, is_music in entries:
+    def decode(entry):
+        rel, full, is_music = entry
         rel = ("music/" + rel) if (is_music and not rel.startswith("music/")) else rel
         if is_music:
             rel = rel.replace("music/music/", "music/")
         max_seconds = args.music_seconds if is_music else args.sfx_seconds
         try:
             pcm, truncated = ffmpeg_decode(full, args.rate, max_seconds)
+            pcm = edge_fade(pcm, args.rate,
+                            MUSIC_EDGE_FADE_SECONDS if is_music else SFX_EDGE_FADE_SECONDS)
         except Exception as exc:  # keep going, report at the end
-            failures.append((rel, str(exc)))
+            return (rel, None, str(exc))
+        return (rel, pcm, None)
+
+    # Decoding is one ffmpeg process per source file. There are over a thousand
+    # of them, so they run in a pool; map() keeps the results in id order, which
+    # is what makes the pack's index (and therefore audio_sounds.h) deterministic.
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        decoded = list(pool.map(decode, entries))
+
+    for rel, pcm, error in decoded:
+        if pcm is None:
+            failures.append((rel, error))
             continue
 
         name = ident_for(rel)

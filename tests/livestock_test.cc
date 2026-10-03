@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <math.h>
 
 static int failures = 0;
 static int checks = 0;
@@ -162,6 +163,197 @@ static void test_vanilla_models()
     }
 }
 
+// --- where the models actually land -------------------------------------
+//
+// The tables above are vanilla's numbers and read fine as numbers; the mistake
+// that puts a torso the wrong way up is not in them but in the frame they are
+// drawn in. mobmodel.h's `angleInDrawnFrame` is the renderer's own rule for
+// that, so the geometry below is computed through it -- if the renderer and
+// this test ever disagreed about the sign, one of them would be wrong and these
+// checks would say so.
+namespace
+{
+struct Extent
+{
+    double x0, x1, y0, y1, z0, z1;
+};
+
+// Where one box ends up, in model units above the feet, exactly as mobmodel.cpp
+// puts it there: the part's pivot translated with the y axis flipped once, the
+// head yaw, then the part's own rotation -- both angles passed through the same
+// `angleInDrawnFrame` the renderer uses.
+Extent drawnBox(const Mob::MobPart &part, const Mob::MobBox &b, double head_yaw_deg)
+{
+    const double g = b.grow / 2.0;
+    const double lx[2] = { b.ox - g, b.ox - g + b.w + g * 2 };
+    const double ly[2] = { -(b.oy + b.h) - g, -b.oy + g };
+    const double lz[2] = { b.oz - g, b.oz - g + b.d + g * 2 };
+
+    const double hy = head_yaw_deg;
+    const double rx = static_cast<double>(Mob::angleInDrawnFrame(GLFix(part.rot_x)));
+    const double ya = hy * M_PI / 180.0, ra = rx * M_PI / 180.0;
+    const double sy = sin(ya), cy = cos(ya), sr = sin(ra), cr = cos(ra);
+
+    Extent e = { 1e30, -1e30, 1e30, -1e30, 1e30, -1e30 };
+    for(int i = 0; i < 2; ++i)
+        for(int j = 0; j < 2; ++j)
+            for(int k = 0; k < 2; ++k)
+            {
+                double x = lx[i], y = ly[j], z = lz[k];
+                if(part.pose == Mob::Pose::Head && hy != 0.0)
+                {
+                    const double nx = x * cy + z * sy;
+                    z = -x * sy + z * cy;
+                    x = nx;
+                }
+                if(rx != 0.0)
+                {
+                    const double ny = y * cr - z * sr;
+                    z = y * sr + z * cr;
+                    y = ny;
+                }
+                x += part.px;
+                y += 24 - part.py;
+                z += part.pz;
+                if(x < e.x0) e.x0 = x;
+                if(x > e.x1) e.x1 = x;
+                if(y < e.y0) e.y0 = y;
+                if(y > e.y1) e.y1 = y;
+                if(z < e.z0) e.z0 = z;
+                if(z > e.z1) e.z1 = z;
+            }
+    return e;
+}
+
+// The part's box with the largest drawn volume: the torso of a biped, and for
+// a quadruped the body box (the head and the legs are smaller).
+int biggestBox(const Mob::MobModel &m, const Mob::MobPart &part)
+{
+    int best = part.first_box;
+    int best_vol = -1;
+    for(unsigned int b = 0; b < part.box_count; ++b)
+    {
+        const Mob::MobBox &box = m.boxes[part.first_box + b];
+        const int vol = box.w * box.h * box.d;
+        if(vol > best_vol) { best_vol = vol; best = part.first_box + b; }
+    }
+    return best;
+}
+}
+
+// A mob that is not upside down: it stands on its feet, its torso rests on top
+// of its legs rather than floating over them, and nothing reaches down through
+// the floor. The quadruped torso is the sharp case -- vanilla lays that box on
+// its side (rot_x 90) so its long axis runs front-to-back, and drawn with the
+// wrong sense of that rotation the box keeps its size but lands a quarter turn
+// out: clear of the legs, and the cow's udder up on its back.
+static void test_drawn_models_are_the_right_way_up()
+{
+    for(unsigned int i = 0; i < Livestock::SpeciesCount; ++i)
+    {
+        const Species s = static_cast<Species>(i);
+        const Mob::MobModel &m = Livestock::model(s);
+        if(m.empty())
+            continue; // the chicken draws itself
+
+        double ground = 1e30, roof = -1e30, leg_top = -1e30;
+        bool have_leg = false;
+
+        for(unsigned int p = 0; p < m.part_count; ++p)
+        {
+            const Mob::MobPart &part = m.parts[p];
+            for(unsigned int b = 0; b < part.box_count; ++b)
+            {
+                const Extent e = drawnBox(part, m.boxes[part.first_box + b], 0.0);
+                if(e.y0 < ground) ground = e.y0;
+                if(e.y1 > roof) roof = e.y1;
+                if(is_leg(part.pose))
+                {
+                    if(e.y1 > leg_top) leg_top = e.y1;
+                    have_leg = true;
+                }
+            }
+        }
+
+        CHECK(have_leg);
+        // The feet are on the floor and nothing sinks through it.
+        CHECK(fabs(ground) < 0.001);
+        // A mob is between half a block and four blocks tall. A torso that flew
+        // off would blow past the top of this, and one that dropped would go
+        // under it. (A wolf is genuinely under a block, hence the low bound.)
+        CHECK(roof >= 8.0);
+        CHECK(roof <= 64.0);
+
+        // The torso is the first part that is neither a leg nor the head: every
+        // vanilla table lists the body before the tail and the mane. Neck,
+        // mane, tail and ears are checked by the bounds above, not here --
+        // they are meant to stick out past the body.
+        int torso_part = -1;
+        for(unsigned int p = 0; p < m.part_count; ++p)
+        {
+            const Mob::MobPart &part = m.parts[p];
+            if(!is_leg(part.pose) && part.pose != Mob::Pose::Head)
+            {
+                torso_part = static_cast<int>(p);
+                break;
+            }
+        }
+        CHECK(torso_part >= 0);
+
+        if(torso_part >= 0)
+        {
+            const Mob::MobPart &part = m.parts[torso_part];
+            const int big = biggestBox(m, part);
+            const Mob::MobBox &torso = m.boxes[big];
+            const Extent t = drawnBox(part, torso, 0.0);
+            const bool sideways = part.rot_x == 90;
+
+            // The box vanilla laid on its side: its *depth* is the height it
+            // stands at and its *height* is the length it runs along.
+            if(sideways)
+            {
+                CHECK(fabs((t.y1 - t.y0) - torso.d) < 0.001);
+                CHECK(fabs((t.z1 - t.z0) - torso.h) < 0.001);
+            }
+            // Nothing else on the torso's part may rise above the torso: the
+            // cow's udder hangs under the belly, it does not sit on the back.
+            for(unsigned int b = 0; b < part.box_count; ++b)
+            {
+                if(static_cast<int>(part.first_box + b) == big)
+                    continue;
+                const Extent o = drawnBox(part, m.boxes[part.first_box + b], 0.0);
+                CHECK(o.y1 <= t.y1 + 0.001);
+            }
+            // It reaches down to the legs: either resting on them (the cow and
+            // the pig both sit exactly on top) or overlapping them, which is
+            // what a wolf's low body does. What it must never do is float clear
+            // above them -- that is the quarter-turn error this whole thing is
+            // about, and it lifted the cow's body four units off its legs.
+            CHECK(t.y0 <= leg_top + 0.001);
+            // And it is not the tallest thing on the animal.
+            CHECK(t.y1 <= roof + 0.001);
+        }
+
+        // The head has to be the tallest thing on the animal. A torso poking
+        // past it is the same bug seen from the other side. Every box of the
+        // head's part counts: the cow's horns stand above its head box.
+        double head_top = -1e30;
+        for(unsigned int p = 0; p < m.part_count; ++p)
+        {
+            const Mob::MobPart &part = m.parts[p];
+            if(part.pose != Mob::Pose::Head)
+                continue;
+            for(unsigned int b = 0; b < part.box_count; ++b)
+            {
+                const Extent e = drawnBox(part, m.boxes[part.first_box + b], 0.0);
+                if(e.y1 > head_top) head_top = e.y1;
+            }
+        }
+        if(head_top > -1e29)
+            CHECK(head_top >= roof - 0.001);
+    }
+}
+
 static void test_weights()
 {
     for(unsigned int b = 0; b < Livestock::BiomeCount; ++b)
@@ -245,6 +437,7 @@ int main()
     test_stats();
     test_drops();
     test_vanilla_models();
+    test_drawn_models_are_the_right_way_up();
     test_weights();
     test_pick_boundaries();
     test_classify();

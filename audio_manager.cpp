@@ -12,6 +12,12 @@ namespace
 	const unsigned int MaxMixFrames = 512;
 	/** Commands queued from the game loop to the audio clock. */
 	const unsigned int CommandRingSize = 32;
+	/**
+	 * The gain the limiter's make-up is ramping towards, and the most it will
+	 * ever lift by (about +3 dB). See the make-up pass at the end of mixMono().
+	 */
+	double makeup_gain = 1.0;
+	const double MakeupCap = 1.4125;
 
 	struct Tone
 	{
@@ -169,21 +175,89 @@ namespace
 	int16_t stream_block[GameAudioPack::StreamSlots][MaxMixFrames];
 
 	unsigned int master_volume = 100;
+	// Vanilla's defaults: everything at full except music, which sits at 60.
+	// The engine used to open at 80/45/70, which left the dock output about 3 dB
+	// under the rail for most material -- on a 1-bit output that is a quieter
+	// sound, not just a smaller number.
 	unsigned int category_volumes[CategoryCount] = {
-		80, // UI
-		45, // Music
-		70, // Ambience
-		70, // Weather
-		70, // Blocks
-		70, // Footsteps
-		70, // Mobs
-		70, // Player
-		70 // Combat
+		100, // UI
+		60, // Music
+		100, // Ambience
+		100, // Weather
+		100, // Blocks
+		100, // Footsteps
+		100, // Mobs
+		100, // Player
+		100 // Combat
 	};
 
-	uint32_t music_ids[16];
-	unsigned int music_id_count = 0;
+	/**
+	 * Vanilla's `music.menu`: the four `music/menu*.ogg` files, named rather than
+	 * positional so the split survives a rebuild of the pack. Everything else the
+	 * pack flags as music is the world's soundtrack.
+	 */
+	const uint16_t menu_music_table[] = {
+		Sound::MusicMenu1, Sound::MusicMenu2, Sound::MusicMenu3, Sound::MusicMenu4
+	};
+
+	bool isMenuMusic(unsigned int id)
+	{
+		for(unsigned int i = 0; i < sizeof(menu_music_table) / sizeof(menu_music_table[0]); ++i)
+			if(menu_music_table[i] == id)
+				return true;
+		return false;
+	}
+
+	uint32_t game_music_ids[16];
+	unsigned int game_music_count = 0;
+	uint32_t menu_music_ids[16];
+	unsigned int menu_music_count = 0;
 	unsigned int music_index = 0;
+	MusicScene music_scene = MusicSceneGame;
+
+	/** Picks up the pack's music tracks, split into the menu pool and the soundtrack. */
+	void collectMusicIds()
+	{
+		game_music_count = 0;
+		menu_music_count = 0;
+		music_index = 0;
+		for(uint32_t id = 1; id <= GameAudioPack::soundCount(); ++id)
+		{
+			const GameAudioPack::Entry *e = GameAudioPack::entry(id);
+			if(e == nullptr || (e->flags & GameAudioPack::FlagMusic) == 0)
+				continue;
+			if(isMenuMusic(id))
+			{
+				if(menu_music_count < sizeof(menu_music_ids) / sizeof(menu_music_ids[0]))
+					menu_music_ids[menu_music_count++] = id;
+			}
+			else if(game_music_count < sizeof(game_music_ids) / sizeof(game_music_ids[0]))
+			{
+				game_music_ids[game_music_count++] = id;
+			}
+		}
+	}
+
+	/**
+	 * The pool the current scene draws on. A pack with no menu music (a test
+	 * fixture, say) falls back to the soundtrack so a screen always has
+	 * something to play rather than going silent.
+	 */
+	const uint32_t *musicPool(unsigned int &count)
+	{
+		if(music_scene == MusicSceneMenu && menu_music_count != 0)
+		{
+			count = menu_music_count;
+			return menu_music_ids;
+		}
+		if(game_music_count != 0)
+		{
+			count = game_music_count;
+			return game_music_ids;
+		}
+		count = menu_music_count;
+		return menu_music_ids;
+	}
 
 	uint32_t rng_state = 0x12345678u;
 
@@ -211,6 +285,33 @@ namespace
 	{
 		const uint32_t combined = master * category;
 		return static_cast<uint32_t>((static_cast<uint64_t>(combined) << 16) / 10000u);
+	}
+
+	/**
+	 * The output stage's last stage before the 1-bit modulator: a soft knee
+	 * instead of a hard clamp. Eight voices can each arrive peak-normalised, so a
+	 * busy moment (a step under a sword hit under music) easily sums past full
+	 * scale, and a hard clamp turns that into the square-wave crackle that reads
+	 * as "broken" rather than "loud". Above 3/4 scale the curve bends instead,
+	 * monotone and asymptotic to full scale, so nothing ever wraps and only the
+	 * material that would have clipped is touched at all.
+	 */
+	constexpr int32_t LimiterKnee = 24576;  // 3/4 of full scale
+
+	int32_t softClip(int32_t sample)
+	{
+		const int32_t headroom = 32767 - LimiterKnee;
+		if(sample > LimiterKnee)
+		{
+			const int32_t over = sample - LimiterKnee;
+			return LimiterKnee + static_cast<int32_t>((static_cast<int64_t>(over) * headroom) / (over + headroom));
+		}
+		if(sample < -LimiterKnee)
+		{
+			const int32_t over = -sample - LimiterKnee;
+			return -(LimiterKnee + static_cast<int32_t>((static_cast<int64_t>(over) * headroom) / (over + headroom)));
+		}
+		return sample;
 	}
 
 	// ------------------------------------------------------------------ tones
@@ -434,18 +535,14 @@ void initialize()
 
 	command_head = 0;
 	command_tail = 0;
-	music_id_count = 0;
+	game_music_count = 0;
+	menu_music_count = 0;
 	music_index = 0;
+	music_scene = MusicSceneGame;
 	rng_state = 0x12345678u;
 
 	GameAudioPack::open();
-
-	for(uint32_t id = 1; id <= GameAudioPack::soundCount() && music_id_count < 16; ++id)
-	{
-		const GameAudioPack::Entry *e = GameAudioPack::entry(id);
-		if(e != nullptr && (e->flags & GameAudioPack::FlagMusic))
-			music_ids[music_id_count++] = id;
-	}
+	collectMusicIds();
 }
 
 void shutdown()
@@ -665,6 +762,21 @@ void doorClose()
 	playSound(Sound::RandomDoorClose);
 }
 
+void fuse(int distance)
+{
+	if(!GameAudioPack::isOpen()) { play(EventBlockPlace); return; }
+	playSoundAt(Sound::RandomFuse, distance);
+}
+
+void explosion(int distance)
+{
+	if(!GameAudioPack::isOpen()) { play(EventBlockBreak); return; }
+	static const uint16_t blasts[3] = {
+		Sound::RandomExplode1, Sound::RandomExplode2, Sound::RandomExplode3
+	};
+	playSoundAt(blasts[nextRandom() % 3], distance);
+}
+
 void play(Event event)
 {
 	if(static_cast<unsigned int>(event) >= EventCount)
@@ -673,15 +785,108 @@ void play(Event event)
 }
 
 // -------------------------------------------------------------------- music
-unsigned int musicTrackCount() { return music_id_count; }
+unsigned int musicTrackCount()
+{
+	unsigned int count = 0;
+	musicPool(count);
+	return count;
+}
+void rescanMusic() { collectMusicIds(); }
+
+namespace
+{
+	/**
+	 * Vanilla's `MusicManager` in three lines of state: whether a screen wants
+	 * background music, whether a track is live, and the random quiet spell
+	 * vanilla leaves between two tracks -- shortened here so a device session
+	 * hears more than one of them.
+	 */
+	bool music_desired = false;
+	bool music_track_live = false;
+	unsigned int music_gap_ms = 0;
+
+	const unsigned int MusicGapMsMin = 5000, MusicGapMsMax = 20000;
+
+	unsigned int musicGap()
+	{
+		return MusicGapMsMin + nextRandom() % (MusicGapMsMax - MusicGapMsMin + 1);
+	}
+}
+
+void setMusicDesired(bool desired, MusicScene scene)
+{
+	// Vanilla's MusicManager swaps pools rather than fading: when the screen's
+	// music type changes while a track is live, the track stops and the next one
+	// comes from the new pool after the usual quiet spell. Nothing to do here on
+	// an ordinary pause, which keeps the world's own scene.
+	const bool scene_changed = desired && scene != music_scene;
+	music_scene = scene;
+	if(scene_changed && musicPlaying())
+	{
+		stopMusic();
+		music_gap_ms = musicGap();
+	}
+
+	// A screen that starts wanting music gets it at once; only the transition
+	// arms it, so pausing and unpausing a world changes nothing.
+	if(desired && !music_desired && !musicPlaying())
+		music_gap_ms = 0;
+	music_desired = desired;
+}
+
+void updateMusic(unsigned int elapsed_ms)
+{
+	if(!music_desired)
+		return;
+
+	if(musicPlaying())
+	{
+		music_track_live = true;
+		return;
+	}
+
+	// The track that was playing has ended: leave vanilla's quiet spell behind
+	// it before the next one starts.
+	if(music_track_live)
+	{
+		music_track_live = false;
+		music_gap_ms = musicGap();
+		return;
+	}
+
+	if(music_gap_ms > 0)
+	{
+		if(music_gap_ms > elapsed_ms)
+		{
+			music_gap_ms -= elapsed_ms;
+			return;
+		}
+		music_gap_ms = 0;
+	}
+
+	if(startMusic())
+		music_track_live = true;
+	// No pack, or no music in it: try again next frame.
+}
 
 bool startMusic()
 {
-	if(music_id_count == 0 || !GameAudioPack::isOpen())
+	// A pack that was opened after initialize() -- which is what the host tests
+	// do -- is scanned for music the first time it is wanted.
+	if(game_music_count == 0 && menu_music_count == 0)
+		collectMusicIds();
+
+	if(!GameAudioPack::isOpen())
 		return false;
 
-	const unsigned int id = music_ids[music_index];
-	music_index = (music_index + 1) % music_id_count;
+	unsigned int count = 0;
+	const uint32_t *pool = musicPool(count);
+	if(count == 0)
+		return false;
+
+	music_index %= count;
+	const unsigned int id = pool[music_index];
+	music_index = (music_index + 1) % count;
 
 	return startStream(0, id, CategoryMusic, MixerSampleRate / 4);
 }
@@ -691,9 +896,13 @@ void stopMusic()
 	GameAudioPack::streamClose(0);
 	stream_voices[0].sound = 0;
 	++stream_voices[0].generation;
+
+	// A deliberate stop is not "the track ended", so no quiet spell is owed.
+	music_track_live = false;
+	music_gap_ms = 0;
 }
 
-bool musicPlaying() { return stream_voices[0].sound != 0; }
+bool musicPlaying() { return stream_voices[0].sound != 0 && GameAudioPack::streamIsOpen(0); }
 
 unsigned int currentMusicTrack() { return stream_voices[0].sound; }
 
@@ -858,8 +1067,19 @@ size_t mixMono(int16_t *output, size_t frames)
 
 			if(gain16 != 0)
 			{
-				int32_t sample = static_cast<int32_t>((static_cast<int>(data[index]) - 128) << 8);
+				// Linear interpolation between the two source frames the voice sits
+				// between. A pack built at the mixer's own rate steps exactly and the
+				// fraction is always zero, so this costs nothing there; a pack at any
+				// other rate is resampled without the harshness of dropping samples.
+				uint32_t next = index + 1;
+				if(next >= voice.length)
+					next = voice.loop ? 0 : index;
+				const int32_t a = static_cast<int32_t>((static_cast<int>(data[index]) - 128) << 8);
+				const int32_t b = static_cast<int32_t>((static_cast<int>(data[next]) - 128) << 8);
+				const int32_t sample_in = a
+					+ static_cast<int32_t>((static_cast<int64_t>(b - a) * (voice.frac >> 8)) >> 8);
 
+				int32_t sample = sample_in;
 				const uint32_t left = voice.length - index;
 				if(left < voice.release)
 					sample = (sample * static_cast<int32_t>(left)) / static_cast<int32_t>(voice.release);
@@ -912,11 +1132,57 @@ size_t mixMono(int16_t *output, size_t frames)
 			mixed += (sample * static_cast<int32_t>(gain >> 8)) >> 8;
 		}
 
-		if(mixed > 32767)
-			mixed = 32767;
-		else if(mixed < -32768)
-			mixed = -32768;
-		output[frame] = static_cast<int16_t>(mixed);
+		output[frame] = static_cast<int16_t>(softClip(mixed));
+	}
+
+	// --- limiter make-up gain ----------------------------------------------
+	// The knee above costs level, and on a one-bit output level *is* loudness:
+	// what the knee takes is gone for good, because the pin's swing is already
+	// the whole of it. So whatever the knee removed is given back here -- the
+	// block is scaled until its loudest sample reaches the ceiling, which is as
+	// loud as a digital output can be without clipping.
+	//
+	// Three things keep that safe rather than merely loud:
+	//   * a block that never entered the knee is not lifted at all, and any gain
+	//     left over from a louder block decays back to unity across the next one,
+	//     so a quiet passage is never left permanently turned up,
+	//   * the gain is capped at MakeupCap (+3 dB), so the block-to-block level
+	//     cannot pump by more than that however hard the mix is,
+	//   * the gain is ramped across the block from the previous block's value, so
+	//     the change is a slope and not a step (a step would be a click), and the
+	//     result is clamped rather than wrapped: a ramp that briefly overshoots
+	//     on a block whose target gain dropped must never invert a sample.
+	{
+		int32_t peak = 0;
+		for(size_t frame = 0; frame < frames; ++frame)
+		{
+			const int32_t value = output[frame] < 0 ? -static_cast<int32_t>(output[frame])
+				: static_cast<int32_t>(output[frame]);
+			if(value > peak)
+				peak = value;
+		}
+
+		double target = 1.0;
+		if(peak > LimiterKnee)
+		{
+			target = static_cast<double>(32767) / static_cast<double>(peak);
+			if(target > MakeupCap)
+				target = MakeupCap;
+		}
+
+		const double from = makeup_gain;
+		for(size_t frame = 0; frame < frames; ++frame)
+		{
+			const double gain = from + (target - from) * (static_cast<double>(frame + 1)
+				/ static_cast<double>(frames));
+			int32_t value = static_cast<int32_t>(static_cast<double>(output[frame]) * gain);
+			if(value > 32767)
+				value = 32767;
+			else if(value < -32768)
+				value = -32768;
+			output[frame] = static_cast<int16_t>(value);
+		}
+		makeup_gain = target;
 	}
 
 	return frames;

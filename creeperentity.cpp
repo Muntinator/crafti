@@ -184,6 +184,9 @@ void CreeperEntity::update()
     if(player_near)
     {
         ++fuse_timer;
+        // Vanilla hisses once when the fuse lights, not on every tick of it.
+        if(fuse_timer == 1)
+            GameAudio::fuse(blocksToPlayer(x, z));
         vx = vz = GLFix(0);
         dir_timer = 1;
         if(hyp > 1e-3f)
@@ -201,6 +204,7 @@ void CreeperEntity::update()
             const int bx = (x / GLFix(BLOCK_SIZE)).floor();
             const int by = ((y + HEIGHT / 2) / GLFix(BLOCK_SIZE)).floor();
             const int bz = (z / GLFix(BLOCK_SIZE)).floor();
+            GameAudio::explosion(blocksToPlayer(x, z));
             world.explosionTNT(bx, by, bz);
             const float dist3 =
                 std::sqrt(dxp * dxp + dyp * dyp + dzp * dzp);

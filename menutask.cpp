@@ -29,7 +29,7 @@ MenuTask::~MenuTask()
 
 void MenuTask::makeCurrent()
 {
-    GameAudio::stopMusic();
+    // Vanilla keeps the music playing through the pause menu.
 
     // The selection is deliberately *not* reset here: vanilla keeps the focused
     // button when the screen is re-entered, so walking into a child (Options,
@@ -117,8 +117,10 @@ void MenuTask::activate()
 
     case QUIT_TO_TITLE:
         // The button says "Save and Quit to Title", so the world is written on
-        // both machines before the title screen replaces it.
+        // both machines before the title screen replaces it -- and the title
+        // screen now has a world to offer again.
         save();
+        start_task.setHasSavedWorld(true);
         start_task.makeCurrent();
         break;
 

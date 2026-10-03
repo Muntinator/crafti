@@ -118,6 +118,10 @@ int main(int argc, char *argv[])
 
         Task::current_task->logic(dt);
 
+        // Vanilla's music manager tick: keeps background music going across
+        // screens and leaves its quiet spell between two tracks.
+        GameAudio::updateMusic(frame_time);
+
         // Keep the audio engine fed. This only refills stream buffers; sample
         // timing is owned by the output backend's clock, not by the frame rate.
         GameAudio::pump();

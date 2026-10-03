@@ -4,20 +4,24 @@
 #include <stdint.h>
 
 /**
- * 1-bit audio output on GPIO 22 (dock connector pin 18).
+ * 1-bit audio output on a dock GPIO: pin 18 (GPIO 22, the default) or pin 6
+ * (GPIO 4, USB Data+).
  *
  * This is the fallback for a calculator whose dock pin 4 (UART Tx) is broken:
  * the same first-order sigma-delta stream as the UART backend, but bit-banged
  * on a general-purpose line instead of shifted out by the PL011. GPIO 22 is
  * the one unclaimed output on the CX dock (see audio_gpio_hw.h), with dock
- * pin 5 (GND) as the return.
+ * pin 5 (GND) as the return; GPIO 4 is the same kind of push-pull line and is
+ * dock pin 6, USB D+, which is free whenever no cradle is plugged in.
  *
  * The UART's transmitter paced its own bits; a GPIO line has no clock, so a
  * spare CX timer (block 0x900C0000, IRQ 18 -- the block Ndless does not use
  * for msleep) paces them instead: one interrupt per output bit at 16384 bit/s,
  * a phase accumulator turning that into exactly the 8 kHz mixer rate, and the
  * same symmetric sigma-delta modulator as the UART backend. The far end is the
- * same RC low-pass filter into an amplifier.
+ * same RC low-pass filter into an amplifier. Which of the two lines is driven
+ * changes nothing but the port register the read-modify-write touches: set the
+ * line before enable().
  *
  * For a piezoelectric buzzer wired straight to the pin there is no filter and
  * no amplifier: a buzzer is a full-swing tone device, so setBuzzerDrive()
@@ -64,6 +68,22 @@ namespace GameAudioGpio
 	 */
 	void setBuzzerDrive(bool on);
 	bool buzzerDrive();
+
+	/**
+	 * Chooses which GPIO line the bit stream goes out on. 22 (the default) is
+	 * dock pin 18; 4 is dock pin 6, USB Data+. Only lines the CX gives no job are
+	 * accepted, and only while the backend is off, so the port register being
+	 * bit-banged cannot change under the interrupt. Returns false (and changes
+	 * nothing) for a line that has a job of its own -- GPIO 5 (USB VBUS), 6
+	 * (charging), 19 (WLAN cradle detect), 20 (USB port detect), 23 (LCD_OFF) or
+	 * 24 (keypad present) -- or for any number above 31.
+	 *
+	 * USB D+ is a genuine push-pull output whenever nothing is plugged into it.
+	 * With a Navigator cradle attached the calculator is a USB device on that
+	 * pin, so the line must be left alone: audio on it means no cradle, no host.
+	 */
+	bool setAudioLine(unsigned int gpio);
+	unsigned int audioLine();
 
 	/** Interrupt driven diagnostic: plays a generated sweep through the modulator. */
 	int testSweep(uint32_t duration_ms);

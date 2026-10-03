@@ -303,7 +303,10 @@ static bool tryMeleeMob()
 void WorldTask::makeCurrent()
 {
     Task::background_saved = false;
-    GameAudio::startMusic();
+    // As vanilla's does: the world draws on the soundtrack rather than the menu
+    // pool, a track plays to its end across pausing and unpausing, and the music
+    // manager starts the next one after its quiet spell.
+    GameAudio::setMusicDesired(true, GameAudio::MusicSceneGame);
 
     Task::makeCurrent();
 }
