@@ -23,14 +23,9 @@ void HelpTask::makeCurrent()
     if(!background_saved)
         saveBackground();
 
-#ifndef _TINSPIRE
-    // Baseline the button too: the click that opened this screen must not also
+    // Baseline the button too: the press that opened this screen must not also
     // close it on the first frame it is up.
-    SDL_PumpEvents();
-    int mouse_x = 0, mouse_y = 0;
-    const Uint8 buttons = SDL_GetMouseState(&mouse_x, &mouse_y);
-    left_mouse_was_down = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
-#endif
+    Pointer::seed();
     Task::makeCurrent();
 }
 
@@ -80,26 +75,16 @@ void HelpTask::render()
 
 void HelpTask::logic(GLFix /*dt*/)
 {
-#ifndef _TINSPIRE
-    // The screen has no widgets, so a click anywhere dismisses it, standing in
-    // for vanilla's Back button. The calculator keeps Esc/Enter.
-    SDL_PumpEvents();
-    int mouse_x = 0, mouse_y = 0;
-    const Uint8 buttons = SDL_GetMouseState(&mouse_x, &mouse_y);
-    const bool left_down = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
-
-    (void)mouse_x;
-    (void)mouse_y;
-
-    if(left_down && !left_mouse_was_down)
+    // The screen has no widgets, so a press anywhere dismisses it, standing in
+    // for vanilla's Back button. On the calculator that is the touchpad, so the
+    // screen can be closed as well as opened without the keypad. Esc/Enter still
+    // work for both.
+    Pointer::poll();
+    if(Pointer::clicked())
     {
-        left_mouse_was_down = true;
         close();
         return;
     }
-    if(!left_down)
-        left_mouse_was_down = false;
-#endif
 
     // Esc leaves the screen; Enter does too, so the calculator's Enter key acts
     // like vanilla's Back button rather than doing nothing.

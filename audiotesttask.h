@@ -65,10 +65,6 @@ private:
 	char status[64] = {0};
 
 #ifndef _TINSPIRE
-	/** The left button's state last frame, so a click is an edge, not a hold. */
-	bool left_mouse_was_down = false;
-	/** The pointer's position last frame; only a move takes the focus. */
-	int last_mouse_x = -1, last_mouse_y = -1;
 #endif
 };
 

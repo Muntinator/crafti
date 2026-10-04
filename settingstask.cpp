@@ -189,12 +189,10 @@ void SettingsTask::makeCurrent()
     scroll = 0;
     changed_something = false;
 
-#ifndef _TINSPIRE
     // The point the pointer already sits at is not a move, so opening the screen
-    // does not let a resting pointer steal the focus from the keyboard.
-    SDL_PumpEvents();
-    SDL_GetMouseState(&last_mouse_x, &last_mouse_y);
-#endif
+    // does not let a resting pointer steal the focus from the keyboard -- and on
+    // the calculator the press that opened it cannot take a row of its own.
+    Pointer::seed();
     Task::makeCurrent();
 }
 
@@ -428,13 +426,13 @@ void SettingsTask::setValueFromX(unsigned int entry, int mouse_x, int box_x, int
 
 void SettingsTask::logic(GLFix /*dt*/)
 {
-#ifndef _TINSPIRE
-    // The desktop gets vanilla's pointer: hovering a row lights it and a click
-    // takes it, exactly as the pause menu does. The calculator keeps the keys.
-    SDL_PumpEvents();
-    int mouse_x = 0, mouse_y = 0;
-    const Uint8 buttons = SDL_GetMouseState(&mouse_x, &mouse_y);
-    const bool left_down = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
+    // Vanilla's pointer, on both machines: hovering a row lights it and a click
+    // takes it, exactly as the pause menu does. On the calculator the pointer is
+    // the touchpad's virtual cursor -- which is what makes the audio rows
+    // reachable at all, since every other way into this screen is a key.
+    Pointer::poll();
+    const int mouse_x = Pointer::x(), mouse_y = Pointer::y();
+    const bool left_down = Pointer::down();
 
     const int total = static_cast<int>(settings.size());
     const MenuUI::OptionsLayout layout = MenuUI::optionsLayout(total, scroll);
@@ -458,29 +456,21 @@ void SettingsTask::logic(GLFix /*dt*/)
         && mouse_y >= layout.done_y && mouse_y < layout.done_y + layout.done_h)
         hovered = total;
 
-    const bool mouse_moved = (mouse_x != last_mouse_x || mouse_y != last_mouse_y);
-    last_mouse_x = mouse_x;
-    last_mouse_y = mouse_y;
-
-    if(mouse_moved && hovered >= 0)
+    if(Pointer::moved() && hovered >= 0)
         current_selection = static_cast<unsigned int>(hovered);
 
-    if(left_down && !left_mouse_was_down)
+    if(Pointer::clicked() && hovered >= 0)
     {
-        left_mouse_was_down = true;
-        if(hovered >= 0)
-        {
-            current_selection = static_cast<unsigned int>(hovered);
+        current_selection = static_cast<unsigned int>(hovered);
 
-            if(hovered >= total)
-                leave();
-            else if(rowKind(hovered) == RowKind::Slider)
-                setValueFromX(static_cast<unsigned int>(hovered), mouse_x,
-                              layout.columnX(hovered % 2), layout.button_w);
-            else
-                activate();
-            return;
-        }
+        if(hovered >= total)
+            leave();
+        else if(rowKind(hovered) == RowKind::Slider)
+            setValueFromX(static_cast<unsigned int>(hovered), mouse_x,
+                          layout.columnX(hovered % 2), layout.button_w);
+        else
+            activate();
+        return;
     }
 
     // Holding the button on a slider drags the handle, which is vanilla's own
@@ -488,10 +478,6 @@ void SettingsTask::logic(GLFix /*dt*/)
     if(left_down && hovered >= 0 && hovered < total && rowKind(hovered) == RowKind::Slider)
         setValueFromX(static_cast<unsigned int>(hovered), mouse_x,
                       layout.columnX(hovered % 2), layout.button_w);
-
-    if(!left_down)
-        left_mouse_was_down = false;
-#endif
 
     if(key_held_down)
         key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN)

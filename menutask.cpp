@@ -40,12 +40,10 @@ void MenuTask::makeCurrent()
     if(!background_saved)
         saveBackground();
 
-#ifndef _TINSPIRE
     // The point the pointer already sits at does not count as a move: the menu
-    // opens on "Back to Game", and the mouse only takes over when it is moved.
-    SDL_PumpEvents();
-    SDL_GetMouseState(&last_mouse_x, &last_mouse_y);
-#endif
+    // opens on "Back to Game", and the pointer only takes over when it is moved.
+    Pointer::seed();
+
     Task::makeCurrent();
 }
 
@@ -132,14 +130,13 @@ void MenuTask::activate()
 
 void MenuTask::logic(GLFix /*dt*/)
 {
-#ifndef _TINSPIRE
-    // A desktop has a mouse, so the pause menu gets vanilla's focus-by-hover: the
-    // pointer picks the button, lighting it, and a click takes it. The calculator
-    // keeps the keys.
-    SDL_PumpEvents();
-    int mouse_x = 0, mouse_y = 0;
-    const Uint8 buttons = SDL_GetMouseState(&mouse_x, &mouse_y);
-    const bool left_down = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
+    // Vanilla's focus-by-hover, on both machines: the pointer picks the button,
+    // lighting it, and a click takes it. On the calculator the pointer is the
+    // touchpad's virtual cursor, so the pause grid can be opened without the
+    // keypad -- which is the only way off a screen whose buttons are the only
+    // way on to the next one.
+    Pointer::poll();
+    const int mouse_x = Pointer::x(), mouse_y = Pointer::y();
 
     const MenuUI::PauseLayout layout = MenuUI::pauseMenuLayout();
     int hovered = -1;
@@ -153,25 +150,14 @@ void MenuTask::logic(GLFix /*dt*/)
 
     // Only a pointer that has moved takes the focus; a resting pointer leaves the
     // keyboard in charge. A click still takes whatever is under it.
-    const bool mouse_moved = (mouse_x != last_mouse_x || mouse_y != last_mouse_y);
-    last_mouse_x = mouse_x;
-    last_mouse_y = mouse_y;
-
-    if(mouse_moved && hovered >= 0)
+    if(Pointer::moved() && hovered >= 0)
         menu_selected_item = hovered;
 
-    if(left_down && !left_mouse_was_down)
+    if(Pointer::clicked() && hovered >= 0)
     {
-        left_mouse_was_down = true;
-        if(hovered >= 0)
-        {
-            activate();
-            return;
-        }
+        activate();
+        return;
     }
-    if(!left_down)
-        left_mouse_was_down = false;
-#endif
 
     if(key_held_down)
         key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_MENU) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_CLICK) || keyPressed(KEY_NSPIRE_ENTER);

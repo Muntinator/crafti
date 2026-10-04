@@ -270,14 +270,12 @@ void WorldSelectTask::makeCurrent()
     // count as the first thing typed into a text field.
     Task::resetTextKeys();
 
-#ifndef _TINSPIRE
-    SDL_PumpEvents();
-    SDL_GetMouseState(&last_mouse_x, &last_mouse_y);
-    left_mouse_was_down = false;
+    // The press that opened the screen must not also take a row on its first
+    // frame, so the pointer is baselined here on both machines.
+    Pointer::seed();
     last_click_row = -1;
     hover_row = -1;
     hover_icon = false;
-#endif
 
     Task::makeCurrent();
 }
@@ -670,14 +668,13 @@ void WorldSelectTask::logicList()
     const MenuUI::WorldSelectLayout l = MenuUI::worldSelectLayout();
     const char typed = Task::textKeyPressed();
 
-#ifndef _TINSPIRE
-    // A desktop has a mouse, so it gets the focus-by-hover vanilla has: the
-    // pointer picks the row or the button, and a click takes it. A double click
-    // within vanilla's 250 ms window -- or a click on the row's icon -- plays.
-    SDL_PumpEvents();
-    int mouse_x = 0, mouse_y = 0;
-    const Uint8 buttons = SDL_GetMouseState(&mouse_x, &mouse_y);
-    const bool left_down = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
+    // Vanilla's focus-by-hover, on both machines: the pointer picks the row or
+    // the button and a click takes it. On the calculator the pointer is the
+    // touchpad's virtual cursor, so the world list can be opened and a world
+    // chosen without the keypad.
+    Pointer::poll();
+    const int mouse_x = Pointer::x(), mouse_y = Pointer::y();
+    // The held state is read below, by the screens that drag rather than click.
 
     const int s = l.scale;
     const int mouse_total = filteredCount();
@@ -706,11 +703,7 @@ void WorldSelectTask::logicList()
 
     // Only a pointer that has moved takes the focus; a resting pointer leaves
     // the keyboard in charge. A click still takes whatever is under it.
-    const bool mouse_moved = (mouse_x != last_mouse_x || mouse_y != last_mouse_y);
-    last_mouse_x = mouse_x;
-    last_mouse_y = mouse_y;
-
-    if(mouse_moved)
+    if(Pointer::moved())
     {
         if(hover_row >= 0)
         {
@@ -721,9 +714,8 @@ void WorldSelectTask::logicList()
             focus_button = hover_button;
     }
 
-    if(left_down && !left_mouse_was_down)
+    if(Pointer::clicked())
     {
-        left_mouse_was_down = true;
         bool consumed = false;
 
         if(hover_button >= 0)
@@ -769,10 +761,6 @@ void WorldSelectTask::logicList()
             focus_button = -1;
         }
     }
-    if(!left_down)
-        left_mouse_was_down = false;
-#endif
-
     if(key_held_down)
     {
         key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_UP)
@@ -915,13 +903,11 @@ void WorldSelectTask::logicForm(bool create)
     const int primary_focus = create ? 3 : 1;
     const int cancel_focus = create ? 4 : 2;
 
-#ifndef _TINSPIRE
-    SDL_PumpEvents();
-    int mouse_x = 0, mouse_y = 0;
-    const Uint8 buttons = SDL_GetMouseState(&mouse_x, &mouse_y);
-    const bool left_down = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
-    const bool left_click = left_down && !left_mouse_was_down;
-    left_mouse_was_down = left_down;
+    // The create/rename form is driven by the same shared pointer, so on the
+    // calculator it is reachable by touchpad as well as by key.
+    Pointer::poll();
+    const int mouse_x = Pointer::x(), mouse_y = Pointer::y();
+    const bool left_click = Pointer::clicked();
 
     const MenuUI::WorldFormLayout f = MenuUI::worldFormLayout();
 
@@ -980,7 +966,6 @@ void WorldSelectTask::logicForm(bool create)
             return;
         }
     }
-#endif
 
     if(key_held_down)
     {
@@ -1084,13 +1069,9 @@ void WorldSelectTask::logicDelete()
 {
     Task::textKeyPressed(); // nothing types here; keep the edges fresh
 
-#ifndef _TINSPIRE
-    SDL_PumpEvents();
-    int mouse_x = 0, mouse_y = 0;
-    const Uint8 buttons = SDL_GetMouseState(&mouse_x, &mouse_y);
-    const bool left_down = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
-    const bool left_click = left_down && !left_mouse_was_down;
-    left_mouse_was_down = left_down;
+    Pointer::poll();
+    const int mouse_x = Pointer::x(), mouse_y = Pointer::y();
+    const bool left_click = Pointer::clicked();
 
     const MenuUI::ConfirmLayout c = MenuUI::confirmLayout(delete_message_lines);
 
@@ -1111,7 +1092,6 @@ void WorldSelectTask::logicDelete()
             }
         }
     }
-#endif
 
     if(key_held_down)
     {

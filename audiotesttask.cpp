@@ -75,13 +75,11 @@ void AudioTestTask::makeCurrent()
 	status_timeout = 0;
 	setStatus(GameAudio::packAvailable() ? "Audio pack loaded" : "No audio pack (tones only)");
 
-#ifndef _TINSPIRE
-	// A resting pointer is not a move, and the click that opened the screen must
-	// not also take a row on the first frame.
-	SDL_PumpEvents();
-	const Uint8 buttons = SDL_GetMouseState(&last_mouse_x, &last_mouse_y);
-	left_mouse_was_down = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
-#endif
+	// A resting pointer is not a move, and the press that opened the screen must
+	// not also take a row on the first frame. Done on both machines: on the
+	// calculator the touchpad's own press is what opened it.
+	Pointer::seed();
+
 	Task::makeCurrent();
 }
 
@@ -294,12 +292,11 @@ void AudioTestTask::logic(GLFix /*dt*/)
 	if(status_timeout > 0)
 		--status_timeout;
 
-#ifndef _TINSPIRE
-	// Vanilla's pointer: hovering a row lights it, a click runs it.
-	SDL_PumpEvents();
-	int mouse_x = 0, mouse_y = 0;
-	const Uint8 buttons = SDL_GetMouseState(&mouse_x, &mouse_y);
-	const bool left_down = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
+	// Vanilla's pointer: hovering a row lights it, a click runs it. On the
+	// calculator that is the touchpad's virtual cursor, so the diagnostic can be
+	// reached and run without the keypad.
+	Pointer::poll();
+	const int mouse_x = Pointer::x(), mouse_y = Pointer::y();
 
 	int hovered = -1;
 	for(unsigned int i = 0; i < ITEM_MAX; ++i)
@@ -310,26 +307,15 @@ void AudioTestTask::logic(GLFix /*dt*/)
 			hovered = static_cast<int>(i);
 	}
 
-	const bool mouse_moved = (mouse_x != last_mouse_x || mouse_y != last_mouse_y);
-	last_mouse_x = mouse_x;
-	last_mouse_y = mouse_y;
-
-	if(mouse_moved && hovered >= 0)
+	if(Pointer::moved() && hovered >= 0)
 		selected_item = hovered;
 
-	if(left_down && !left_mouse_was_down)
+	if(Pointer::clicked() && hovered >= 0)
 	{
-		left_mouse_was_down = true;
-		if(hovered >= 0)
-		{
-			selected_item = hovered;
-			runItem(static_cast<unsigned int>(hovered));
-			return;
-		}
+		selected_item = hovered;
+		runItem(static_cast<unsigned int>(hovered));
+		return;
 	}
-	if(!left_down)
-		left_mouse_was_down = false;
-#endif
 
 	if(key_held_down)
 		key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN)

@@ -122,14 +122,9 @@ private:
     char delete_message[2][80];
     int delete_message_lines = 0;
 
-#ifndef _TINSPIRE
-    /** The pointer's state last frame, so a click is an edge and not a hold. */
-    bool left_mouse_was_down = false;
-    int last_mouse_x = -1, last_mouse_y = -1;
     /** The row last clicked and when, for vanilla's double-click-to-play. */
     int last_click_row = -1;
     unsigned long last_click_ms = 0;
-#endif
 };
 
 extern WorldSelectTask worldselect_task;

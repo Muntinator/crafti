@@ -20,6 +20,131 @@ bool Task::key_held_down, Task::running, Task::background_saved, Task::has_touch
 TEXTURE *Task::screen, *Task::background;
 const char *Task::savefile;
 
+namespace Pointer
+{
+namespace
+{
+    int pointer_x = SCREEN_WIDTH / 2;
+    int pointer_y = SCREEN_HEIGHT / 2;
+    int last_x = pointer_x;
+    int last_y = pointer_y;
+    bool button_down = false;
+    bool button_edge = false;
+
+#ifdef _TINSPIRE
+    /** The touchpad's last contact, so a drag is a delta and a lift is an edge. */
+    bool had_contact = false;
+    uint16_t last_touch_x = 0, last_touch_y = 0;
+    /**
+     * Touchpad units per screen pixel. The pad's own axes are much finer than
+     * the 320x240 screen, so a 1:1 mapping would run the cursor off the edge in
+     * a single swipe; this keeps one swipe across the pad worth about one screen
+     * width, which is what the inventory screen's own divisor was tuned to.
+     */
+    constexpr int TouchUnitsPerPixel = 10;
+#else
+    bool seeded = false;
+#endif
+
+    void clampToScreen()
+    {
+        if(pointer_x < 0) pointer_x = 0;
+        if(pointer_y < 0) pointer_y = 0;
+        if(pointer_x > SCREEN_WIDTH - 1) pointer_x = SCREEN_WIDTH - 1;
+        if(pointer_y > SCREEN_HEIGHT - 1) pointer_y = SCREEN_HEIGHT - 1;
+    }
+}
+
+void poll()
+{
+#ifdef _TINSPIRE
+    touchpad_report_t touchpad;
+    touchpad_scan(&touchpad);
+
+    // A finger down and dragging moves the cursor; the pad reports a delta, so
+    // the previous position is what makes it absolute again.
+    if(had_contact && touchpad.contact)
+    {
+        pointer_x += (static_cast<int>(touchpad.x) - static_cast<int>(last_touch_x)) / TouchUnitsPerPixel;
+        // The pad's Y grows downwards like the screen's, so no inversion here.
+        pointer_y += (static_cast<int>(touchpad.y) - static_cast<int>(last_touch_y)) / TouchUnitsPerPixel;
+        clampToScreen();
+    }
+
+    // A press is only a click in the pad's own button areas, exactly as the
+    // inventory screen reads it: the arrows step the cursor, the click selects.
+    const bool pressed = touchpad.pressed;
+    button_edge = pressed && !button_down;
+    button_down = pressed;
+
+    had_contact = touchpad.contact;
+    last_touch_x = touchpad.x;
+    last_touch_y = touchpad.y;
+
+    last_x = pointer_x;
+    last_y = pointer_y;
+#else
+    SDL_PumpEvents();
+    int mx = 0, my = 0;
+    const Uint8 buttons = SDL_GetMouseState(&mx, &my);
+
+    // The window is SCREEN_WIDTH x SCREEN_HEIGHT device pixels -- 640x480 on the
+    // desktop, 320x240 on the calculator -- and the layouts are written against
+    // that, scaling themselves by the GUI scale. So the pointer is kept in the
+    // same pixels the pointer really is in, with no rescaling here.
+    pointer_x = mx;
+    pointer_y = my;
+    clampToScreen();
+
+    const bool pressed = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
+    button_edge = pressed && !button_down;
+    button_down = pressed;
+    seeded = true;
+#endif
+}
+
+int x() { return pointer_x; }
+int y() { return pointer_y; }
+bool down() { return button_down; }
+bool clicked() { return button_edge; }
+
+bool moved()
+{
+    const bool changed = pointer_x != last_x || pointer_y != last_y;
+    last_x = pointer_x;
+    last_y = pointer_y;
+    return changed;
+}
+
+void seed()
+{
+    last_x = pointer_x;
+    last_y = pointer_y;
+#ifdef _TINSPIRE
+    had_contact = false;
+    button_down = false;
+    button_edge = false;
+    touchpad_report_t touchpad;
+    touchpad_scan(&touchpad);
+    last_touch_x = touchpad.x;
+    last_touch_y = touchpad.y;
+#else
+    // The point the pointer already sits at is not a move, and the button that
+    // opened this screen must not also press something on it.
+    seeded = false;
+    SDL_PumpEvents();
+    int mx = 0, my = 0;
+    const Uint8 buttons = SDL_GetMouseState(&mx, &my);
+    pointer_x = mx;
+    pointer_y = my;
+    clampToScreen();
+    button_down = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
+    button_edge = false;
+    seeded = true;
+#endif
+}
+}
+
 void Task::makeCurrent()
 {
     current_task = this;

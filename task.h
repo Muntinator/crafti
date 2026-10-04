@@ -18,6 +18,47 @@ constexpr unsigned int simulation_tick_ms = 300; // Calculator fixed simulation 
 constexpr unsigned int simulation_tick_ms = 33; // Fixed simulation tick (~30 Hz)
 #endif
 
+/**
+ * The pointing device, as one API for both machines.
+ *
+ * A desktop has a mouse that reports an absolute position. A touchpad CX has
+ * none: its pad reports contact and a *delta*, and a press only when the finger
+ * lands on one of the arrow or click areas. The front end is written entirely
+ * against absolute screen coordinates, so the touchpad is given a virtual cursor
+ * here -- the same idea the inventory screen already used on its own -- and every
+ * screen can then be driven by pointing on either machine instead of being
+ * keyboard-only on the calculator.
+ *
+ * One poll per logic tick, then read the accessors. `moved()` is what separates
+ * a resting pointer from one that has actually gone somewhere, which is how
+ * vanilla's screens keep the keyboard in charge until the pointer takes over.
+ */
+namespace Pointer
+{
+    /** Reads the device and updates the position and button state for this tick. */
+    void poll();
+
+    /** The pointer's position in screen pixels. */
+    int x();
+    int y();
+
+    /** True when the position changed since the previous poll. */
+    bool moved();
+
+    /** True while the primary button is held. */
+    bool down();
+
+    /** The rising edge of `down()`: a tap or a click, once. */
+    bool clicked();
+
+    /**
+     * Takes the current position as the baseline, so the next `moved()` is false
+     * until the pointer really moves. Called when a screen opens, so the press
+     * that opened it cannot also land on a button of the new screen.
+     */
+    void seed();
+}
+
 class Task
 {
 public:

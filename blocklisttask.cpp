@@ -273,13 +273,9 @@ void BlockListTask::makeCurrent()
     if(!background_saved)
         saveBackground();
 
-#ifndef _TINSPIRE
-    // A resting pointer is not a move, and the click that opened the screen must
+    // A resting pointer is not a move, and the press that opened the screen must
     // not also grab a slot on the first frame.
-    SDL_PumpEvents();
-    const Uint8 buttons = SDL_GetMouseState(&last_mouse_x, &last_mouse_y);
-    left_mouse_was_down = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
-#endif
+    Pointer::seed();
     Task::makeCurrent();
 }
 
@@ -507,15 +503,12 @@ void BlockListTask::render()
 
 void BlockListTask::logic(GLFix /*dt*/)
 {
-#ifndef _TINSPIRE
-    // The desktop gets the creative inventory's own pointer handling: a tab is
+    // The creative inventory's own pointer handling, on both machines: a tab is
     // switched the moment the pointer moves onto it, a slot is highlighted by
     // hovering it and taken by a click, and a hotbar slot is made active by a
-    // click. The calculator keeps the keys.
-    SDL_PumpEvents();
-    int mouse_x = 0, mouse_y = 0;
-    const Uint8 buttons = SDL_GetMouseState(&mouse_x, &mouse_y);
-    const bool left_down = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
+    // click. On the calculator the pointer is the touchpad's virtual cursor.
+    Pointer::poll();
+    const int mouse_x = Pointer::x(), mouse_y = Pointer::y();
     const Layout l = layout();
 
     // Which tab, grid slot and hotbar slot the pointer is over.
@@ -546,11 +539,7 @@ void BlockListTask::logic(GLFix /*dt*/)
         && over_col >= 0 && over_col < Inventory::hotbar_slot_count)
         hovered_hotbar = over_col;
 
-    const bool mouse_moved = (mouse_x != last_mouse_x || mouse_y != last_mouse_y);
-    last_mouse_x = mouse_x;
-    last_mouse_y = mouse_y;
-
-    if(mouse_moved)
+    if(Pointer::moved())
     {
         // Vanilla's creative tabs switch on hover, before any click.
         if(hovered_tab >= 0 && hovered_tab != current_page)
@@ -563,10 +552,8 @@ void BlockListTask::logic(GLFix /*dt*/)
             current_selection = hovered_slot;
     }
 
-    if(left_down && !left_mouse_was_down)
+    if(Pointer::clicked())
     {
-        left_mouse_was_down = true;
-
         if(hovered_tab >= 0)
         {
             current_page = hovered_tab;
@@ -586,9 +573,6 @@ void BlockListTask::logic(GLFix /*dt*/)
             return;
         }
     }
-    if(!left_down)
-        left_mouse_was_down = false;
-#endif
 
     if(key_held_down)
         key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_PERIOD) || keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_4) || keyPressed(KEY_NSPIRE_6) || keyPressed(KEY_NSPIRE_7) || keyPressed(KEY_NSPIRE_9) || keyPressed(KEY_NSPIRE_1) || keyPressed(KEY_NSPIRE_3) || keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_LEFT) || keyPressed(KEY_NSPIRE_RIGHT)  || keyPressed(KEY_NSPIRE_CLICK) || keyPressed(KEY_NSPIRE_ENTER);

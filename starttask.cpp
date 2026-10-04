@@ -56,18 +56,6 @@ namespace
     int splash_pulse = 0;
     int splash_pulse_ms = 0;
 
-#ifndef _TINSPIRE
-    /** The left button's state last frame, so a click is an edge and not a hold. */
-    bool left_mouse_was_down = false;
-    /**
-     * The pointer's position last frame. Vanilla only hands a button the focus
-     * when the mouse *moves* onto it, so a pointer that is merely resting on a
-     * button must not keep pulling the highlight back onto it while the keyboard
-     * is stepping somewhere else.
-     */
-    int last_mouse_x = -1, last_mouse_y = -1;
-#endif
-
     /**
      * Draws the splash line into a texture of its own, outlined, ready to be
      * rotated onto the screen. It is rebuilt only when the line changes, which is
@@ -194,13 +182,11 @@ void StartTask::makeCurrent()
     // tracks, not the world's soundtrack. Opening a world hands the music over
     // to the game pool the same way vanilla's MusicManager swaps pools.
     GameAudio::setMusicDesired(true, GameAudio::MusicSceneMenu);
-#ifndef _TINSPIRE
     // The point the pointer already sits at does not count as a move: the screen
-    // opens with nothing focused, and the mouse only takes over when it is
-    // actually moved.
-    SDL_PumpEvents();
-    SDL_GetMouseState(&last_mouse_x, &last_mouse_y);
-#endif
+    // opens with nothing focused, and the pointer only takes over when it is
+    // actually moved. On the calculator this is also what stops the press that
+    // left the previous screen from landing on a button here.
+    Pointer::seed();
     Task::makeCurrent();
 }
 
@@ -312,13 +298,12 @@ void StartTask::logic(GLFix dt)
         splash_pulse = (splash_pulse + 1) % 21;
     }
 
-#ifndef _TINSPIRE
-    // A desktop has a mouse, so it gets the focus-by-hover vanilla has: the pointer
-    // picks the button and a click takes it. The calculator keeps the keys.
-    SDL_PumpEvents();
-    int mouse_x = 0, mouse_y = 0;
-    const Uint8 buttons = SDL_GetMouseState(&mouse_x, &mouse_y);
-    const bool left_down = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
+    // Vanilla's focus-by-hover, on both machines: the pointer picks the button
+    // and a click takes it. On the calculator the pointer is the touchpad's
+    // virtual cursor, so the title screen can be opened without the keypad --
+    // which matters because "Singleplayer" is the only way into a world.
+    Pointer::poll();
+    const int mouse_x = Pointer::x(), mouse_y = Pointer::y();
 
     const MenuUI::TitleLayout layout = MenuUI::titleLayout(current_splash);
     int hovered = -1;
@@ -335,26 +320,15 @@ void StartTask::logic(GLFix dt)
     // greyed button or off the buttons clears the highlight, which is what
     // vanilla's hover looks like: the lit button is the one under the pointer,
     // and a button that cannot be used never lights up.
-    const bool mouse_moved = (mouse_x != last_mouse_x || mouse_y != last_mouse_y);
-    last_mouse_x = mouse_x;
-    last_mouse_y = mouse_y;
-
-    if(mouse_moved)
+    if(Pointer::moved())
         selected_item = (hovered >= 0 && itemEnabled(hovered)) ? hovered : -1;
 
-    if(left_down && !left_mouse_was_down)
+    if(Pointer::clicked() && hovered >= 0 && itemEnabled(hovered))
     {
-        left_mouse_was_down = true;
-        if(hovered >= 0 && itemEnabled(hovered))
-        {
-            selected_item = hovered;
-            activate();
-            return;
-        }
+        selected_item = hovered;
+        activate();
+        return;
     }
-    if(!left_down)
-        left_mouse_was_down = false;
-#endif
 
     if(key_held_down)
         key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_CLICK) || keyPressed(KEY_NSPIRE_ENTER);
