@@ -516,12 +516,31 @@ What has **not** been verified:
   on-device check is theirs to run -- start with **USB D+: sweep**, **no USB
   plugged in**, and a series resistor or buffer, not headphones.
 
-## Licensing caveat
+## Licensing
 
-The three source archives (`sounds_trimmed.zip`, `minecraft-essentials-music.zip`,
-`minecraft-vanilla-music.zip`) contain **no license or credits file**. The assets are used locally for
-development only and must not be redistributed or bundled without confirming
-permission. That is why the generated `crafti.audp` is gitignored.
+The pack shipped so far came from three Minecraft asset archives
+(`sounds_trimmed.zip`, `minecraft-essentials-music.zip`,
+`minecraft-vanilla-music.zip`) that contain **no licence or credits file**, so it
+could not be redistributed. Those assets are **not** used any more.
+
+`crafti.audp` is now built by `tools/audio/build_licensed_pack.py` from CC0 and
+CC-BY sources on OpenGameArt, mapped onto vanilla's own event names so the
+engine is unchanged. It is redistributable. See **`AUDIO_LICENSES.md`** for the
+per-source credits and `tools/audio/licensed_pack_mapping.tsv` for the
+file-by-file mapping.
+
+`crafti.audp` stays gitignored because it is a 6 MB build product, not because
+of anything in it. Two consequences of the licensed pack are worth knowing:
+
+- Coverage is **partial**. Events with no permissively-licensed sample -- most
+  mob voices, several materials -- get a short generated tone rather than the
+  real sound, and each one is marked `SYNTHETIC` in the mapping table. The pack
+  is audibly thinner than the original in those places.
+- Swapping the pack changes `audio_sounds.h`, and the engine uses those names as
+  compile-time constants, so **every object that includes it must be rebuilt**.
+  `tests/Makefile` lists it as a dependency for exactly this reason; a stale
+  build otherwise asks for sound ids the new pack does not have, which shows up
+  as silence rather than as an error.
 
 ## References
 

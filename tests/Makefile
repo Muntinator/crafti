@@ -13,6 +13,12 @@ COMMON := -std=c++11 -O1 -g -I$(ROOT) -I. -Wall -W
 AUDIO_SOURCES := $(ROOT)/audio_manager.cpp $(ROOT)/audio_pack.cpp \
                  $(ROOT)/audio_nspire_tx.cpp $(ROOT)/audio_nspire_gpio.cpp \
                  $(ROOT)/audio_output.cpp
+# audio_sounds.h holds Sound::Id, and the engine uses those names as *compile*
+# time constants. Swap in a differently-named pack and the header changes with
+# it, so every object that includes it has to be rebuilt -- without this here
+# `make` leaves the old ids in place and a test then asks for a sound id the new
+# pack does not have, which reads as silence rather than as a stale build.
+AUDIO_HEADERS := $(ROOT)/audio_sounds.h
 
 BINS := build/audio_pack_test build/audio_tx_test build/audio_gpio_test \
         build/audio_manager_test build/audio_output_test \
@@ -35,20 +41,20 @@ run: $(BINS)
 build:
 	@mkdir -p build
 
-build/audio_pack_test: audio_pack_test.cc $(AUDIO_SOURCES) | build
+build/audio_pack_test: audio_pack_test.cc $(AUDIO_SOURCES) $(AUDIO_HEADERS) | build
 	$(CXX) $(COMMON) -DCRAFTI_NO_SDL -o $@ audio_pack_test.cc $(AUDIO_SOURCES)
 
-build/audio_tx_test: audio_tx_test.cc $(AUDIO_SOURCES) | build
+build/audio_tx_test: audio_tx_test.cc $(AUDIO_SOURCES) $(AUDIO_HEADERS) | build
 	$(CXX) $(COMMON) -DCRAFTI_NO_SDL -o $@ audio_tx_test.cc $(AUDIO_SOURCES)
 
-build/audio_gpio_test: audio_gpio_test.cc $(AUDIO_SOURCES) | build
+build/audio_gpio_test: audio_gpio_test.cc $(AUDIO_SOURCES) $(AUDIO_HEADERS) | build
 	$(CXX) $(COMMON) -DCRAFTI_NO_SDL -o $@ audio_gpio_test.cc $(AUDIO_SOURCES)
 
-build/audio_manager_test: audio_manager_test.cc $(AUDIO_SOURCES) | build
+build/audio_manager_test: audio_manager_test.cc $(AUDIO_SOURCES) $(AUDIO_HEADERS) | build
 	$(CXX) $(COMMON) -DCRAFTI_NO_SDL -o $@ audio_manager_test.cc $(AUDIO_SOURCES)
 
 # This one needs the SDL backend, so it uses the fake SDL in tests/fake_sdl.
-build/audio_output_test: audio_output_test.cc fake_sdl_audio.cc $(AUDIO_SOURCES) | build
+build/audio_output_test: audio_output_test.cc fake_sdl_audio.cc $(AUDIO_SOURCES) $(AUDIO_HEADERS) | build
 	$(CXX) $(COMMON) -Ifake_sdl -o $@ audio_output_test.cc fake_sdl_audio.cc $(AUDIO_SOURCES)
 
 # Pure livestock tables: no engine sources, just the spec and its real ids.

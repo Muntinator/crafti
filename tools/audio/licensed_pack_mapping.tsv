@@ -1,0 +1,170 @@
+pack path	source	why
+step/grass1.ogg	sfx100/sfx100v2_footstep_01.ogg	generic footstep
+step/grass2.ogg	sfx100/sfx100v2_footstep_02.ogg	generic footstep
+step/grass3.ogg	sfx100/sfx100v2_footstep_02.ogg	generic footstep, reused
+step/wet_grass1.ogg	sfx100/sfx100v2_footstep_wet_01.ogg	named wet footstep
+step/wet_grass2.ogg	sfx100/sfx100v2_footstep_wet_02.ogg	named wet footstep
+step/wet_grass3.ogg	sfx100/sfx100v2_footstep_wet_03.ogg	named wet footstep
+step/wood1.ogg	sfx100/sfx100v2_footstep_wood_01.ogg	named wood footstep
+step/wood2.ogg	sfx100/sfx100v2_footstep_wood_02.ogg	named wood footstep
+step/wood3.ogg	sfx100/sfx100v2_footstep_wood_03.ogg	named wood footstep
+step/stone1.ogg	sfx100/sfx100v2_stones_01.ogg	named stone step
+step/stone2.ogg	sfx100/sfx100v2_stones_02.ogg	named stone step
+step/stone3.ogg	sfx100/sfx100v2_stones_03.ogg	named stone step
+step/gravel1.ogg	sfx100/sfx100v2_metal_01.ogg	APPROX: sharp granular impact
+step/gravel2.ogg	sfx100/sfx100v2_metal_02.ogg	APPROX: sharp granular impact
+step/gravel3.ogg	sfx100/sfx100v2_metal_03.ogg	APPROX: sharp granular impact
+step/sand1.ogg	sfx100/sfx100v2_metal_04.ogg	APPROX: dull granular impact
+step/sand2.ogg	sfx100/sfx100v2_metal_05.ogg	APPROX: dull granular impact
+step/sand3.ogg	sfx100/sfx100v2_metal_06.ogg	APPROX: dull granular impact
+step/snow1.ogg	sfx100/sfx100v2_air_01.ogg	APPROX: soft compression hiss
+step/snow2.ogg	sfx100/sfx100v2_air_02.ogg	APPROX: soft compression hiss
+step/snow3.ogg	sfx100/sfx100v2_air_03.ogg	APPROX: soft compression hiss
+dig/stone1.ogg	sfx100/sfx100v2_stones_01.ogg	named stone
+dig/stone2.ogg	sfx100/sfx100v2_stones_02.ogg	named stone
+dig/stone3.ogg	sfx100/sfx100v2_stones_03.ogg	named stone
+dig/wood1.ogg	sfx100/sfx100v2_wood_hit_01.ogg	named wood knock
+dig/wood2.ogg	sfx100/sfx100v2_wood_hit_02.ogg	named wood knock
+dig/wood3.ogg	sfx100/sfx100v2_wood_hit_03.ogg	named wood knock
+dig/grass1.ogg	sfx100/sfx100v2_footstep_01.ogg	generic soft dig
+dig/grass2.ogg	sfx100/sfx100v2_footstep_02.ogg	generic soft dig
+dig/grass3.ogg	sfx100/sfx100v2_wood_04.ogg	generic soft dig
+dig/gravel1.ogg	sfx100/sfx100v2_metal_01.ogg	APPROX: granular crush
+dig/gravel2.ogg	sfx100/sfx100v2_metal_02.ogg	APPROX: granular crush
+dig/gravel3.ogg	sfx100/sfx100v2_metal_03.ogg	APPROX: granular crush
+dig/sand1.ogg	sfx100/sfx100v2_metal_04.ogg	APPROX: dull crush
+dig/sand2.ogg	sfx100/sfx100v2_metal_05.ogg	APPROX: dull crush
+dig/sand3.ogg	sfx100/sfx100v2_metal_06.ogg	APPROX: dull crush
+dig/snow1.ogg	sfx100/sfx100v2_air_01.ogg	APPROX: soft crush
+dig/snow2.ogg	sfx100/sfx100v2_air_02.ogg	APPROX: soft crush
+dig/snow3.ogg	sfx100/sfx100v2_air_03.ogg	APPROX: soft crush
+random/dooropen.ogg	sfx100/sfx100v2_door_03.ogg	longest door = the swing open
+random/doorclose.ogg	sfx100/sfx100v2_door_01.ogg	short door = the latch shut
+random/chestopen.ogg	sfx100/sfx100v2_lock_open_01.ogg	named lock/hinge
+random/chestclosed.ogg	sfx100/sfx100v2_lock_open_01.ogg	named lock/hinge, reused
+random/click.ogg	sfx100/sfx100v2_switch_01.ogg	named switch click
+random/break.ogg	sfx100/sfx100v2_glass_02.ogg	named shatter
+random/pop.ogg	sfx100/sfx100v2_misc_07.ogg	shortest clip = a pop
+random/levelup.ogg	sfx100/sfx100v2_misc_12.ogg	APPROX: rising 2.5s cue
+random/hurt.ogg	sfx100/sfx100v2_hit_03.ogg	short impact
+random/eat1.ogg	sfx100/sfx100v2_misc_11.ogg	APPROX: short chewing
+random/eat2.ogg	sfx100/sfx100v2_misc_14.ogg	APPROX: short chewing
+random/eat3.ogg	sfx100/sfx100v2_misc_26.ogg	APPROX: short chewing
+random/fuse.ogg	sfx100/sfx100v2_air_02.ogg	APPROX: 1.1s hiss, creeper-like
+random/explode1.ogg	sfx100/sfx100v2_misc_22.ogg	APPROX: 3.2s blast
+random/explode2.ogg	sfx100/sfx100v2_misc_37.ogg	APPROX: 4.9s blast
+random/explode3.ogg	sfx100/sfx100v2_misc_28.ogg	APPROX: 2.0s blast
+ambient/cave/cave1.ogg	sfx100/sfx100v2_loop_ambient_02.ogg	named ambient loop
+ambient/cave/cave2.ogg	sfx100/sfx100v2_loop_ambient_03.ogg	named ambient loop
+ambient/cave/cave3.ogg	sfx100/sfx100v2_loop_machine_04.ogg	APPROX: low machinery hum
+ambient/underwater/underwater_ambience.ogg	sfx100/sfx100v2_loop_water_01.ogg	named water loop
+ambient/weather/rain1.ogg	sfx100/sfx100v2_loop_water_01.ogg	APPROX: water hiss as rain
+ambient/weather/rain2.ogg	sfx100/sfx100v2_loop_water_02.ogg	APPROX: water hiss as rain
+ambient/weather/rain3.ogg	sfx100/sfx100v2_loop_water_03.ogg	APPROX: water hiss as rain
+ambient/weather/thunder1.ogg	sfx100/sfx100v2_thunder_01.ogg	named thunder
+ambient/weather/thunder2.ogg	sfx100/sfx100v2_loop_construction_site.ogg	APPROX: long low rumble
+ambient/weather/thunder3.ogg	sfx100/sfx100v2_loop_highway.ogg	APPROX: long low rumble
+entity/player/damage/hit1.ogg	sfx100/sfx100v2_hit_01.ogg	named hit
+entity/player/damage/hit2.ogg	sfx100/sfx100v2_hit_02.ogg	named hit
+entity/player/damage/hit3.ogg	sfx100/sfx100v2_hit_03.ogg	named hit
+damage/fallbig.ogg	sfx100/sfx100v2_metal_hit_01.ogg	APPROX: heavy landing
+damage/fallsmall.ogg	sfx100/sfx100v2_hit_03.ogg	APPROX: light landing
+entity/player/attack/strong1.ogg	sfx100/sfx100v2_hit_01.ogg	named hit, heavier
+entity/player/attack/strong2.ogg	sfx100/sfx100v2_hit_02.ogg	named hit, heavier
+entity/player/attack/strong3.ogg	sfx100/sfx100v2_hit_03.ogg	named hit, heavier
+entity/player/attack/weak1.ogg	sfx100/sfx100v2_metal_hit_02.ogg	APPROX: light swing
+entity/player/attack/weak2.ogg	sfx100/sfx100v2_metal_hit_02.ogg	APPROX: light swing, reused
+entity/player/attack/weak3.ogg	sfx100/sfx100v2_metal_hit_02.ogg	APPROX: light swing, reused
+item/armor/equip/generic1.ogg	sfx100/sfx100v2_items_01.ogg	named item handling
+mob/pig/say1.ogg	@pig_idle.mp3	named pig idle
+mob/pig/say2.ogg	@pig_idle2.mp3	named pig idle
+mob/pig/say3.ogg	@pig_idle3.mp3	named pig idle
+mob/pig/death.ogg	@pig_hit2.mp3	named pig hit
+mob/chicken/say1.ogg	chicken/Chicken Sound Effect.ogg	named chicken call
+mob/creeper/say1.ogg	sfx100/sfx100v2_air_02.ogg	APPROX: hiss, as a creeper makes
+music/menu1.ogg	Ehlers - Flags	title pool
+music/menu2.ogg	Ehlers - Spacetime	title pool
+music/menu3.ogg	Ehlers - Twists	title pool
+music/menu4.ogg	Ehlers - Great mission	title pool
+music/track1.ogg	Alexander Ehlers - Doomed	in-game pool
+music/track2.ogg	Alexander Ehlers - Waking the devil	in-game pool
+music/track3.ogg	obscure music - level1-step1	in-game pool
+music/track4.ogg	obscure music - level1-step1-evil	in-game pool
+music/track5.ogg	obscure music - level1-step2	in-game pool
+music/track6.ogg	obscure music - level1-step2-evil	in-game pool
+music/track7.ogg	obscure music - level1-step3	in-game pool
+music/track8.ogg	obscure music - level1-step3-evil	in-game pool
+ambient/underwater/enter1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for ambient/underwater/enter1.ogg
+ambient/underwater/exit1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for ambient/underwater/exit1.ogg
+damage/hit1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for damage/hit1.ogg
+damage/hit2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for damage/hit2.ogg
+damage/hit3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for damage/hit3.ogg
+dig/cloth1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for dig/cloth1.ogg
+dig/cloth2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for dig/cloth2.ogg
+dig/cloth3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for dig/cloth3.ogg
+dig/coral1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for dig/coral1.ogg
+dig/coral2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for dig/coral2.ogg
+dig/coral3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for dig/coral3.ogg
+dig/wet_grass1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for dig/wet_grass1.ogg
+dig/wet_grass2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for dig/wet_grass2.ogg
+dig/wet_grass3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for dig/wet_grass3.ogg
+mob/chicken/hurt1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/chicken/hurt1.ogg
+mob/chicken/say2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/chicken/say2.ogg
+mob/chicken/say3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/chicken/say3.ogg
+mob/cow/hurt1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/cow/hurt1.ogg
+mob/cow/say1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/cow/say1.ogg
+mob/cow/say2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/cow/say2.ogg
+mob/cow/say3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/cow/say3.ogg
+mob/creeper/say2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/creeper/say2.ogg
+mob/creeper/say3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/creeper/say3.ogg
+mob/horse/hit1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/horse/hit1.ogg
+mob/horse/idle1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/horse/idle1.ogg
+mob/horse/idle2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/horse/idle2.ogg
+mob/horse/idle3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/horse/idle3.ogg
+mob/sheep/say1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/sheep/say1.ogg
+mob/sheep/say2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/sheep/say2.ogg
+mob/sheep/say3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/sheep/say3.ogg
+mob/skeleton/hurt1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/skeleton/hurt1.ogg
+mob/skeleton/say1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/skeleton/say1.ogg
+mob/skeleton/say2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/skeleton/say2.ogg
+mob/skeleton/say3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/skeleton/say3.ogg
+mob/slime/attack1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/slime/attack1.ogg
+mob/slime/small1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/slime/small1.ogg
+mob/slime/small2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/slime/small2.ogg
+mob/slime/small3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/slime/small3.ogg
+mob/spider/death.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/spider/death.ogg
+mob/spider/say1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/spider/say1.ogg
+mob/spider/say2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/spider/say2.ogg
+mob/spider/say3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/spider/say3.ogg
+mob/villager/hit1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/villager/hit1.ogg
+mob/villager/idle1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/villager/idle1.ogg
+mob/villager/idle2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/villager/idle2.ogg
+mob/villager/idle3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/villager/idle3.ogg
+mob/villager/yes1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/villager/yes1.ogg
+mob/wolf/bark1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/wolf/bark1.ogg
+mob/wolf/bark2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/wolf/bark2.ogg
+mob/wolf/bark3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/wolf/bark3.ogg
+mob/wolf/hurt1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/wolf/hurt1.ogg
+mob/zombie/hurt1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/zombie/hurt1.ogg
+mob/zombie/say1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/zombie/say1.ogg
+mob/zombie/say2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/zombie/say2.ogg
+mob/zombie/say3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for mob/zombie/say3.ogg
+music/menu1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for music/menu1.ogg
+music/menu2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for music/menu2.ogg
+music/menu3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for music/menu3.ogg
+music/menu4.ogg	(generated placeholder)	SYNTHETIC: no licensed source for music/menu4.ogg
+random/classic_hurt.ogg	(generated placeholder)	SYNTHETIC: no licensed source for random/classic_hurt.ogg
+random/door_close.ogg	(generated placeholder)	SYNTHETIC: no licensed source for random/door_close.ogg
+random/door_open.ogg	(generated placeholder)	SYNTHETIC: no licensed source for random/door_open.ogg
+step/cloth1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for step/cloth1.ogg
+step/cloth2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for step/cloth2.ogg
+step/cloth3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for step/cloth3.ogg
+step/coral1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for step/coral1.ogg
+step/coral2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for step/coral2.ogg
+step/coral3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for step/coral3.ogg
+step/ladder1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for step/ladder1.ogg
+step/ladder2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for step/ladder2.ogg
+step/ladder3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for step/ladder3.ogg
+step/scaffold1.ogg	(generated placeholder)	SYNTHETIC: no licensed source for step/scaffold1.ogg
+step/scaffold2.ogg	(generated placeholder)	SYNTHETIC: no licensed source for step/scaffold2.ogg
+step/scaffold3.ogg	(generated placeholder)	SYNTHETIC: no licensed source for step/scaffold3.ogg
