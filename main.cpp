@@ -47,7 +47,9 @@ int main(int argc, char *argv[])
 
     //Early exit #1
     //(Task::keyPressed can only be used after initializeGlobals)
-    if(isKeyPressed(KEY_NSPIRE_ESC))
+    //Ctrl rather than Esc: Esc is one of the keys this build cannot rely on
+    //reading, and a stuck one would quit the game before it had started.
+    if(isKeyPressed(KEY_NSPIRE_CTRL))
     {
         nglUninit();
         return 0;
@@ -65,7 +67,7 @@ int main(int argc, char *argv[])
     glLoadIdentity();
 
     //Early exit #2
-    if(isKeyPressed(KEY_NSPIRE_ESC))
+    if(isKeyPressed(KEY_NSPIRE_CTRL))
     {
         terrainUninit();
         nglUninit();

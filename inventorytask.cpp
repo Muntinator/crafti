@@ -1,5 +1,7 @@
 #include "inventorytask.h"
 
+#include "controls.h"
+
 #ifndef _TINSPIRE
 #include <SDL/SDL.h>
 #endif
@@ -2029,12 +2031,12 @@ void InventoryTask::logic(GLFix dt)
 #else
     if(key_held_down)
     {
-        key_held_down = keyPressed(KEY_NSPIRE_A) || keyPressed(KEY_NSPIRE_PERIOD) || keyPressed(KEY_NSPIRE_ESC);
+        key_held_down = keyPressed(KEY_NSPIRE_A) || Controls::menu();
         return;
     }
 
-    // On calculator builds, close with A, . or ESC.
-    if(keyPressed(KEY_NSPIRE_A) || keyPressed(KEY_NSPIRE_PERIOD) || keyPressed(KEY_NSPIRE_ESC))
+    // On calculator builds, close with A or the menu key.
+    if(keyPressed(KEY_NSPIRE_A) || Controls::menu())
     {
         close();
         key_held_down = true;
@@ -2100,9 +2102,11 @@ void InventoryTask::logic(GLFix dt)
     cursor_x = std::max(0, std::min(cursor_x, SCREEN_WIDTH - 1));
     cursor_y = std::max(0, std::min(cursor_y, SCREEN_HEIGHT - 1));
 
-    const bool select_down = keyPressed(KEY_NSPIRE_CLICK) || keyPressed(KEY_NSPIRE_5);
-    const bool single_down = keyPressed(KEY_NSPIRE_SHIFT);
-    const bool half_down = keyPressed(KEY_NSPIRE_VAR);
+    const bool select_down = Controls::jump();
+    // Shift is the menu key everywhere else, so the two drag gestures that used
+    // to sit on Shift and the var key move to the two keys left over.
+    const bool single_down = keyPressed(KEY_NSPIRE_VAR);
+    const bool half_down = keyPressed(KEY_NSPIRE_CAT);
 
     const int slot = slotFromMouse(cursor_x, cursor_y);
     if(select_down && !nspire_select_was_down)

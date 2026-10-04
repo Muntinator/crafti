@@ -1,5 +1,7 @@
 #include "deathtask.h"
 
+#include "controls.h"
+
 #include <stdio.h>
 
 #include "texturetools.h"
@@ -73,22 +75,22 @@ void DeathTask::render()
 void DeathTask::logic(GLFix /*dt*/)
 {
     if(key_held_down)
-        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_MENU) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_CLICK) || keyPressed(KEY_NSPIRE_ENTER);
-    else if(keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_UP))
+        key_held_down = Controls::cursorUp() || Controls::cursorDown() || Controls::activate() || Controls::menu();
+    else if(Controls::cursorUp())
     {
         --death_selected_item;
         if(death_selected_item < 0)
             death_selected_item = DEATH_ITEM_MAX - 1;
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_DOWN))
+    else if(Controls::cursorDown())
     {
         ++death_selected_item;
         if(death_selected_item == DEATH_ITEM_MAX)
             death_selected_item = 0;
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_CLICK) || keyPressed(KEY_NSPIRE_ENTER))
+    else if(Controls::activate())
     {
         switch(death_selected_item)
         {
@@ -109,9 +111,9 @@ void DeathTask::logic(GLFix /*dt*/)
 
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_MENU) || keyPressed(KEY_NSPIRE_ESC))
+    else if(Controls::menu())
     {
-        // ESC acts like "Respawn" to mirror the feel of the in-game menu.
+        // Shift acts like "Respawn" to mirror the feel of the in-game menu.
         world_task.respawnPlayer();
         world_task.makeCurrent();
         key_held_down = true;

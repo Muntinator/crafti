@@ -118,8 +118,8 @@ inventory that could drift out of step with the world.
   screen changes. Left click takes a stack, right click takes half or places one,
   and a stack that is picked up, put down or swapped keeps its wear.
 - **A chest can never eat an item**: the screen reads and writes the store
-  directly, so closing it (with `A`, `.` or `ESC`) needs no "save the container"
-  step and cannot lose what is on the cursor.
+  directly, so closing it (with `A` or the menu key, `Shift`) needs no "save the
+  container" step and cannot lose what is on the cursor.
 - Blowing a chest up with TNT scatters its contents instead of deleting them.
 - A chest the **world** generated (a dungeon, a ruin or a temple) is filled with
   that structure's loot the first time it is opened or broken, so an untouched one

@@ -28,7 +28,8 @@ BINS := build/audio_pack_test build/audio_tx_test build/audio_gpio_test \
         build/itemrules_test build/cheststore_test \
         build/structuregen_test build/blocklight_test \
         build/command_test build/bed_test build/snowcover_test \
-        build/enchanting_test build/menuui_test build/menuui_wide_test
+        build/enchanting_test build/menuui_test build/menuui_wide_test \
+        build/nglines_test
 
 .PHONY: all run clean
 
@@ -164,6 +165,9 @@ build/menuui_test: menuui_test.cc $(ROOT)/menuui.cpp $(ROOT)/menuui.h $(ROOT)/fo
 
 build/menuui_wide_test: menuui_test.cc $(ROOT)/menuui.cpp $(ROOT)/menuui.h $(ROOT)/font.cpp $(MENUUI_TEXTURES) | build
 	$(CXX) $(COMMON) -I$(ROOT)/nGL -o $@ menuui_test.cc $(ROOT)/menuui.cpp $(ROOT)/font.cpp
+
+build/nglines_test: nglines_test.cc $(ROOT)/nGL/gl.cpp $(ROOT)/nGL/gl.h
+	$(CXX) $(COMMON) -I$(ROOT)/nGL -I$(ROOT)/tools/pcsim -o $@ nglines_test.cc $(ROOT)/nGL/gl.cpp $(ROOT)/nGL/fastmath.cpp
 
 clean:
 	rm -rf build

@@ -16,6 +16,8 @@
 
 #include "blocklisttask.h"
 
+#include "controls.h"
+
 #include <algorithm>
 #include <cstdio>
 
@@ -497,7 +499,7 @@ void BlockListTask::render()
     }
 
     // The controls, in the front-end's own small print along the bottom.
-    MenuUI::drawSmallPrint("7/9 Tab   2-8-4-6 Move   5 Take   1/3 Slot   ./ESC Close",
+    MenuUI::drawSmallPrint("7/9 Tab   Pad keys Move   Click Take   1/3 Slot   Shift Close",
                            *screen, 1, SCREEN_HEIGHT - static_cast<int>(fontHeight()) - 1);
 }
 
@@ -575,8 +577,11 @@ void BlockListTask::logic(GLFix /*dt*/)
     }
 
     if(key_held_down)
-        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_PERIOD) || keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_4) || keyPressed(KEY_NSPIRE_6) || keyPressed(KEY_NSPIRE_7) || keyPressed(KEY_NSPIRE_9) || keyPressed(KEY_NSPIRE_1) || keyPressed(KEY_NSPIRE_3) || keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_LEFT) || keyPressed(KEY_NSPIRE_RIGHT)  || keyPressed(KEY_NSPIRE_CLICK) || keyPressed(KEY_NSPIRE_ENTER);
-    else if(keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_PERIOD))
+        key_held_down = Controls::menu() || Controls::cursorUp() || Controls::cursorDown()
+            || Controls::cursorLeft() || Controls::cursorRight() || Controls::activate()
+            || keyPressed(KEY_NSPIRE_7) || keyPressed(KEY_NSPIRE_9)
+            || keyPressed(KEY_NSPIRE_1) || keyPressed(KEY_NSPIRE_3);
+    else if(Controls::menu())
     {
         close();
 
@@ -598,7 +603,7 @@ void BlockListTask::logic(GLFix /*dt*/)
 
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_DOWN))
+    else if(Controls::cursorDown())
     {
         const int page_count = selectable_pages[current_page].count;
         current_selection += GridColumns;
@@ -608,7 +613,7 @@ void BlockListTask::logic(GLFix /*dt*/)
 
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_UP))
+    else if(Controls::cursorUp())
     {
         const int page_count = selectable_pages[current_page].count;
         if(current_selection >= GridColumns)
@@ -623,7 +628,7 @@ void BlockListTask::logic(GLFix /*dt*/)
 
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_4) || keyPressed(KEY_NSPIRE_LEFT))
+    else if(Controls::cursorLeft())
     {
         const int page_count = selectable_pages[current_page].count;
         if(current_selection % GridColumns == 0)
@@ -637,7 +642,7 @@ void BlockListTask::logic(GLFix /*dt*/)
 
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_6) || keyPressed(KEY_NSPIRE_RIGHT))
+    else if(Controls::cursorRight())
     {
         const int page_count = selectable_pages[current_page].count;
         if(current_selection % GridColumns != GridColumns - 1 && current_selection < page_count - 1)
@@ -659,7 +664,7 @@ void BlockListTask::logic(GLFix /*dt*/)
 
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_CLICK) || keyPressed(KEY_NSPIRE_ENTER))
+    else if(Controls::activate())
     {
         const Page &page = selectable_pages[current_page];
         if(page.count > 0)

@@ -1,5 +1,7 @@
 #include "starttask.h"
 
+#include "controls.h"
+
 #include "audio_manager.h"
 
 #include <algorithm>
@@ -331,8 +333,8 @@ void StartTask::logic(GLFix dt)
     }
 
     if(key_held_down)
-        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_CLICK) || keyPressed(KEY_NSPIRE_ENTER);
-    else if(keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_8))
+        key_held_down = Controls::cursorUp() || Controls::cursorDown() || Controls::activate() || Controls::menu();
+    else if(Controls::cursorUp())
     {
         do
         {
@@ -342,7 +344,7 @@ void StartTask::logic(GLFix dt)
         } while(!itemEnabled(selected_item));
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_2))
+    else if(Controls::cursorDown())
     {
         do
         {
@@ -352,7 +354,7 @@ void StartTask::logic(GLFix dt)
         } while(!itemEnabled(selected_item));
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_CLICK) || keyPressed(KEY_NSPIRE_ENTER))
+    else if(Controls::activate())
     {
         if(!itemEnabled(selected_item))
         {
@@ -363,7 +365,7 @@ void StartTask::logic(GLFix dt)
         activate();
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_ESC))
+    else if(Controls::menu())
     {
         if(has_saved_world)
         {

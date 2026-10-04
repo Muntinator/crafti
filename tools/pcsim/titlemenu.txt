@@ -14,7 +14,7 @@
 # number below is the calculator's doubled.
 #
 #   mpos X Y     puts the pointer there, which is what hover tests against
-#   btn left tap click, and "s"/"w" (or the arrows) walk the selection
+#   btn left tap click, and the down/up arrows walk the selection
 #
 # The run starts with no saved world. The splash is picked fresh from vanilla's
 # splashes.txt every time the screen opens, so the line at the end differs from
@@ -37,9 +37,9 @@
 
 # The keyboard drives the same block: "s" steps onto "Singleplayer" and again
 # past the greyed buttons to "Options...".
-4.0    key s tap
-4.4    key s tap
-4.8    caption The keyboard lights the same buttons -- "s" steps down the block and "w"/the up arrow steps back up, skipping the greyed ones.
+4.0    key down tap
+4.4    key down tap
+4.8    caption The keyboard lights the same buttons -- the down arrow steps down the block and the up arrow steps back up, skipping the greyed ones.
 5.0    shot 04-title-keyboard
 
 # "Options..." is vanilla's own door to the options screen, on the title screen
@@ -50,8 +50,8 @@
 7.0    shot 05-title-options
 
 # Back at the menu -- with a fresh splash line, as vanilla's title screen has.
-7.6    key esc tap
-8.4    caption Esc comes back to the title screen. The splash is redrawn from vanilla's splashes.txt each time the screen opens, so the joke under the wordmark changes.
+7.6    key shift tap
+8.4    caption Shift comes back to the title screen. The splash is redrawn from vanilla's splashes.txt each time the screen opens, so the joke under the wordmark changes.
 8.6    shot 06-title-back
 
 # "Singleplayer" opens the Select World screen.
@@ -61,7 +61,7 @@
 10.6   shot 07-world-select
 
 # The keyboard walks the world list the same way.
-11.2   key s tap
+11.2   key down tap
 11.8   caption On the list, the arrow keys move the selection, which wears vanilla's grey frame over a black box.
 12.0   shot 08-world-select-keyboard
 

@@ -66,7 +66,7 @@ by the one module that owns that texture.
 
 ### 1.3 The pipeline
 
-`textures/Makefile` drives four generators plus one generic rule. All of them
+`textures/Makefile` drives five generators plus one generic rule. All of them
 live in `tools/textures/` and share `pngio.py` (a hand-rolled PNG reader —
 there is no PIL on the build host).
 
@@ -76,13 +76,30 @@ there is no PIL on the build host).
 | `gen_item_textures.py` | `items_texture.h` **+** `items_texture.png` | `textures/item/*.png` | atlas laid out by the `ItemTexture` enum |
 | `gen_gui_textures.py` | **26** headers: 19 `PANELS` + `title_logo` + `armor_slots` + `font_bmp{,_wide}` + `font_dat{,_wide}` + `title_backdrop` + `world_icon{,_overlay}` | `textures/gui/**`, `font/`, `particle/`, `item/empty_armor_slot_*.png` | vanilla 1.17.1 GUI sheets cut into blittable pieces |
 | `gen_entity_textures.py` | **11** skins (`creeper`, `cow`, `pig`, `sheep`, `chicken`, `horse`, `villager`, `wolf`, `mooshroom`, `donkey`, `steve`) | `textures/entity/*` | official mob skins |
-| `%.h: %.png` / `%.h: %.bmp` → `ConvertImg --format=ngl` | `loading.h`, `terrain.h`, `terrain2.h`, `blockselection.h` | the game's own art | one-to-one conversion |
+| `gen_loading_textures.py` | `loading.h` + `loading.png` | `textures/gui/options_background.png`, `gui/title/minecraft.png` | the 320×240 boot frame: the vanilla dirt tile behind the vanilla wordmark |
+| `%.h: %.png` / `%.h: %.bmp` → `ConvertImg --format=ngl` | `terrain.h`, `terrain2.h` | the game's own art | one-to-one conversion |
 
-`textures/Makefile`'s `OBJS` lists the **41** headers the engine embeds; the other
+`loading.h` is the one header that is a whole 320×240 framebuffer rather than a
+sprite: `main.cpp` hands `loading.bitmap` to nGL before any task exists, and on
+a 4-bit greyscale LCD runs `greyscaleTexture()` over it in place. It used to be
+a hand-painted splash of our own, converted by `ConvertImg`; it is now vanilla's
+own loading screen, composed by `gen_loading_textures.py` from the same two GUI
+files the menu already cuts up — `options_background.png` tiled, with the two ink
+runs of `title/minecraft.png` joined and placed at `width / 2 - logo_w / 2`,
+`height / 4`. The generator emits the `.h` itself rather than leaving it to the
+`%.h: %.png` rule, because `ConvertImg` is not present on the build host and the
+frame has to stay opaque (alpha 255 everywhere) to stay a framebuffer.
+
+`textures/Makefile`'s `OBJS` lists the **40** headers the engine embeds; the other
 six files in `textures/` are `items.h` (the hand-written `ItemTexture` enum),
 `selection.h`, `language_icon.h`, `accessibility_icon.h`, and `world_icon.h` /
 `world_icon_overlay.h`, which the world-select screen `#include`s but which the
 Makefile only gets as a side effect of the GUI rule.
+
+`blockselection.h` was the 41st until G2: the block outline is now a textureless
+`glBegin(GL_LINES)` wireframe in `worldtask.cpp`, because vanilla draws it with
+`DrawMode.LINES` over a POSITION-only vertex format and binds no texture at all.
+There is no sheet to convert, so the `.h`, `.png` and `.kra` are all deleted.
 
 Note the block and item generators each emit **both** a header and a PNG. The
 PNG exists so the desktop build can load the same art through the runtime path

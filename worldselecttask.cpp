@@ -1,5 +1,7 @@
 #include "worldselecttask.h"
 
+#include "controls.h"
+
 #include <cstdio>
 #include <cstring>
 #include <ctime>
@@ -763,11 +765,9 @@ void WorldSelectTask::logicList()
     }
     if(key_held_down)
     {
-        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_UP)
-            || keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_8)
-            || keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_5)
-            || keyPressed(KEY_NSPIRE_CLICK) || keyPressed(KEY_NSPIRE_ENTER)
-            || keyPressed(KEY_NSPIRE_MENU) || keyPressed(KEY_NSPIRE_DEL);
+        key_held_down = Controls::menu() || Controls::cursorUp() || Controls::cursorDown()
+            || Controls::cursorLeft() || Controls::cursorRight()
+            || Controls::activate() || Controls::erase();
         return;
     }
 
@@ -783,7 +783,7 @@ void WorldSelectTask::logicList()
     {
         // While the search box has the keyboard, every character filters and the
         // arrow keys alone move the selection, so the letters can be typed.
-        if(keyPressed(KEY_NSPIRE_DEL))
+        if(Controls::erase())
         {
             const size_t len = strlen(search);
             if(len > 0)
@@ -793,7 +793,7 @@ void WorldSelectTask::logicList()
             key_held_down = true;
             return;
         }
-        if(keyPressed(KEY_NSPIRE_UP))
+        if(Controls::cursorUp())
         {
             if(selected > 0)
                 --selected;
@@ -801,7 +801,7 @@ void WorldSelectTask::logicList()
             key_held_down = true;
             return;
         }
-        if(keyPressed(KEY_NSPIRE_DOWN))
+        if(Controls::cursorDown())
         {
             if(selected + 1 < total)
                 ++selected;
@@ -809,14 +809,14 @@ void WorldSelectTask::logicList()
             key_held_down = true;
             return;
         }
-        if(keyPressed(KEY_NSPIRE_ENTER) || keyPressed(KEY_NSPIRE_CLICK))
+        if(Controls::activate())
         {
             GameAudio::uiClick();
             playSelected(false);
             key_held_down = true;
             return;
         }
-        if(keyPressed(KEY_NSPIRE_ESC))
+        if(Controls::menu())
         {
             typing = false;
             key_held_down = true;
@@ -837,7 +837,7 @@ void WorldSelectTask::logicList()
         return;
     }
 
-    if(keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_8))
+    if(Controls::cursorUp())
     {
         if(selected > 0)
             --selected;
@@ -845,7 +845,7 @@ void WorldSelectTask::logicList()
         key_held_down = true;
         return;
     }
-    if(keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_2))
+    if(Controls::cursorDown())
     {
         if(selected + 1 < total)
             ++selected;
@@ -853,15 +853,21 @@ void WorldSelectTask::logicList()
         key_held_down = true;
         return;
     }
-    if(keyPressed(KEY_NSPIRE_MENU))
+    if(Controls::cursorLeft() || Controls::cursorRight())
     {
-        // Tab walks the six buttons; Enter then takes the one it lands on. With
-        // no button in focus, Enter plays the selected world.
-        focus_button = focus_button < 0 ? 0 : (focus_button + 1) % MenuUI::WorldActionCount;
+        // Left and right walk the six buttons; Enter then takes the one it lands
+        // on. Shift drops back out to the title screen.
+        if(focus_button < 0)
+            focus_button = 0;
+        else
+        {
+            const int step = Controls::cursorRight() ? 1 : MenuUI::WorldActionCount - 1;
+            focus_button = (focus_button + step) % MenuUI::WorldActionCount;
+        }
         key_held_down = true;
         return;
     }
-    if(keyPressed(KEY_NSPIRE_ENTER) || keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_CLICK))
+    if(Controls::activate())
     {
         if(focus_button >= 0)
             activateButton(focus_button);
@@ -873,7 +879,7 @@ void WorldSelectTask::logicList()
         key_held_down = true;
         return;
     }
-    if(keyPressed(KEY_NSPIRE_ESC))
+    if(Controls::menu())
     {
         start_task.makeCurrent();
         key_held_down = true;
@@ -969,15 +975,13 @@ void WorldSelectTask::logicForm(bool create)
 
     if(key_held_down)
     {
-        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_ENTER)
-            || keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_CLICK)
-            || keyPressed(KEY_NSPIRE_MENU) || keyPressed(KEY_NSPIRE_DEL)
-            || keyPressed(KEY_NSPIRE_LEFT) || keyPressed(KEY_NSPIRE_RIGHT)
-            || keyPressed(KEY_NSPIRE_4) || keyPressed(KEY_NSPIRE_6);
+        key_held_down = Controls::menu() || Controls::cursorUp() || Controls::cursorDown()
+            || Controls::cursorLeft() || Controls::cursorRight()
+            || Controls::activate() || Controls::erase();
         return;
     }
 
-    if(keyPressed(KEY_NSPIRE_DEL))
+    if(Controls::erase())
     {
         const size_t len = strlen(name_field);
         if(len > 0)
@@ -987,11 +991,9 @@ void WorldSelectTask::logicForm(bool create)
         return;
     }
 
-    // Activation: Enter or the click key. The desktop's space bar shares the
-    // click key with the calculator's 5 and belongs to the name, so a space
-    // typed this frame does not activate; the digit 5 is reserved the same way.
-    const bool activate = keyPressed(KEY_NSPIRE_ENTER) || keyPressed(KEY_NSPIRE_CLICK)
-        || (keyPressed(KEY_NSPIRE_5) && typed != ' ');
+    // Activation: Enter or the click key. The desktop's space bar is the click
+    // key and belongs to the name, so a space typed this frame does not activate.
+    const bool activate = keyPressed(KEY_NSPIRE_ENTER) || (keyPressed(KEY_NSPIRE_CLICK) && typed != ' ');
 
     if(activate)
     {
@@ -1017,7 +1019,7 @@ void WorldSelectTask::logicForm(bool create)
         return;
     }
 
-    if(keyPressed(KEY_NSPIRE_ESC))
+    if(Controls::menu())
     {
         GameAudio::uiClick();
         view = LIST_VIEW;
@@ -1026,7 +1028,7 @@ void WorldSelectTask::logicForm(bool create)
     }
 
     // A typed character edits the name, whatever the focus is on.
-    if(typed != 0 && typed != '5')
+    if(typed != 0)
     {
         bool changed = false;
         editField(name_field, sizeof(name_field), typed, changed);
@@ -1035,13 +1037,21 @@ void WorldSelectTask::logicForm(bool create)
         return;
     }
 
-    if(keyPressed(KEY_NSPIRE_MENU))
+    // Up and down walk the fields of the form; left and right change whichever
+    // field is in focus.
+    if(Controls::cursorUp())
+    {
+        form_focus = (form_focus + focus_count - 1) % focus_count;
+        key_held_down = true;
+        return;
+    }
+    if(Controls::cursorDown())
     {
         form_focus = (form_focus + 1) % focus_count;
         key_held_down = true;
         return;
     }
-    if(keyPressed(KEY_NSPIRE_LEFT) || keyPressed(KEY_NSPIRE_4))
+    if(Controls::cursorLeft())
     {
         if(create && form_focus == 1)
             game_mode = (game_mode + MenuUI::gameModeCount - 1) % MenuUI::gameModeCount;
@@ -1052,7 +1062,7 @@ void WorldSelectTask::logicForm(bool create)
         key_held_down = true;
         return;
     }
-    if(keyPressed(KEY_NSPIRE_RIGHT) || keyPressed(KEY_NSPIRE_6))
+    if(Controls::cursorRight())
     {
         if(create && form_focus == 1)
             game_mode = (game_mode + 1) % MenuUI::gameModeCount;
@@ -1095,24 +1105,19 @@ void WorldSelectTask::logicDelete()
 
     if(key_held_down)
     {
-        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_ENTER)
-            || keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_CLICK)
-            || keyPressed(KEY_NSPIRE_MENU) || keyPressed(KEY_NSPIRE_LEFT)
-            || keyPressed(KEY_NSPIRE_RIGHT) || keyPressed(KEY_NSPIRE_4)
-            || keyPressed(KEY_NSPIRE_6);
+        key_held_down = Controls::menu() || Controls::cursorLeft() || Controls::cursorRight()
+            || Controls::activate();
         return;
     }
 
-    if(keyPressed(KEY_NSPIRE_LEFT) || keyPressed(KEY_NSPIRE_4)
-       || keyPressed(KEY_NSPIRE_RIGHT) || keyPressed(KEY_NSPIRE_6)
-       || keyPressed(KEY_NSPIRE_MENU))
+    if(Controls::cursorLeft() || Controls::cursorRight())
     {
         delete_focus = 1 - delete_focus;
         key_held_down = true;
         return;
     }
 
-    if(keyPressed(KEY_NSPIRE_ENTER) || keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_CLICK))
+    if(Controls::activate())
     {
         key_held_down = true;
         if(delete_focus == 0)
@@ -1125,7 +1130,7 @@ void WorldSelectTask::logicDelete()
         return;
     }
 
-    if(keyPressed(KEY_NSPIRE_ESC))
+    if(Controls::menu())
     {
         view = LIST_VIEW;
         key_held_down = true;

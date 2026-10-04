@@ -92,7 +92,13 @@ enum GLDrawMode
     GL_TRIANGLES,
     GL_QUADS,
     GL_QUAD_STRIP, //Not really tested
-    GL_LINE_STRIP
+    GL_LINE_STRIP,
+    /**
+     * Disjoint pairs of vertices, each one a line segment. Vanilla draws the
+     * block selection box with this and no texture at all, so it is here for
+     * the outline rather than for anything textured.
+     */
+    GL_LINES
 };
 
 //Range [0-1]

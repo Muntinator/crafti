@@ -40,9 +40,16 @@ embedded in the `.tns`:
 | `gen_entity_textures.py` | `creeper.h`, `cow.h`, `pig.h`, `sheep.h`, `chicken.h`, `horse.h`, `villager.h`, `wolf.h`, `mooshroom.h`, `donkey.h`, `steve.h` | official mob skins |
 
 The remaining headers are the **game's own** images converted one-to-one with
-`ConvertImg --format=ngl` (`%.h: %.png` rule): `loading.h` (boot splash),
-`blockselection.h` (block outline), `terrain.h` + `terrain2.h` (pre-vanilla
-512x512 sheets, still compiled in and included from `terrain.cpp`).
+`ConvertImg --format=ngl` (`%.h: %.png` rule): `terrain.h` + `terrain2.h`
+(pre-vanilla 512x512 sheets, still compiled in and included from `terrain.cpp`).
+
+`blockselection.h` used to be on that list and no longer is: the block outline is
+drawn as lines now, with no texture at all, exactly as vanilla draws it. See G2.
+
+`loading.h` (the boot screen) was one of these too and no longer is: it is now
+vanilla's own loading screen, built by `tools/textures/gen_loading_textures.py`
+from `gui/options_background.png` tiled behind the wordmark cut from
+`gui/title/minecraft.png` — the two files the menu port already uses. See G1.
 
 ### 1.2 Textures — runtime
 
@@ -102,8 +109,8 @@ and coordinates; `tests/menuui_test.cc` pins geometry at both screen sizes.
 
 | # | Asset | Today | Target |
 | --- | --- | --- | --- |
-| G1 | Boot splash (`textures/loading.png`, `loading.h`, used by `main.cpp`) | game's own art | keep as Muntcraft branding (vanilla has no boot splash) *or* restyle on vanilla dirt + wordmark; decision item |
-| G2 | Block outline (`textures/blockselection.png`, drawn by `worldtask.cpp`) | hand-drawn sheet | match vanilla's selection box look (thin translucent black wireframe, `getBlock` outline colour), keep the engine's quad-based drawing |
+| G1 | Boot splash (`textures/loading.png`, `loading.h`, used by `main.cpp`) | **done** — vanilla dirt tile behind the vanilla wordmark, composed by `tools/textures/gen_loading_textures.py`; branding option declined in favour of vanilla's own loading screen | closed |
+| G2 | Block outline (`textures/blockselection.png`, drawn by `worldtask.cpp`) | **done** — a textureless 1-pixel black wireframe, `glBegin(GL_LINES)` over 12 edges, inflated by vanilla's `BlockRenderer.OUTLINE_SIZE` (0.002) of a block; the sheet and `textures/blockselection.h` are deleted and out of `textures/Makefile` | closed |
 | G3 | `textures/selection.png/.kra` | hand-made, **not in the embedded set** (absent from `textures/Makefile` `OBJS`) | audit and delete if unreferenced |
 | G4 | `textures/terrain.h` + `terrain2.h` (pre-vanilla 512x512 sheets) | compiled in, included from `terrain.cpp` | audit the includes, then drop from `OBJS` and delete — `terrain3` is the live atlas; frees two large embedded arrays |
 | G5 | Blocks drawn from stand-in tiles | the block table in `terrain.cpp` maps only what exists in `textures/block/` | full audit table; missing faces get their vanilla PNG (see 3.1) |
@@ -175,10 +182,17 @@ frame picker in `itemicons.cpp`; frame 0 remains the accepted stand-in.
 
 - **No new GUI art pipeline is needed** — `gen_gui_textures.py` already cuts the
   1.17.1 sheets. Remaining work is replacing the game-owned pixels:
-  - G2 block outline: keep `blockselection`'s role but redraw/recolour to
-    vanilla's outline; the drawing code is `worldtask.cpp` +
-    `BlockRenderer::drawTextureAtlasEntry`, so the change is asset + constants.
-  - G1 boot splash: decision item (branding vs vanilla-style).
+  - G2 block outline: **done**, and not as an asset at all. Vanilla draws the
+    selection box with `DrawMode.LINES` over a POSITION-only vertex format, so
+    there is nothing to convert: `worldtask.cpp` emits the 12 edges with
+    `glBegin(GL_LINES)` in flat black, inflated by `OUTLINE_SIZE * BLOCK_SIZE`,
+    and nGL's line rasteriser is one pixel wide — the `lineStrength` of 1.0
+    vanilla's `RenderType.outline()` asks for. `textures/blockselection.{h,png,kra}`
+    are deleted. One engine fix was needed first: `nglDrawLine3D` in
+    `nGL/gl.cpp` divided before it tested, so a screen-vertical line — that is,
+    every world-vertical edge of the box — hit a divide by zero and trapped.
+  - G1 boot splash: **done**, resolved in favour of the vanilla-style screen —
+    vanilla dirt plus the vanilla wordmark, rather than Muntcraft branding.
   - G3/G4 cleanup: remove dead art from the build (`textures/Makefile` `OBJS`,
     `terrain.cpp` includes) and from the repo.
 - Screens vanilla has no counterpart for (help, sound test, graphing console)
@@ -228,8 +242,8 @@ counts). `audio_pack.{h,cpp}` and the output backends do not change.
 - **Acceptance:** with a pack installed, every audible cue resolves to a
   vanilla event sample; every block face and item icon is the official 1.17.1
   pixel art; the only remaining game-owned images are the documented
-  exceptions (G1 boot splash if kept, G2 outline geometry, the composed
-  chest/bed/cake pieces, compass/clock frame 0).
+  exceptions (G1 boot splash if kept, the composed chest/bed/cake pieces,
+  compass/clock frame 0).
 
 ---
 

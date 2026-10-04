@@ -11,8 +11,8 @@
 # the GUI scale, so every number below is the calculator's doubled.
 #
 #   mpos X Y     puts the pointer there, which is what hover tests against
-#   btn left tap click; "key s tap" is the down arrow; letters type into the
-#   search box, and "key backspace tap" deletes
+#   btn left tap click; "key down tap" is the down arrow; letters type into the
+#   search box, and "key backspace tap" erases
 #
 # The run starts with no saved world, so the list offers the engine's world
 # kinds as rows and nothing is greyed out. Key taps are half a second apart: a
@@ -30,8 +30,8 @@
 2.4    shot 02-world-list
 
 # The keyboard walks the list the way vanilla's arrow keys do.
-2.8    key s tap
-3.4    caption The arrow keys (or 8/2 on the calculator) move the selection, which wears vanilla's grey frame over a black box.
+2.8    key down tap
+3.4    caption The four keys round the touchpad move the selection, which wears vanilla's grey frame over a black box.
 3.6    shot 03-list-keyboard
 
 # Clicking the search box gives it the keyboard; typing filters the list.
@@ -116,9 +116,9 @@
 32.0   caption "Create New World" makes the world and opens it, exactly as vanilla's button does: a fresh flat world in Creative.
 32.2   shot 15-world
 
-# ESC opens the pause menu, from which the world is saved and quit.
-32.8   key esc tap
-33.6   caption ESC opens the Game Menu.
+# Shift opens the pause menu, from which the world is saved and quit.
+32.8   key shift tap
+33.6   caption Shift opens the Game Menu.
 33.8   shot 16-pause
 
 # Save and Quit to Title (the wide button at the bottom of the menu), then back

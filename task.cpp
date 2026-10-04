@@ -163,21 +163,13 @@ bool Task::keyPressed(const t_key &key)
         else
             return (*reinterpret_cast<volatile uint16_t*>(0x900E0000 + key.row) & key.col) == 0;
     #else
-        static bool quit_requested = false;
-
         SDL_PumpEvents();
         SDL_Event event;
         while(SDL_PollEvent(&event))
         {
             if(event.type == SDL_QUIT)
-            {
-                quit_requested = true;
                 running = false;
-            }
         }
-
-        if(quit_requested)
-            return key.row == KEY_NSPIRE_ESC.row && key.col == KEY_NSPIRE_ESC.col;
 
         const Uint8 *keys = SDL_GetKeyState(nullptr);
         const Uint8 mouse = SDL_GetMouseState(nullptr, nullptr);
@@ -186,21 +178,10 @@ bool Task::keyPressed(const t_key &key)
             return keys[sdl_key] != 0;
         };
 
-        if(key.row == KEY_NSPIRE_ESC.row && key.col == KEY_NSPIRE_ESC.col)
-            return is_down(SDLK_ESCAPE);
-
-        if(key.row == KEY_NSPIRE_8.row && key.col == KEY_NSPIRE_8.col)
-            return is_down(SDLK_w) || is_down(SDLK_UP);
-        if(key.row == KEY_NSPIRE_2.row && key.col == KEY_NSPIRE_2.col)
-            return is_down(SDLK_s) || is_down(SDLK_DOWN);
-        if(key.row == KEY_NSPIRE_4.row && key.col == KEY_NSPIRE_4.col)
-            return is_down(SDLK_a) || is_down(SDLK_LEFT);
-        if(key.row == KEY_NSPIRE_6.row && key.col == KEY_NSPIRE_6.col)
-            return is_down(SDLK_d) || is_down(SDLK_RIGHT);
-
-        if(key.row == KEY_NSPIRE_5.row && key.col == KEY_NSPIRE_5.col)
-            return is_down(SDLK_SPACE) || is_down(SDLK_RETURN);
-
+        // The desktop build stands in for a working calculator keyboard. It maps
+        // the scheme in controls.h and nothing else: the keys that are dead on
+        // the calculator have no mapping here either, so a screen can never grow
+        // a dependency on one by accident.
         if(key.row == KEY_NSPIRE_7.row && key.col == KEY_NSPIRE_7.col)
             return (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0 || is_down(SDLK_e);
         if(key.row == KEY_NSPIRE_9.row && key.col == KEY_NSPIRE_9.col)
@@ -211,10 +192,8 @@ bool Task::keyPressed(const t_key &key)
         if(key.row == KEY_NSPIRE_3.row && key.col == KEY_NSPIRE_3.col)
             return is_down(SDLK_3) || is_down(SDLK_RIGHTBRACKET);
 
-        if(key.row == KEY_NSPIRE_PERIOD.row && key.col == KEY_NSPIRE_PERIOD.col)
-            return is_down(SDLK_r) || is_down(SDLK_PERIOD);
-        if(key.row == KEY_NSPIRE_MENU.row && key.col == KEY_NSPIRE_MENU.col)
-            return is_down(SDLK_TAB);
+        if(key.row == KEY_NSPIRE_B.row && key.col == KEY_NSPIRE_B.col)
+            return is_down(SDLK_b);
 
         if(key.row == KEY_NSPIRE_UP.row && key.col == KEY_NSPIRE_UP.col)
             return is_down(SDLK_UP);
@@ -231,18 +210,27 @@ bool Task::keyPressed(const t_key &key)
             return is_down(SDLK_MINUS);
         if(key.row == KEY_NSPIRE_CTRL.row && key.col == KEY_NSPIRE_CTRL.col)
             return is_down(SDLK_LCTRL) || is_down(SDLK_RCTRL) || is_down(SDLK_LMETA) || is_down(SDLK_RMETA);
+        if(key.row == KEY_NSPIRE_SHIFT.row && key.col == KEY_NSPIRE_SHIFT.col)
+            return is_down(SDLK_LSHIFT) || is_down(SDLK_RSHIFT);
+
+        // The pad's click key is the space bar on a desktop: it is the one
+        // binding that has to read as both "jump" and "select".
+        if(key.row == KEY_NSPIRE_CLICK.row && key.col == KEY_NSPIRE_CLICK.col)
+            return is_down(SDLK_SPACE);
+        // The Bar key replaces the dead Delete key, so it backspaces.
+        if(key.row == KEY_NSPIRE_BAR.row && key.col == KEY_NSPIRE_BAR.col)
+            return is_down(SDLK_BACKSPACE);
+        if(key.row == KEY_NSPIRE_SQU.row && key.col == KEY_NSPIRE_SQU.col)
+            return is_down(SDLK_s);
 
         // Text entry keys: the calculator's own letters and digits are unused by
-        // the game's controls, so the console can have them whole. The return and
-        // delete keys are mapped as well, because typing a line on the desktop has
-        // to end somewhere, and the calculator reaches them through the same
-        // constants below.
+        // the game's controls, so the console can have them whole. The return key
+        // is mapped as well, because typing a line on the desktop has to end
+        // somewhere, and the calculator reaches it through the same constant.
         if(key.row == KEY_NSPIRE_RET.row && key.col == KEY_NSPIRE_RET.col)
             return is_down(SDLK_RETURN) || is_down(SDLK_KP_ENTER);
         if(key.row == KEY_NSPIRE_ENTER.row && key.col == KEY_NSPIRE_ENTER.col)
             return is_down(SDLK_RETURN) || is_down(SDLK_KP_ENTER);
-        if(key.row == KEY_NSPIRE_DEL.row && key.col == KEY_NSPIRE_DEL.col)
-            return is_down(SDLK_BACKSPACE);
         if(key.row == KEY_NSPIRE_DIVIDE.row && key.col == KEY_NSPIRE_DIVIDE.col)
             return is_down(SDLK_SLASH);
 

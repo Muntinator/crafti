@@ -19,3 +19,5 @@ tools/pcsim/build/
 # Python bytecode caches from the asset/texture generators
 __pycache__/
 *.pyc
+# gcc's profiling dump, written by a -pg build of a host test.
+gmon.out

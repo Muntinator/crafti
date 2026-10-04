@@ -1,5 +1,7 @@
 #include "graphtask.h"
 
+#include "controls.h"
+
 #include <cstring>
 
 #ifndef _TINSPIRE
@@ -96,13 +98,13 @@ void GraphTask::render()
     snprintf(preset_text, sizeof(preset_text), "Preset: %s", k_graph_presets[preset_index].label);
     drawStringCenter(preset_text, MenuUI::Text, *screen, SCREEN_WIDTH / 2, 92 * scale);
 
-    drawString("8/2: char  5/Space: append  7: backspace", MenuUI::Text, *screen, 10 * scale, 106 * scale);
-    drawString("4/6: preset  1: apply preset", MenuUI::Text, *screen, 10 * scale, 120 * scale);
+    drawString("Pad keys: char  Click: append  7: backspace", MenuUI::Text, *screen, 10 * scale, 106 * scale);
+    drawString("Left/Right: preset  1: apply preset", MenuUI::Text, *screen, 10 * scale, 120 * scale);
     char fill_text[48];
     snprintf(fill_text, sizeof(fill_text), "+/-: fill depth n = %d", world.graphFillDepth());
     drawString(fill_text, MenuUI::Text, *screen, 10 * scale, 132 * scale);
     drawString("9: clear   Enter/T: start graph", MenuUI::Text, *screen, 10 * scale, 146 * scale);
-    drawString("ESC: back", MenuUI::TextDisabled, *screen, 10 * scale, 160 * scale);
+    drawString("Shift: back", MenuUI::TextDisabled, *screen, 10 * scale, 160 * scale);
 
     drawString("Range: x,y in [-30,30]", MenuUI::Text, *screen, 10 * scale, 174 * scale);
     drawString("Tip: c:* for domain, i:* for implicit", MenuUI::Text, *screen, 10 * scale, 188 * scale);
@@ -113,43 +115,35 @@ void GraphTask::logic(GLFix /*dt*/)
     static const char charset[] = "xyz0123456789+-*/^()., sincoartbpe";
     const unsigned int charset_len = sizeof(charset) - 1;
 
-    bool desktop_enter_down = false;
-    bool desktop_space_down = false;
     bool desktop_t_down = false;
 #ifndef _TINSPIRE
     const Uint8 *keys = SDL_GetKeyState(nullptr);
-    desktop_enter_down = keys[SDLK_RETURN] != 0 || keys[SDLK_KP_ENTER] != 0;
-    desktop_space_down = keys[SDLK_SPACE] != 0;
     desktop_t_down = keys[SDLK_t] != 0;
 #endif
 
-    const bool submit_down = keyPressed(KEY_NSPIRE_ENTER) || desktop_enter_down || desktop_t_down;
-    const bool append_down =
-#ifdef _TINSPIRE
-        keyPressed(KEY_NSPIRE_5);
-#else
-        desktop_space_down || (keyPressed(KEY_NSPIRE_5) && !desktop_enter_down);
-#endif
+    const bool submit_down = keyPressed(KEY_NSPIRE_ENTER) || desktop_t_down;
+    // The pad's click key appends the selected character; on the desktop that
+    // same key is the space bar, so it needs no separate case any more.
+    const bool append_down = Controls::jump();
 
     if(key_held_down)
     {
-        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN)
-            || keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_2)
-            || keyPressed(KEY_NSPIRE_4) || keyPressed(KEY_NSPIRE_6)
+        key_held_down = Controls::menu() || Controls::cursorUp() || Controls::cursorDown()
+            || Controls::cursorLeft() || Controls::cursorRight()
             || keyPressed(KEY_NSPIRE_1) || keyPressed(KEY_NSPIRE_PLUS) || keyPressed(KEY_NSPIRE_MINUS)
             || keyPressed(KEY_NSPIRE_7) || keyPressed(KEY_NSPIRE_9)
             || append_down || submit_down;
         return;
     }
 
-    if(keyPressed(KEY_NSPIRE_ESC))
+    if(Controls::menu())
     {
         start_task.makeCurrent();
         key_held_down = true;
         return;
     }
 
-    if(keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_8))
+    if(Controls::cursorUp())
     {
         if(charset_index == 0)
             charset_index = charset_len - 1;
@@ -159,7 +153,7 @@ void GraphTask::logic(GLFix /*dt*/)
         return;
     }
 
-    if(keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_2))
+    if(Controls::cursorDown())
     {
         ++charset_index;
         if(charset_index >= charset_len)
@@ -168,7 +162,7 @@ void GraphTask::logic(GLFix /*dt*/)
         return;
     }
 
-    if(keyPressed(KEY_NSPIRE_LEFT) || keyPressed(KEY_NSPIRE_4))
+    if(Controls::cursorLeft())
     {
         if(preset_index == 0)
             preset_index = k_graph_presets_count - 1;
@@ -178,7 +172,7 @@ void GraphTask::logic(GLFix /*dt*/)
         return;
     }
 
-    if(keyPressed(KEY_NSPIRE_RIGHT) || keyPressed(KEY_NSPIRE_6))
+    if(Controls::cursorRight())
     {
         ++preset_index;
         if(preset_index >= k_graph_presets_count)

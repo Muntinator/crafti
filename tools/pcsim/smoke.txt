@@ -15,7 +15,7 @@
 6.1    probe spawned
 6.5    scan 4
 7.0    step 33
-7.5    key w down
-9.0    key w up
+7.5    key up down
+9.0    key up up
 9.4    probe walked
 9.8    end

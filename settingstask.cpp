@@ -1,5 +1,7 @@
 #include "settingstask.h"
 
+#include "controls.h"
+
 #include <cstdio>
 
 #include "audio_manager.h"
@@ -480,33 +482,31 @@ void SettingsTask::logic(GLFix /*dt*/)
                       layout.columnX(hovered % 2), layout.button_w);
 
     if(key_held_down)
-        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN)
-            || keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_LEFT)
-            || keyPressed(KEY_NSPIRE_4) || keyPressed(KEY_NSPIRE_RIGHT) || keyPressed(KEY_NSPIRE_6)
-            || keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_ENTER) || keyPressed(KEY_NSPIRE_CLICK);
-    else if(keyPressed(KEY_NSPIRE_ESC))
+        key_held_down = Controls::cursorUp() || Controls::cursorDown() || Controls::cursorLeft()
+            || Controls::cursorRight() || Controls::activate() || Controls::menu();
+    else if(Controls::menu())
         leave();
-    else if(keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_8))
+    else if(Controls::cursorUp())
     {
         moveSelection(-1);
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_2))
+    else if(Controls::cursorDown())
     {
         moveSelection(+1);
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_LEFT) || keyPressed(KEY_NSPIRE_4))
+    else if(Controls::cursorLeft())
     {
         changeValue(-1);
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_RIGHT) || keyPressed(KEY_NSPIRE_6))
+    else if(Controls::cursorRight())
     {
         changeValue(+1);
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_ENTER) || keyPressed(KEY_NSPIRE_CLICK))
+    else if(Controls::activate())
     {
         activate();
         key_held_down = true;

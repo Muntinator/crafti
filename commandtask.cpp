@@ -44,7 +44,7 @@ namespace
 
     /**
      * The console's own key, edge detected: the console is driven by the level of
-     * a key, and a held ESC must close the console once rather than every frame.
+     * a key, and a held Shift must close the console once rather than every frame.
      */
     bool justPressed(const t_key &key, bool &previous)
     {
@@ -130,7 +130,7 @@ void CommandTask::open()
     for(unsigned int i = 0; i < log_size; ++i)
         log[i][0] = '\0';
 
-    esc_was_down = enter_was_down = back_was_down = up_was_down = down_was_down = false;
+    menu_was_down = enter_was_down = erase_was_down = up_was_down = down_was_down = false;
 
     makeCurrent();
 }
@@ -230,14 +230,14 @@ void CommandTask::logic(GLFix dt)
     // Every key is polled before anything acts on one, so a frame that runs a
     // command still updates the state of the rest: otherwise the letters held
     // while Enter is pressed would type themselves on the following frame.
-    const bool esc = justPressed(KEY_NSPIRE_ESC, esc_was_down);
+    const bool menu = justPressed(KEY_NSPIRE_SHIFT, menu_was_down);
     const bool enter = justPressed(KEY_NSPIRE_ENTER, enter_was_down);
-    const bool back = justPressed(KEY_NSPIRE_DEL, back_was_down);
+    const bool back = justPressed(KEY_NSPIRE_BAR, erase_was_down);
     const bool up = justPressed(KEY_NSPIRE_UP, up_was_down);
     const bool down = justPressed(KEY_NSPIRE_DOWN, down_was_down);
     const char typed = Task::textKeyPressed();
 
-    if(esc)
+    if(menu)
     {
         world_task.makeCurrent();
         return;

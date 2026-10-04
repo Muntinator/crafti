@@ -1,13 +1,14 @@
-# The headers the engine embeds. Everything here is either an official Minecraft
-# sheet converted to RGB565 (the GUI and world textures) or one of the game's own
-# images (the boot splash, the block outline, the font).
+# The headers the engine embeds. Everything here is an official Minecraft sheet
+# converted to RGB565 (the GUI, world and boot-screen textures) except the two
+# that are still the game's own: the block outline and the pre-vanilla
+# terrain/terrain2 fallbacks.
 OBJS := font_bmp.h font_dat.h font_bmp_wide.h font_dat_wide.h \
         icons.h inventory.h inv_selection.h menu_button.h menu_background.h \
         checkbox.h slider_handle.h \
         title_logo.h edition.h title_backdrop.h \
         inventory2.h crafting_table.h furnace.h chest_top.h chest_player.h \
         creative_window.h creative_tabs.h creative_scroll.h armor_slots.h part_fire.h \
-        loading.h terrain.h terrain2.h blockselection.h \
+        loading.h terrain.h terrain2.h \
         items_texture.h terrain3.h \
         chicken.h creeper.h cow.h pig.h sheep.h horse.h villager.h \
         wolf.h mooshroom.h donkey.h steve.h
@@ -67,8 +68,22 @@ ITEM_SOURCES := $(wildcard item/*.png) entity/bed/red.png
 items_texture.h items_texture.png: $(ITEMS) $(ITEM_SOURCES)
 	python3 $(ITEMS)
 
-# The remaining sheets are the game's own images, converted one to one. They are
-# checked in, so this rule only runs when one of them is replaced by hand.
+# The boot screen is the first thing drawn: main.cpp hands its bitmap straight to
+# nGL as the framebuffer, before any task exists. It used to be Muntcraft's own
+# painted splash and went through the ConvertImg rule below. It is now vanilla's
+# own loading screen -- the dirt tile behind the wordmark -- assembled here from
+# the same two GUI files the menu already cuts up, because a full 320x240 frame
+# is a composition rather than a one-to-one conversion.
+LOADING := ../tools/textures/gen_loading_textures.py
+LOADING_SOURCES := gui/options_background.png gui/title/minecraft.png
+loading.h loading.png: $(LOADING) $(LOADING_SOURCES)
+	python3 $(LOADING)
+
+# The remaining sheets are the game's own images, converted one to one: the two
+# pre-vanilla 512x512 terrain fallbacks that terrain.cpp still falls back to.
+# blockselection is no longer here -- the block outline is vanilla's own GL_LINES
+# wireframe and binds no texture at all. They are checked in, so this rule only
+# runs when one of them is replaced by hand.
 %.h: %.png
 	ConvertImg --format=ngl $^ $@
 

@@ -449,12 +449,28 @@ void nglDrawLine3D(const VERTEX *v1, const VERTEX *v2)
     nglPerspective(&v2_p);
 
     const GLFix diff_x = v2_p.x - v1_p.x;
-    const GLFix dy = (v2_p.y - v1_p.y) / diff_x;
+    const GLFix diff_y_screen = v2_p.y - v1_p.y;
 
     const COLOR c = v1_p.c;
 
+    // Pick the dominant axis before dividing by anything. The old code worked
+    // out the slope first and then compared it with 1, which divided by diff_x
+    // on the way -- so a line that is vertical on screen was an integer
+    // division by zero. Every world-vertical edge of a block outline hits that
+    // the moment a block faces the player squarely, and Fix::operator/ is plain
+    // integer division, so it trapped.
+    const GLFix abs_dx = diff_x < GLFix(0) ? -diff_x : diff_x;
+    const GLFix abs_dy = diff_y_screen < GLFix(0) ? -diff_y_screen : diff_y_screen;
+
+    if(abs_dx == GLFix(0) && abs_dy == GLFix(0))
+    {
+        // Degenerate: the segment covers no screen distance at all.
+        pixel(v1_p.x, v1_p.y, v1_p.z, c);
+        return;
+    }
+
     //Height > width? -> Interpolate X
-    if(dy > GLFix(1) || dy < GLFix(-1))
+    if(abs_dy > abs_dx)
     {
         if(v2_p.y < v1_p.y)
             std::swap(v1_p, v2_p);
@@ -479,6 +495,10 @@ void nglDrawLine3D(const VERTEX *v1, const VERTEX *v2)
     }
     else
     {
+        // diff_x cannot be zero here: if it were, abs_dy > abs_dx would have sent
+        // a non-degenerate segment to the steep branch above.
+        const GLFix dy = diff_y_screen / diff_x;
+
         if(v2_p.x < v1_p.x)
             std::swap(v1_p, v2_p);
 
@@ -864,6 +884,15 @@ void nglAddVertex(const VERTEX* vertex)
         nglDrawLine3D(&vertices[0], &vertices[1]);
 
         vertices[0] = vertices[1];
+        break;
+
+    case GL_LINES:
+        if(vertices_count != 2)
+            break;
+
+        vertices_count = 0;
+
+        nglDrawLine3D(&vertices[0], &vertices[1]);
         break;
     }
 }

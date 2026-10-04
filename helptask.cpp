@@ -1,5 +1,6 @@
 #include "helptask.h"
 
+#include "controls.h"
 #include "font.h"
 #include "menuui.h"
 #include "worldtask.h"
@@ -58,16 +59,21 @@ void HelpTask::render()
     const int x = 10 * MenuUI::uiScale();
     const int y = heading + static_cast<int>(fontHeight()) + 8 * MenuUI::uiScale();
 
-    drawString("8-4-6-2: Walk around\t5: Jump\n"
-               "7: Put block down   \t9: Destroy block\n"
+    drawString("The four keys round the pad walk.\n"
+               "On a pad: drag to look, tap to level.\n"
+               "Click: Jump\t\t7: Put block down\n"
+               "\t\t\t9: Destroy block\n"
                "1-3: Change inventory slot\n"
-               "ESC: Save & Exit\n"
-               ".: Open list of blocks\n"
-               "    5: Change block in inventory\n"
-               "    . or ESC: Close list of blocks\n"
-               "Menu: Open menu\n"
-               "    2-8: Move cursor\t5: Select\n"
-               "Ctrl+.: Take screenshot\n"
+               "Ctrl: Save the world\n"
+               "Shift: Open the menu\n"
+               "B: Open list of blocks\n"
+               "\t Ctrl+B: Take screenshot\n"
+               "In a list: the same four keys move\n"
+               "the cursor, Click or Enter selects,\n"
+               "and Shift goes back out.\n"
+               "Bar: Erase a character\n"
+               "/: Console (type, Enter to run,\n"
+               "    Bar to erase, Shift to leave)\n"
                "\n"
                "Programmed by Fabian Vogt\n"
                "Textures from Minecraft 1.17.1 (Mojang)", MenuUI::Text, *screen, x, y);
@@ -77,8 +83,8 @@ void HelpTask::logic(GLFix /*dt*/)
 {
     // The screen has no widgets, so a press anywhere dismisses it, standing in
     // for vanilla's Back button. On the calculator that is the touchpad, so the
-    // screen can be closed as well as opened without the keypad. Esc/Enter still
-    // work for both.
+    // screen can be closed as well as opened without the keypad. Shift/Enter
+    // still work for both.
     Pointer::poll();
     if(Pointer::clicked())
     {
@@ -86,11 +92,11 @@ void HelpTask::logic(GLFix /*dt*/)
         return;
     }
 
-    // Esc leaves the screen; Enter does too, so the calculator's Enter key acts
+    // Shift leaves the screen; Enter does too, so the calculator's Enter key acts
     // like vanilla's Back button rather than doing nothing.
     if(key_held_down)
-        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_ENTER);
-    else if(keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_ENTER))
+        key_held_down = Controls::menu() || keyPressed(KEY_NSPIRE_ENTER);
+    else if(Controls::menu() || keyPressed(KEY_NSPIRE_ENTER))
     {
         close();
 

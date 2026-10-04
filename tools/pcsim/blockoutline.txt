@@ -1,0 +1,103 @@
+# The block selection outline, close up.
+#
+#   MUNT_SIM_SHOTS=/tmp/munt-outline sh tools/pcsim/play.sh tools/pcsim/blockoutline.txt
+#
+# Vanilla draws this box with DrawMode.LINES over a POSITION-only vertex format:
+# a one pixel wireframe of the block's outline, with no texture bound at all.
+#
+# The indicator ships switched off -- "Block indicator" is entry 7 of the
+# settings list with current_value 0 (settingstask.cpp) -- so this switches it on
+# through the options screen first. Without that there is nothing to photograph.
+#
+# The world is entered the way worldselect.txt enters one: "Singleplayer" on the
+# title, then "Create New World", then its confirm button. The keyboard cannot do
+# it from the title, because the title opens with nothing focused and a plain
+# space press has no button to take.
+#
+# Key sequences follow the ones gui.txt already proves: shift for the pause menu,
+# the down arrow to step down, space to take an entry or tick a checkbox.
+#
+# The world created by the dialog above is flat, so the player stands on it at
+# y=16 and the plot is built at y=15, right under their feet. There is nothing
+# to aim at horizontally, so every shot looks down into the plot.
+
+0.0    step 120
+1.0    shot 01-title
+
+# --- a new terrain world --------------------------------------------------
+1.4    echo starting a new terrain world
+1.4    mpos 320 236
+1.8    btn left tap
+2.4    mpos 478 396
+2.8    btn left tap
+3.4    mpos 160 444
+3.8    btn left tap
+6.0    command gamemode creative
+6.1    command time set noon
+6.2    command weather clear
+6.4    probe spawned
+6.8    step 33
+
+# --- switch the block indicator on ---------------------------------------
+7.0    echo --- the pause menu, then Options
+7.0    key shift tap
+7.6    key down tap
+7.9    key down tap
+8.2    key down tap
+8.5    key down tap
+8.8    key down tap
+9.2    key space tap
+9.6    caption The options screen. "Block indicator" is the eighth row of vanilla's two-column widget grid, and it ships off.
+9.9    key down tap
+10.1   key down tap
+10.3   key down tap
+10.5   key down tap
+10.7   key down tap
+10.9   key down tap
+11.1   key down tap
+11.4   caption With "Block indicator" ticked.
+11.6   key space tap
+11.8   shot 02-options-ticked
+12.2   key shift tap
+12.6   key up tap
+12.8   key up tap
+13.0   key up tap
+13.2   key up tap
+13.4   key up tap
+13.8   key space tap
+14.2   probe back in the world
+
+# --- a flat plot with a trench cut into it -------------------------------
+14.6   echo --- flattening a plot, then cutting a trench into it
+14.6   command fill -8 15 -8 8 15 8 stone
+14.7   command fill -1 15 2 1 15 5 0
+14.8   command setblock 0 15 7 bricks
+14.9   command setblock -5 15 3 cobblestone
+15.0   command setblock 5 15 3 "diamond block"
+15.1   command setblock 0 15 -5 planks
+15.4   probe the plot
+
+# --- the outline ----------------------------------------------------------
+15.8   echo --- aiming down into the trench
+15.8   aim 0 45
+16.2   caption The selection box, looking down into the trench: a one pixel black wireframe around the block under the crosshair. Nothing is filled and no texture is bound -- vanilla draws the box as lines over a POSITION-only vertex format, and nGL's line rasteriser is one pixel wide, which is the lineStrength of 1.0 vanilla's RenderType.outline asks for.
+16.4   shot 03-outline-trench
+
+16.8   aim 0 30
+17.2   caption The same box from a shallower angle, where the top face's four edges and the vertical edges running down to the trench floor read as a wireframe box rather than a flat ring. The box is inflated by vanilla's OUTLINE_SIZE of 0.002 of a block, so it sits on the surface instead of z-fighting through it.
+17.4   shot 04-outline-shallow
+
+17.8   aim 0 60
+18.2   caption Straight down the same box, where the four top edges form the ring and the vertical edges are hidden behind the block's own faces -- as in vanilla, whose box is depth tested.
+18.4   shot 05-outline-down
+
+18.8   aim 25 40
+19.2   caption From an angle, where the outline of a single block is a hexagon: three visible faces each contributing four edges, with the three edges at the far corner hidden behind the block itself.
+19.4   shot 06-outline-angle
+
+19.8   aim 0 25
+20.2   caption The whole plot: a flat stone floor with the trench across it and single blocks standing on it. One pixel wide is why the indicator reads as a hairline rather than the thick band the old hand-drawn sheet drew.
+20.4   shot 07-overview
+
+20.8   probe the end
+21.2   end

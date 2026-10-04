@@ -17,12 +17,13 @@
 # List / Save World, Sound Test... / Options..., Player Inventory / Save and Quit
 # to Title -- so Help is one down, Block List two, Sound Test four.
 #
-#   s = down, space = select / space = enter the world, slash = open the console
+#   down = step down, space = select / enter the world, slash = open the console
+#   shift = the menu, backspace = erase
 #   hurt N = deal N damage straight through WorldTask::hurtPlayer
 #
 # The block list is the vanilla creative inventory: its three pages are the three
 # tabs, so 7/9 step between them (e/q on the desktop harness), and a page longer
-# than the 9x5 grid scrolls with 2/8 (s/w or the arrows), moving the scrollbar
+# than the 9x5 grid scrolls with the up and down keys, moving the scrollbar
 # handle the way the item list does.
 
 0.0    step 120
@@ -32,11 +33,11 @@
 # --- Graphing Mode is one step below the opening selection ---------------
 # The title opens on "New Terrain World" (a fresh world has no "Continue"),
 # so one down reaches the entry above it, "Graphing Mode".
-1.4    key s tap
+1.4    key down tap
 1.8    key space tap
 2.6    caption Graphing Mode: the vanilla dirt backdrop, a heading, and the expression field drawn as a vanilla text field (a black box in a light border).
 2.8    shot 02-graph
-3.4    key esc tap
+3.4    key shift tap
 
 # --- start a world --------------------------------------------------------
 4.6    key space tap
@@ -47,17 +48,17 @@
 9.2    caption Back in the world.
 
 # --- the help screen ------------------------------------------------------
-10.4   key esc tap
-11.2   key s tap
+10.4   key shift tap
+11.2   key down tap
 11.6   key space tap
 12.4   caption The help screen: the same dirt every vanilla menu sits on, a centred heading and the control list.
 12.6   shot 03-help
 # Closing Help returns to the pause menu, as it does in vanilla. The menu keeps
 # the selection, so it comes back on "Help"; one more down reaches "Block List".
-13.2   key esc tap
+13.2   key shift tap
 
 # --- the block list -------------------------------------------------------
-14.0   key s tap
+14.0   key down tap
 14.4   key space tap
 15.6   caption The block list: the vanilla creative inventory -- the official 195x136 window with its 9x5 slot grid and hotbar, the three tabs across the top with the selected one lit, the cursor frame on the held entry, and the scrollbar beside the grid.
 15.8   shot 04-blocklist
@@ -68,34 +69,34 @@
 # Back to the first tab, then scroll it past the fifth row by walking the cursor
 # down, so the grid follows the selection and the scrollbar handle travels.
 18.6   key e tap
-19.0   key s tap
-19.4   key s tap
-19.8   key s tap
-20.2   key s tap
-20.6   key s tap
-21.0   key s tap
+19.0   key down tap
+19.4   key down tap
+19.8   key down tap
+20.2   key down tap
+20.6   key down tap
+21.0   key down tap
 21.6   caption The first tab scrolled to its last row: the grid has stepped down a row at a time and the scrollbar handle has travelled to the bottom of its track, exactly as the creative item list does when the cursor leaves the visible rows.
 21.8   shot 06-blocklist-scrolled
-22.4   key esc tap
+22.4   key shift tap
 
 # --- the sound test -------------------------------------------------------
 # Back at the pause menu, still on "Block List"; "Sound Test..." is the fifth
 # entry, so two downs reach it from there.
-23.0   key s tap
-23.4   key s tap
+23.0   key down tap
+23.4   key down tap
 23.8   key space tap
 25.4   caption The sound test: the official widget button in its plain and highlighted states, over the vanilla backdrop.
 25.6   shot 07-audiotest
-26.2   key esc tap
+26.2   key shift tap
 
 # --- the command console --------------------------------------------------
 26.8   caption Back at the pause menu.
-27.0   key esc tap
+27.0   key shift tap
 27.8   key slash tap
 28.6   type weather
 30.2   caption The command console: a vanilla chat-style translucent panel over the world, with the prompt and the command hints.
 30.4   shot 08-console
-31.0   key esc tap
+31.0   key shift tap
 
 # --- the death screen -----------------------------------------------------
 31.6   command gamemode survival

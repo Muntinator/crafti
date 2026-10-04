@@ -27,15 +27,16 @@
 # keystroke can be dropped. One command is still typed at the end, on camera, to
 # show the console itself.
 #
-# Key names: esc tab enter space del ctrl shift, the arrows, and single
+# Key names: enter space del ctrl shift, the arrows, and single
 # characters for the letters, digits and punctuation keys.
 #
-# Desktop bindings this tour relies on (task.cpp): w/a/s/d move, space jumps,
-# t opens the inventory, tab the menu, r or . the block list, / the console,
-# 1 and 3 step the hotbar, e and q are the two mouse buttons.
+# Desktop bindings this tour relies on (task.cpp), which mirror controls.h: the
+# arrows move and open menus, space jumps and selects, shift is the menu,
+# ctrl saves, b the block list, / the console, t the inventory, backspace
+# erases, 1 and 3 step the hotbar, and e and q are the two mouse buttons.
 
 0.0    step 120
-0.0    caption The loading screen: Muntcraft's own splash bitmap, drawn through nGL.
+0.0    caption The loading screen: vanilla's own -- the dirt tile behind the wordmark, composed by gen_loading_textures.py and handed straight to nGL as the framebuffer.
 0.0    shot 01-loading
 1.0    caption The title screen, over the pre-rendered 1.17 panorama.
 1.0    shot 02-title
@@ -68,10 +69,10 @@
 # Walk forward into the world.
 14.5   echo --- walking
 14.5   caption Walking forward: the camera bobs and the terrain scrolls past. This is the second clip the gallery plays.
-14.5   key w down
+14.5   key up down
 14.6   clip 06-walk 16 4
 16.9   caption Standing still again: the walk ended on the slope above the shore.
-17.0   key w up
+17.0   key up up
 17.2   shot 07-after-walk
 17.4   probe after walking
 
@@ -145,14 +146,14 @@
 
 # --- menus ----------------------------------------------------------------
 36.6   echo --- the pause menu and the block list
-36.6   key tab tap
+36.6   key shift tap
 37.4   caption The pause menu, drawn over the dimmed world.
 37.6   shot 14-pause
-38.2   key esc tap
-38.8   key period tap
+38.2   key shift tap
+38.8   key b tap
 39.6   caption The block list: every block the game has, as its texture atlas.
 39.8   shot 15-blocks
-40.6   key esc tap
+40.6   key shift tap
 
 # --- the console, typed at ------------------------------------------------
 41.4   echo --- the console, typed at rather than run directly
@@ -161,7 +162,7 @@
 44.4   key enter tap
 45.6   caption The debug console, with /enchant typed into it: the enchanting table's offers for the held diamond sword, and the game's reply underneath.
 45.8   shot 16-console
-46.8   key esc tap
+46.8   key shift tap
 
 # --- home again -----------------------------------------------------------
 47.8   caption Back in the world, with the HUD along the bottom of the screen.

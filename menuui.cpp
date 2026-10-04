@@ -110,7 +110,7 @@ namespace MenuUI
     // The front-end's own strings. The tasks draw these and nothing else, so the
     // labels and the splashes are in one place and a host test can measure them
     // against the boxes they are drawn in.
-    const char *const versionText = "Muntcraft 1.11.0";
+    const char *const versionText = "Muntcraft 1.14.0";
     const char *const creditText = "Copyright Munt. Do not distribute!";
     const char *const pauseHeading = "Game Menu";
 

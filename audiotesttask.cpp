@@ -1,5 +1,7 @@
 #include "audiotesttask.h"
 
+#include "controls.h"
+
 #include <stdio.h>
 
 #include "audio_manager.h"
@@ -318,27 +320,26 @@ void AudioTestTask::logic(GLFix /*dt*/)
 	}
 
 	if(key_held_down)
-		key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN)
-			|| keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_5)
-			|| keyPressed(KEY_NSPIRE_ENTER) || keyPressed(KEY_NSPIRE_CLICK);
-	else if(keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_8))
+		key_held_down = Controls::cursorUp() || Controls::cursorDown()
+			|| Controls::activate() || Controls::menu();
+	else if(Controls::cursorUp())
 	{
 		if(--selected_item < 0)
 			selected_item = ITEM_MAX - 1;
 		key_held_down = true;
 	}
-	else if(keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_2))
+	else if(Controls::cursorDown())
 	{
 		if(++selected_item >= ITEM_MAX)
 			selected_item = 0;
 		key_held_down = true;
 	}
-	else if(keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_ENTER) || keyPressed(KEY_NSPIRE_CLICK))
+	else if(Controls::activate())
 	{
 		runItem(static_cast<unsigned int>(selected_item));
 		key_held_down = true;
 	}
-	else if(keyPressed(KEY_NSPIRE_ESC))
+	else if(Controls::menu())
 	{
 		(return_task != nullptr ? return_task : &start_task)->makeCurrent();
 		key_held_down = true;

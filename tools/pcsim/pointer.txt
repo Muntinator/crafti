@@ -34,7 +34,7 @@
 6.8   step 33
 
 # --- the options screen, opened and driven by the pointer -----------------
-7.2   key esc tap
+7.2   key shift tap
 7.8   mpos 200 300
 8.0   btn left tap
 8.6   caption The pointer clicked "Options..." on the pause menu; the options screen opens on top of it, with "Leaves" focused by default.
@@ -98,8 +98,8 @@
 24.0  caption A click on a hotbar slot makes it the active one, moving the selection frame.
 24.2  shot 14-hotbar
 
-24.6  key esc tap
-25.2  caption Esc closes the block list back to the pause menu, which is still showing the button that opened it -- "Block List".
+24.6  key shift tap
+25.2  caption Shift closes the block list back to the pause menu, which is still showing the button that opened it -- "Block List".
 25.4  shot 15-blocklist-back
 
 # --- the help screen, dismissed by the pointer ----------------------------

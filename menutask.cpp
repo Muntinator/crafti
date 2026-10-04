@@ -1,5 +1,7 @@
 #include "menutask.h"
 
+#include "controls.h"
+
 #include "audio_manager.h"
 #include "audiotesttask.h"
 
@@ -160,8 +162,8 @@ void MenuTask::logic(GLFix /*dt*/)
     }
 
     if(key_held_down)
-        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_MENU) || keyPressed(KEY_NSPIRE_UP) || keyPressed(KEY_NSPIRE_DOWN) || keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_CLICK) || keyPressed(KEY_NSPIRE_ENTER);
-    else if(keyPressed(KEY_NSPIRE_8) || keyPressed(KEY_NSPIRE_UP))
+        key_held_down = Controls::cursorUp() || Controls::cursorDown() || Controls::activate() || Controls::menu();
+    else if(Controls::cursorUp())
     {
         --menu_selected_item;
         if(menu_selected_item < 0)
@@ -169,7 +171,7 @@ void MenuTask::logic(GLFix /*dt*/)
 
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_2) || keyPressed(KEY_NSPIRE_DOWN))
+    else if(Controls::cursorDown())
     {
         ++menu_selected_item;
         if(menu_selected_item == MENU_ITEM_MAX)
@@ -177,12 +179,12 @@ void MenuTask::logic(GLFix /*dt*/)
 
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_5) || keyPressed(KEY_NSPIRE_CLICK) || keyPressed(KEY_NSPIRE_ENTER))
+    else if(Controls::activate())
     {
         activate();
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_MENU) || keyPressed(KEY_NSPIRE_ESC))
+    else if(Controls::menu())
     {
         world_task.makeCurrent();
         key_held_down = true;

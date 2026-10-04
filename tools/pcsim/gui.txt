@@ -9,7 +9,7 @@
 # into it (a stuck player cannot use a block at all), the crosshair has to be on
 # the block, which `aim` sets exactly, and the block is replaced one at a time in
 # front of the player so the heading never has to change. On the desktop build a
-# container is closed with `t` (the key that opens the player inventory); `esc`
+# container is closed with `t` (the key that opens the player inventory); `shift`
 # there would open the pause menu instead.
 #
 #   aim <yaw> <pitch>   points the camera at a known heading, in degrees
@@ -68,26 +68,26 @@
 20.6   key t tap
 
 # --- the pause menu and the options screen --------------------------------
-21.0   key esc tap
+21.0   key shift tap
 21.8   caption The pause menu: vanilla's grid -- "Game Menu" over the world washed in the dark gradient, a full-width "Back to Game", three rows of two (Help / Block List, Save World / Sound Test..., Options... / Player Inventory) and a full-width "Save and Quit to Title".
 22.0   shot 09-pause
 
-# "Options..." is the sixth entry, so five downs reach it and 5 (space) takes it.
-22.4   key s tap
-22.9   key s tap
-23.3   key s tap
-23.7   key s tap
-24.1   key s tap
+# "Options..." is the sixth entry, so five downs reach it and space takes it.
+22.4   key down tap
+22.9   key down tap
+23.3   key down tap
+23.7   key down tap
+24.1   key down tap
 24.5   key space tap
 24.9   caption The options screen: vanilla dirt, the two-column widget grid of sliders, checkboxes and list buttons, and the Done button.
 25.1   shot 10-settings
 
 # Tick an on/off row, so the checked half of the checkbox sheet is captured too:
 # the first view only has unchecked toggles on screen. Three downs reach "Fast
-# mode", and 5 (space) toggles it.
-25.4   key s tap
-26.0   key s tap
-26.6   key s tap
+# mode", and space toggles it.
+25.4   key down tap
+26.0   key down tap
+26.6   key down tap
 27.0   key space tap
 27.4   caption The options screen with "Fast mode" ticked: a vanilla checkbox in its checked, highlighted state.
 27.6   shot 10b-settings-checked
@@ -95,7 +95,7 @@
 # Closing Options returns to the pause menu, as it does in vanilla, rather than
 # dropping the player into the world. The menu keeps its selection, so it comes
 # back on "Options...".
-28.2   key esc tap
+28.2   key shift tap
 29.0   caption Back at the pause menu: closing Options returns here, and the menu keeps the selection, so "Options..." is still the focused button.
 29.2   shot 11-pause-again
 
@@ -106,8 +106,8 @@
 # save captures the loading screen rather than the world behind it. "Save World"
 # is the fourth entry; the menu came back on "Options..." (the sixth), so two ups
 # reach it.
-29.8   key w tap
-30.4   key w tap
+29.8   key up tap
+30.4   key up tap
 31.5   caption The loading screen: the dirt backdrop, "Loading terrain..." and its progress bar.
 31.55  shot 12-loading
 31.55  key space tap

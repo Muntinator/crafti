@@ -228,19 +228,24 @@ documented in `AUDIO_OUTPUT_TEST.md`).
 The screens opened from the pause menu are its **children**, as they are in
 vanilla: `Options...`, `Help` and `Block List` each take a `return_task`
 (`openFrom()`), so closing one comes back to the pause menu rather than dropping
-the player into the game. `Back to Game` and Esc return to the world; `Save and
-Quit to Title` writes the world and returns to the title screen. A desktop also
-gets vanilla's focus-by-hover: the pointer lights the button under it and a click
-takes it.
+the player into the game. `Back to Game` and the menu key (`Shift`) return to the
+world; `Save and Quit to Title` writes the world and returns to the title screen.
+A desktop also gets vanilla's focus-by-hover: the pointer lights the button under
+it and a click takes it.
+
+Every key this screen reads comes from `controls.h`, which is the whole scheme in
+one file: this build is played on a keyboard whose `8 5 6 4 . Car Menu Doc Tab Esc`
+cannot be read, so the four arrow keys ringing the touchpad move the selection,
+its click key or `Enter` takes it, and `Shift` goes back.
 
 Unlike a freshly opened screen, the pause menu **keeps its selection** when it is
-re-entered: walking into a child and pressing Esc comes back with the button that
-opened it still focused, which is what vanilla's screens do. `MenuTask` therefore
-does not reset `menu_selected_item` in `makeCurrent()`; the start-up value is
-`Back to Game`, and a menu that has already been used shows where the player left
-off. The pointer only takes the focus when it actually *moves*, in this screen and
-all the others, so a pointer resting on a button does not pull the highlight back
-onto it while the keyboard steps somewhere else.
+re-entered: walking into a child and pressing `Shift` comes back with the button
+that opened it still focused, which is what vanilla's screens do. `MenuTask`
+therefore does not reset `menu_selected_item` in `makeCurrent()`; the start-up
+value is `Back to Game`, and a menu that has already been used shows where the
+player left off. The pointer only takes the focus when it actually *moves*, in
+this screen and all the others, so a pointer resting on a button does not pull the
+highlight back onto it while the keyboard steps somewhere else.
 
 `tools/pcsim/pausemenu.txt` is the frame script for this screen. It captures the
 menu over the world, the keyboard stepping the selection and the pointer hovering
@@ -412,7 +417,7 @@ test, plus the pause menu keeping its selection across a child screen. See
 
 The game is called Muntcraft everywhere a player can read the name except the
 wordmark itself, which is the real Minecraft logo: the version line
-(`Muntcraft 1.11.0`), the credits, the help heading and the file. The save file
+(`Muntcraft 1.14.0`), the credits, the help heading and the file. The save file
 keeps the name `crafti.map.tns` it has always had, because that is the name the
 calculator's file association is registered under and renaming it would orphan
 every world that already exists.

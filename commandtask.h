@@ -81,9 +81,9 @@ private:
 
     // Edge state for the console's own keys. A held key must not repeat, which is
     // why each one remembers whether it was down on the previous frame.
-    bool esc_was_down = false;
+    bool menu_was_down = false;
     bool enter_was_down = false;
-    bool back_was_down = false;
+    bool erase_was_down = false;
     bool up_was_down = false;
     bool down_was_down = false;
 };

@@ -5,6 +5,7 @@
 #endif
 
 #include "worldtask.h"
+#include "controls.h"
 
 #include "audio_manager.h"
 #include "aabb.h"
@@ -24,7 +25,8 @@
 // The icon and inventory atlases are only needed by the overlay, which lives in
 // worldhud.cpp. Including them here would instantiate a second copy of each
 // (they are static arrays in the generated headers).
-#include "textures/blockselection.h"
+// The block outline is vanilla's own GL_LINES wireframe and binds no texture,
+// so there is no blockselection.h any more.
 
 #include "deathtask.h"
 #include "livestockentity.h"
@@ -334,12 +336,9 @@ GLFix WorldTask::speed()
 {
     GLFix base = 10 * settings_task.getValue(SettingsTask::SPEED) + 10;
 
-    if(keyPressed(KEY_NSPIRE_CTRL)) // Sprint
-        return base * 2;
-
-    if(keyPressed(KEY_NSPIRE_SHIFT)) // Sneak
-        return base / 2;
-
+    // Sprint and sneak used to be Ctrl and Shift. Both keys are spoken for now
+    // -- Ctrl saves the world, Shift opens the menu -- so walking is at the speed
+    // setting, and the only modifier left is the desktop's 10x.
     if(speed_multiplier_held) // 10x speed  
         return base * 10;
 
@@ -384,7 +383,9 @@ void WorldTask::logic(GLFix dt)
 
     GLFix dx = 0, dz = 0;
 
-    if(keyPressed(KEY_NSPIRE_8)) //Forward
+    // Walking is on the four mouse keys that ring the touchpad's click button.
+    // The pad itself turns the camera, further down.
+    if(Controls::forward())
     {
         GLFix dx1, dz1;
         getForward(&dx1, &dz1);
@@ -392,7 +393,7 @@ void WorldTask::logic(GLFix dt)
         dx += dx1;
         dz += dz1;
     }
-    else if(keyPressed(KEY_NSPIRE_2)) //Backward
+    else if(Controls::back())
     {
         GLFix dx1, dz1;
         getForward(&dx1, &dz1);
@@ -401,7 +402,7 @@ void WorldTask::logic(GLFix dt)
         dz -= dz1;
     }
 
-    if(keyPressed(KEY_NSPIRE_4)) //Left
+    if(Controls::left())
     {
         GLFix dx1, dz1;
         getRight(&dx1, &dz1);
@@ -409,7 +410,7 @@ void WorldTask::logic(GLFix dt)
         dx -= dx1;
         dz -= dz1;
     }
-    else if(keyPressed(KEY_NSPIRE_6)) //Right
+    else if(Controls::right())
     {
         GLFix dx1, dz1;
         getRight(&dx1, &dz1);
@@ -427,9 +428,9 @@ void WorldTask::logic(GLFix dt)
         z += dz;
 
         GLFix dy = 0;
-        if(keyPressed(KEY_NSPIRE_5))
+        if(Controls::jump())
             dy += speed() * dt;
-        if(keyPressed(KEY_NSPIRE_CTRL))
+        if(keyPressed(KEY_NSPIRE_SQU))
             dy -= speed() * dt;
 
         y += dy;
@@ -550,8 +551,8 @@ void WorldTask::logic(GLFix dt)
         if(travelled > GLFix(0))
         {
             const float blocks = travelled.toFloat() / static_cast<float>(BLOCK_SIZE);
-            const float per_block = keyPressed(KEY_NSPIRE_CTRL) ? Survival::ExhaustionPerBlockSprinted
-                                                                : Survival::ExhaustionPerBlockWalked;
+            // Always the walked rate: sprint no longer has a key of its own.
+            const float per_block = Survival::ExhaustionPerBlockWalked;
             Survival::addExhaustion(hunger, blocks * per_block);
         }
     }
@@ -570,7 +571,7 @@ void WorldTask::logic(GLFix dt)
         }
     }
 
-    if(!graph_mode && keyPressed(KEY_NSPIRE_5) && can_jump) //Jump
+    if(!graph_mode && Controls::jump() && can_jump) //Jump
     {
         vy = 50;
         can_jump = false;
@@ -636,44 +637,20 @@ void WorldTask::logic(GLFix dt)
     }
 #endif
 
+    // The camera follows the pad itself: a finger dragged across it turns the
+    // view. The arrow keys that ring it are not consulted here -- they walk.
     if(has_touchpad)
     {
         touchpad_report_t touchpad;
         touchpad_scan(&touchpad);
 
-        if(touchpad.pressed)
+        // A tap on the pad (no movement) recentres the view, which is what
+        // vanilla's recenter button does and the only way back to a level
+        // horizon once the finger has wandered off the pad's neutral point.
+        if(touchpad.pressed && touchpad.arrow == TPAD_ARROW_CLICK)
         {
-            switch(touchpad.arrow)
-            {
-            case TPAD_ARROW_DOWN:
-                xr += speed()/2 * dt;
-                break;
-            case TPAD_ARROW_UP:
-                xr -= speed()/2 * dt;
-                break;
-            case TPAD_ARROW_LEFT:
-                yr -= speed()/2 * dt;
-                break;
-            case TPAD_ARROW_RIGHT:
-                yr += speed()/2 * dt;
-                break;
-            case TPAD_ARROW_RIGHTDOWN:
-                xr += speed()/2 * dt;
-                yr += speed()/2 * dt;
-                break;
-            case TPAD_ARROW_UPRIGHT:
-                xr -= speed()/2 * dt;
-                yr += speed()/2 * dt;
-                break;
-            case TPAD_ARROW_DOWNLEFT:
-                xr += speed()/2 * dt;
-                yr -= speed()/2 * dt;
-                break;
-            case TPAD_ARROW_LEFTUP:
-                xr -= speed()/2 * dt;
-                yr -= speed()/2 * dt;
-                break;
-            }
+            xr = GLFix(45);
+            yr = GLFix(0);
         }
         else if(tp_had_contact && touchpad.contact)
         {
@@ -684,18 +661,6 @@ void WorldTask::logic(GLFix dt)
         tp_had_contact = touchpad.contact;
         tp_last_x = touchpad.x;
         tp_last_y = touchpad.y;
-    }
-    else
-    {
-        if(keyPressed(KEY_NSPIRE_UP))
-            xr -= speed()/3 * dt;
-        else if(keyPressed(KEY_NSPIRE_DOWN))
-            xr += speed()/3 * dt;
-
-        if(keyPressed(KEY_NSPIRE_LEFT))
-            yr -= speed()/3 * dt;
-        else if(keyPressed(KEY_NSPIRE_RIGHT))
-            yr += speed()/3 * dt;
     }
 
     //Normalisation required for rotation with nglRotate
@@ -757,17 +722,25 @@ void WorldTask::logic(GLFix dt)
 
     if(key_held_down)
     {
-        key_held_down = keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_7) || keyPressed(KEY_NSPIRE_1) || keyPressed(KEY_NSPIRE_3) || keyPressed(KEY_NSPIRE_PERIOD) || keyPressed(KEY_NSPIRE_MINUS) || keyPressed(KEY_NSPIRE_PLUS) || keyPressed(KEY_NSPIRE_MENU) || keyPressed(KEY_NSPIRE_A) || keyPressed(KEY_NSPIRE_DIVIDE) || desktop_t_held || desktop_f_held;
+        key_held_down = Controls::menu() || keyPressed(KEY_NSPIRE_7) || keyPressed(KEY_NSPIRE_1) || keyPressed(KEY_NSPIRE_3) || Controls::blockList() || keyPressed(KEY_NSPIRE_MINUS) || keyPressed(KEY_NSPIRE_PLUS) || Controls::memory() || keyPressed(KEY_NSPIRE_A) || Controls::console() || desktop_t_held || desktop_f_held;
         key_held_down = key_held_down || desktop_g_held || desktop_j_held || desktop_x_held || desktop_z_held;
     }
 
-    else if(keyPressed(KEY_NSPIRE_ESC) || keyPressed(KEY_NSPIRE_MENU))
+    else if(Controls::menu())
     {
         menu_task.makeCurrent();
         key_held_down = true;
         return;
     }
-    else if(keyPressed(KEY_NSPIRE_DIVIDE))
+    else if(Controls::memory())
+    {
+        // Ctrl is memory now, so it saves where the player stands, without a
+        // trip through the pause menu first.
+        setMessage(save() ? "World saved." : "Failed to save world.");
+        key_held_down = true;
+        return;
+    }
+    else if(Controls::console())
     {
         // The divide key is the one the calculator spells '/' with, which is what
         // a command is written after. The console takes the frame from here, so
@@ -1057,9 +1030,9 @@ void WorldTask::logic(GLFix dt)
 
         key_held_down = true;
     }
-    else if(keyPressed(KEY_NSPIRE_PERIOD)) //Open list of blocks (or take screenshot with Ctrl + .)
+    else if(Controls::blockList()) //Open list of blocks (or take screenshot with Ctrl + B)
     {
-        if(keyPressed(KEY_NSPIRE_CTRL))
+        if(Controls::memory())
         {
             //Find a filename that doesn't exist
             char buf[45];
@@ -1243,9 +1216,19 @@ void WorldTask::render()
     // Draw selection / breaking indication.
     if(settings_task.getValue(SettingsTask::BLOCK_INDICATOR))
     {
-        TextureAtlasEntry tex;
         const bool show_breaking_overlay = mining_progress > 0 && mining_duration > 0 &&
                                            selection_pos.x == mining_pos.x && selection_pos.y == mining_pos.y && selection_pos.z == mining_pos.z;
+
+        const GLFix indicator_x = selection_pos.x * BLOCK_SIZE, indicator_y = selection_pos.y * BLOCK_SIZE, indicator_z = selection_pos.z * BLOCK_SIZE;
+        // Vanilla inflates the selection box by BlockRenderer.OUTLINE_SIZE (0.002
+        // of a block) so the lines clear the block's own faces instead of
+        // z-fighting them. The old sheet used 3 units, roughly seven times as
+        // much, which is visible as the box standing off the block.
+        const GLFix selection_offset = GLFix(BLOCK_SIZE * 0.002f);
+
+        glPushMatrix();
+        glTranslatef(indicator_x, indicator_y, indicator_z);
+
         if(show_breaking_overlay)
         {
             glBindTexture(terrain_current);
@@ -1254,37 +1237,9 @@ void WorldTask::render()
             if(breaking_frame >= breaking_frames)
                 breaking_frame = breaking_frames - 1;
 
-            tex = terrain_atlas[breaking_frame][15].current;
-        }
-        else
-        {
-            glBindTexture(&blockselection);
+            const TextureAtlasEntry tex = terrain_atlas[breaking_frame][15].current;
 
-            //Do a quick animation
-            const unsigned int blockselection_frame_width = blockselection.width / blockselection_frames;
-            tex = textureArea(0, 0, blockselection_frame_width, blockselection.height);
-            tex.left += blockselection_frame_width * blockselection_frame;
-            tex.right += blockselection_frame_width * blockselection_frame;
-
-            //Only increment the frame nr each 5 frames
-            if(++blockselection_frame_fraction == 5)
-            {
-                blockselection_frame_fraction = 0;
-
-                if(++blockselection_frame == blockselection_frames)
-                    blockselection_frame = 0;
-            }
-        }
-
-        const GLFix indicator_x = selection_pos.x * BLOCK_SIZE, indicator_y = selection_pos.y * BLOCK_SIZE, indicator_z = selection_pos.z * BLOCK_SIZE;
-        const GLFix selection_offset = 3; //Needed to prevent Z-fighting
-
-        glPushMatrix();
-        glTranslatef(indicator_x, indicator_y, indicator_z);
-
-        glBegin(GL_QUADS);
-        if(show_breaking_overlay)
-        {
+            glBegin(GL_QUADS);
             const GLFix block_size_fix = GLFix(BLOCK_SIZE);
             const GLFix minus_offset = GLFix(0) - selection_offset;
             const GLFix plus_offset = block_size_fix + selection_offset;
@@ -1324,49 +1279,45 @@ void WorldTask::render()
             nglAddVertex({block_size_fix, minus_offset, block_size_fix, tex.left, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
             nglAddVertex({0, minus_offset, block_size_fix, tex.right, tex.top, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
             nglAddVertex({0, minus_offset, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT | TEXTURE_DRAW_BACKFACE});
+            glEnd();
         }
-        else switch(selection_side)
+        else
         {
-        case AABB::FRONT:
-            nglAddVertex({0, 0, selection_pos_abs.z - indicator_z - selection_offset, tex.left, tex.bottom, TEXTURE_TRANSPARENT});
-            nglAddVertex({0, BLOCK_SIZE, selection_pos_abs.z - indicator_z - selection_offset, tex.left, tex.top, TEXTURE_TRANSPARENT});
-            nglAddVertex({BLOCK_SIZE, BLOCK_SIZE, selection_pos_abs.z - indicator_z - selection_offset, tex.right, tex.top, TEXTURE_TRANSPARENT});
-            nglAddVertex({BLOCK_SIZE, 0, selection_pos_abs.z - indicator_z - selection_offset, tex.right, tex.bottom, TEXTURE_TRANSPARENT});
-            break;
-        case AABB::BACK:
-            nglAddVertex({BLOCK_SIZE, 0, selection_pos_abs.z - indicator_z + selection_offset, tex.left, tex.bottom, TEXTURE_TRANSPARENT});
-            nglAddVertex({BLOCK_SIZE, BLOCK_SIZE, selection_pos_abs.z - indicator_z + selection_offset, tex.left, tex.top, TEXTURE_TRANSPARENT});
-            nglAddVertex({0, BLOCK_SIZE, selection_pos_abs.z - indicator_z + selection_offset, tex.right, tex.top, TEXTURE_TRANSPARENT});
-            nglAddVertex({0, 0, selection_pos_abs.z - indicator_z + selection_offset, tex.right, tex.bottom, TEXTURE_TRANSPARENT});
-            break;
-        case AABB::RIGHT:
-            nglAddVertex({selection_pos_abs.x - indicator_x + selection_offset, 0, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT});
-            nglAddVertex({selection_pos_abs.x - indicator_x + selection_offset, BLOCK_SIZE, 0, tex.right, tex.top, TEXTURE_TRANSPARENT});
-            nglAddVertex({selection_pos_abs.x - indicator_x + selection_offset, BLOCK_SIZE, BLOCK_SIZE, tex.left, tex.top, TEXTURE_TRANSPARENT});
-            nglAddVertex({selection_pos_abs.x - indicator_x + selection_offset, 0, BLOCK_SIZE, tex.left, tex.bottom, TEXTURE_TRANSPARENT});
-            break;
-        case AABB::LEFT:
-            nglAddVertex({selection_pos_abs.x - indicator_x - selection_offset, 0, BLOCK_SIZE, tex.left, tex.bottom, TEXTURE_TRANSPARENT});
-            nglAddVertex({selection_pos_abs.x - indicator_x - selection_offset, BLOCK_SIZE, BLOCK_SIZE, tex.left, tex.top, TEXTURE_TRANSPARENT});
-            nglAddVertex({selection_pos_abs.x - indicator_x - selection_offset, BLOCK_SIZE, 0, tex.right, tex.top, TEXTURE_TRANSPARENT});
-            nglAddVertex({selection_pos_abs.x - indicator_x - selection_offset, 0, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT});
-            break;
-        case AABB::TOP:
-            nglAddVertex({0, selection_pos_abs.y - indicator_y + selection_offset, 0, tex.left, tex.bottom, TEXTURE_TRANSPARENT});
-            nglAddVertex({0, selection_pos_abs.y - indicator_y + selection_offset, BLOCK_SIZE, tex.left, tex.top, TEXTURE_TRANSPARENT});
-            nglAddVertex({BLOCK_SIZE, selection_pos_abs.y - indicator_y + selection_offset, BLOCK_SIZE, tex.right, tex.top, TEXTURE_TRANSPARENT});
-            nglAddVertex({BLOCK_SIZE, selection_pos_abs.y - indicator_y + selection_offset, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT});
-            break;
-        case AABB::BOTTOM:
-            nglAddVertex({BLOCK_SIZE, selection_pos_abs.y - indicator_y - selection_offset, 0, tex.left, tex.bottom, TEXTURE_TRANSPARENT});
-            nglAddVertex({BLOCK_SIZE, selection_pos_abs.y - indicator_y - selection_offset, BLOCK_SIZE, tex.left, tex.top, TEXTURE_TRANSPARENT});
-            nglAddVertex({0, selection_pos_abs.y - indicator_y - selection_offset, BLOCK_SIZE, tex.right, tex.top, TEXTURE_TRANSPARENT});
-            nglAddVertex({0, selection_pos_abs.y - indicator_y - selection_offset, 0, tex.right, tex.bottom, TEXTURE_TRANSPARENT});
-            break;
-        case AABB::NONE:
-            break;
+            // Vanilla's selection box: a one pixel wireframe of the block's
+            // outline, with no texture bound at all. BlockRenderer draws it with
+            // DrawMode.LINES over a POSITION-only vertex format, at
+            // RenderType.outline()'s lineStrength of 1.0 -- which is why the
+            // box cannot be made any thicker without a mod, and why this is a
+            // one pixel silhouette rather than the old sheet's band.
+            //
+            // Vanilla blends the box against what is behind it and scales the
+            // colour by the light at that position. nGL is RGB565 with a single
+            // colour key and no blending, so neither is available; the box is
+            // flat black instead, which is what vanilla shows in daylight.
+            glColor3f(0, 0, 0);
+
+            const GLFix block_size_fix = GLFix(BLOCK_SIZE);
+            const GLFix lo = GLFix(0) - selection_offset;
+            const GLFix hi = block_size_fix + selection_offset;
+
+            glBegin(GL_LINES);
+            // The twelve edges of the box, four along each axis.
+            glVertex3f(lo, lo, lo); glVertex3f(hi, lo, lo);
+            glVertex3f(lo, lo, hi); glVertex3f(hi, lo, hi);
+            glVertex3f(lo, hi, lo); glVertex3f(hi, hi, lo);
+            glVertex3f(lo, hi, hi); glVertex3f(hi, hi, hi);
+
+            glVertex3f(lo, lo, lo); glVertex3f(lo, hi, lo);
+            glVertex3f(lo, lo, hi); glVertex3f(lo, hi, hi);
+            glVertex3f(hi, lo, lo); glVertex3f(hi, hi, lo);
+            glVertex3f(hi, lo, hi); glVertex3f(hi, hi, hi);
+
+            glVertex3f(lo, lo, lo); glVertex3f(lo, lo, hi);
+            glVertex3f(hi, lo, lo); glVertex3f(hi, lo, hi);
+            glVertex3f(lo, hi, lo); glVertex3f(lo, hi, hi);
+            glVertex3f(hi, hi, lo); glVertex3f(hi, hi, hi);
+            glEnd();
         }
-        glEnd();
 
         glPopMatrix();
     }
